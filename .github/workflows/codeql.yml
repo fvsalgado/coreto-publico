@@ -1,0 +1,63 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Segunda-feira de madrugada. Uma análise semanal apanha as vulnerabilidades
+    # que passaram a ser conhecidas depois de o código ter sido escrito — que
+    # são a maioria delas.
+    - cron: '40 4 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analise:
+    name: Análise (${{ matrix.linguagem }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Só corre onde o «code scanning» pode estar ligado.
+    #
+    # Num repositório privado sem GitHub Advanced Security, o CodeQL não tem
+    # onde entregar os resultados e a análise termina em erro de configuração
+    # — um vermelho permanente que não diz nada sobre o código e que, ao fim de
+    # uma semana, se aprende a ignorar. Aprender a ignorar um sinal de
+    # segurança é pior do que não ter o sinal.
+    #
+    # Assim o trabalho é saltado enquanto o repositório for privado, e começa a
+    # correr sozinho no dia em que passar a público — que é o destino deste,
+    # publicado sob AGPL-3.0.
+    if: github.event.repository.visibility == 'public' || github.event_name == 'schedule'
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # `actions` analisa os próprios workflows. Vale a pena: um workflow com
+        # permissões a mais ou a interpolar entrada de fora num script é uma
+        # porta tão aberta como qualquer outra.
+        linguagem: [javascript-typescript, actions]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.linguagem }}
+          queries: security-and-quality
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.linguagem }}'

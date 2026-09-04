@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Varre o que está prestes a entrar no repositório, antes de entrar.
+#
+# Um segredo commitado é um segredo queimado: reescrever a história é possível,
+# mas quem já tiver clonado fica com ele à mesma, e a resposta certa passa a ser
+# rodar a chave. Este hook é a última porta antes disso — e é a única barreira
+# que corre **antes** de o valor existir num commit. O CI é a rede por baixo,
+# não a primeira defesa: quando ele falha, o segredo já está na história.
+#
+# Instala-se com `./scripts/instalar-hooks.sh`, que aponta o
+# `core.hooksPath` a esta pasta. Sem husky nem dependência nova: é uma opção do
+# próprio git, e a casa prefere uma opção do git a um pacote.
+#
+# Deixa passar em silêncio quando não há varredor instalado — um hook que trava
+# o commit de quem ainda não configurou nada é um hook que se desinstala à
+# primeira. O CI apanha esse caso.
+set -euo pipefail
+
+# Só o que está preparado para o commit. `--cached` compara com a árvore, que é
+# o que o `gitleaks protect` quer: o conteúdo que este commit vai criar.
+if ! git diff --cached --quiet 2> /dev/null; then
+  if command -v gitleaks > /dev/null 2>&1; then
+    echo "→ gitleaks: a varrer o que vai no commit"
+    if ! gitleaks protect --staged --redact --no-banner; then
+      echo
+      echo "Há um segredo no que ias submeter. Nada foi commitado." >&2
+      echo "Se for um falso positivo, corrige o ficheiro que o provoca —" >&2
+      echo "não acrescentes uma exceção (ver .gitguardian.yaml)." >&2
+      exit 1
+    fi
+  else
+    echo "→ sem gitleaks instalado: o varrimento fica para o CI"
+    echo "  (brew install gitleaks, ou https://github.com/gitleaks/gitleaks)"
+  fi
+fi
+
+# A formatação é barata de verificar e cara de rever: um PR cheio de ruído de
+# formatação esconde as três linhas que interessam.
+if command -v pnpm > /dev/null 2>&1; then
+  ficheiros=$(git diff --cached --name-only --diff-filter=ACMR)
+  if [ -n "${ficheiros}" ]; then
+    if ! printf '%s\n' "${ficheiros}" | xargs pnpm exec prettier --check --ignore-unknown 2> /dev/null; then
+      echo
+      echo "Falta formatar. Corre 'pnpm format' e volta a adicionar." >&2
+      exit 1
+    fi
+  fi
+fi

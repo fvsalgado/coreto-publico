@@ -1,0 +1,327 @@
+/**
+ * Cliente HTTP da recolha.
+ *
+ * Do outro lado destes pedidos está o servidor de uma câmara municipal, quase
+ * sempre partilhado com os serviços online do concelho. Recolher uma agenda
+ * não pode parecer um ataque: agente identificável, um pedido de cada vez por
+ * hospedeiro, e recuo quando o servidor pede para abrandar.
+ *
+ * Nada aqui atira exceções. Um site em baixo é o funcionamento normal desta
+ * casa, não um caso excecional — quem chama olha para `ok` e decide.
+ */
+
+/**
+ * Quem bate à porta, e onde se lhe responde.
+ *
+ * O endereço aqui dentro tem de existir: é por ele que um administrador de
+ * sistemas nos encontra, para pedir que abrandemos ou que paremos. O anterior
+ * apontava para `coreto.pt/sobre`, domínio que nunca chegou a existir — e um
+ * agente que se identifica com uma morada morta não é identificável, é só
+ * educado na aparência. O endereço do repositório é o que responde sempre,
+ * seja qual for o domínio de cada região.
+ *
+ * A frase é do produto e não de uma região, de propósito: a mesma recolha
+ * serve todas as regiões, e um agente que dissesse «do Médio Tejo» a bater à
+ * porta de uma câmara de outra CIM estaria a apresentar-se como quem não é.
+ *
+ * E não era só uma questão de boas maneiras. O sítio do Teatro Virgínia
+ * respondia em dois segundos à sondagem (que usa esta forma, com o endereço do
+ * repositório) e deixava a recolha esperar até esgotar o tempo, três noites
+ * seguidas, do mesmo executor e no mesmo minuto. A única variável entre as
+ * duas era esta linha.
+ */
+export const USER_AGENT =
+  'Coreto/1.0 (+https://github.com/fvsalgado/coreto; agenda cultural, Portugal)';
+
+export const DEFAULT_TIMEOUT_MS = 15_000;
+export const DEFAULT_MAX_ATTEMPTS = 3;
+export const DEFAULT_HOST_INTERVAL_MS = 1_000;
+
+/**
+ * Espera máxima que se aceita de um `Retry-After`.
+ *
+ * Há servidores que respondem «volta daqui a uma hora» a um 429. Esperar uma
+ * hora seguraria a recolha das outras dez câmaras; mais vale desistir desta
+ * fonte e voltar amanhã.
+ */
+const MAX_RETRY_AFTER_MS = 30_000;
+
+/** Uma agenda em HTML não tem 4 MB. O que passa disto é ficheiro, não página. */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+export interface HttpResponse {
+  ok: boolean;
+  /** Zero quando o pedido nem chegou a ter resposta (DNS, TLS, tempo esgotado). */
+  status: number;
+  body: string;
+  error: string | null;
+  /** Endereço final, já com redirecionamentos seguidos. */
+  url: string;
+}
+
+export interface HttpCounters {
+  /** Pedidos que tiveram resposta, seja ela qual for. */
+  responses: number;
+  /** Pedidos que não chegaram a ter resposta. */
+  failures: number;
+}
+
+export interface HttpClientOptions {
+  timeoutMs?: number;
+  maxAttempts?: number;
+  minHostIntervalMs?: number;
+  userAgent?: string;
+  /** Injetáveis para os testes correrem sem rede e sem esperar de verdade. */
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+export interface RequestOptions {
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+/**
+ * Estados que merecem outra tentativa.
+ *
+ * Tudo o resto na gama 4xx é uma resposta definitiva: repetir um 404 só gasta
+ * a paciência do servidor e o tempo da recolha.
+ */
+const RETRYABLE_STATUS = new Set([408, 425, 429]);
+
+export function isRetryableStatus(status: number): boolean {
+  return status >= 500 || RETRYABLE_STATUS.has(status);
+}
+
+/** Recuo exponencial: 1s antes da segunda tentativa, 2s antes da terceira, 4s da quarta. */
+export function backoffMs(attempt: number): number {
+  return 1_000 * 2 ** Math.max(0, attempt - 1);
+}
+
+/** Lê `Retry-After` em segundos ou em data HTTP. Devolve milissegundos. */
+export function parseRetryAfter(value: string | null | undefined, nowMs: number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1_000;
+  const asDate = Date.parse(trimmed);
+  if (!Number.isFinite(asDate)) return null;
+  return Math.max(0, asDate - nowMs);
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return url;
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError')
+      return 'tempo de resposta esgotado';
+    return error.message || error.name;
+  }
+  return String(error);
+}
+
+export class HttpClient {
+  private readonly fetchImpl: typeof fetch;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly now: () => number;
+  private readonly timeoutMs: number;
+  private readonly maxAttempts: number;
+  private readonly minHostIntervalMs: number;
+  private readonly userAgent: string;
+
+  /** Hospedeiro → instante a partir do qual o próximo pedido pode sair. */
+  private readonly nextAllowedAt = new Map<string, number>();
+
+  private responses = 0;
+  private failures = 0;
+
+  constructor(options: HttpClientOptions = {}) {
+    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
+    this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    this.now = options.now ?? (() => Date.now());
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+    this.minHostIntervalMs = options.minHostIntervalMs ?? DEFAULT_HOST_INTERVAL_MS;
+    this.userAgent = options.userAgent ?? USER_AGENT;
+  }
+
+  counters(): HttpCounters {
+    return { responses: this.responses, failures: this.failures };
+  }
+
+  /**
+   * Os primeiros bytes de um ficheiro, para lhe ler o cabeçalho.
+   *
+   * Serve as medidas dos cartazes (`medidasDaImagem`, em `@coreto/core`), e é
+   * método à parte e não uma opção do `get` por três razões que puxam todas no
+   * mesmo sentido.
+   *
+   * **Devolve bytes.** O `get` devolve texto, e um JPEG passado por
+   * `response.text()` volta com os bytes trocados por U+FFFD — o cabeçalho
+   * deixa de ser legível antes de chegar a quem o lê.
+   *
+   * **Não repete.** O `get` tenta três vezes porque a agenda de um concelho
+   * depende daquela resposta. Aqui não depende nada: um cartaz que não se mede
+   * hoje mede-se amanhã, e a página entretanto reserva a vitrine como sempre
+   * reservou. Insistir era triplicar os pedidos ao servidor da câmara por uma
+   * altura de caixa.
+   *
+   * **Pede só o princípio.** `Range` corta a transferência nos primeiros
+   * kilobytes; o servidor responde 206 com essa fatia. Quem ignorar o
+   * cabeçalho manda o ficheiro inteiro, e por isso o corte repete-se deste
+   * lado, na leitura.
+   *
+   * Passa pelo mesmo estrangulamento por hospedeiro que o resto — um pedido de
+   * cada vez, com intervalo — porque do outro lado é a mesma máquina.
+   */
+  async cabecalho(
+    url: string,
+    bytes: number,
+    options: RequestOptions = {},
+  ): Promise<Uint8Array | null> {
+    await this.throttle(url);
+    try {
+      const response = await this.fetchImpl(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs),
+        headers: {
+          'user-agent': this.userAgent,
+          accept: 'image/*',
+          range: `bytes=0-${bytes - 1}`,
+          ...options.headers,
+        },
+      });
+      this.responses += 1;
+      // 206 é o corte pedido; 200 é o servidor a ignorar o `Range` e a mandar
+      // tudo. Os dois servem — o que não serve é um 404 ou um 503, e desses
+      // não se lê nada.
+      if (!response.ok) return null;
+      const recebido = new Uint8Array(await response.arrayBuffer());
+      return recebido.length > bytes ? recebido.subarray(0, bytes) : recebido;
+    } catch {
+      // Um cartaz que não responde não é uma falha da recolha: não conta para
+      // `failures`, que é o contador que decide se uma FONTE está partida.
+      return null;
+    }
+  }
+
+  async get(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
+    let last: HttpResponse = { ok: false, status: 0, body: '', error: 'pedido não executado', url };
+
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      await this.throttle(url);
+      const result = await this.attempt(url, options);
+      last = result.response;
+
+      if (result.response.ok) return result.response;
+      if (attempt === this.maxAttempts) break;
+      if (!result.retryable) break;
+
+      const wait = result.retryAfterMs ?? backoffMs(attempt);
+      if (wait > MAX_RETRY_AFTER_MS) {
+        return {
+          ...result.response,
+          error: `${result.response.error ?? 'sem detalhe'} (pediu ${Math.round(wait / 1000)}s de espera)`,
+        };
+      }
+      await this.sleep(wait);
+    }
+
+    return last;
+  }
+
+  /**
+   * Segura o pedido até ter passado o intervalo mínimo desde o anterior ao
+   * mesmo hospedeiro.
+   *
+   * A próxima janela é reservada antes da espera, e não depois: dois pedidos
+   * lançados ao mesmo tempo têm de se pôr em fila, não de partilhar a mesma
+   * janela e sair os dois na mesma altura.
+   */
+  private async throttle(url: string): Promise<void> {
+    if (this.minHostIntervalMs <= 0) return;
+    const host = hostOf(url);
+    const now = this.now();
+    const earliest = this.nextAllowedAt.get(host) ?? 0;
+    this.nextAllowedAt.set(host, Math.max(now, earliest) + this.minHostIntervalMs);
+    const wait = earliest - now;
+    if (wait > 0) await this.sleep(wait);
+  }
+
+  private async attempt(
+    url: string,
+    options: RequestOptions,
+  ): Promise<{ response: HttpResponse; retryable: boolean; retryAfterMs: number | null }> {
+    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+
+    try {
+      const response = await this.fetchImpl(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          'user-agent': this.userAgent,
+          accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+          'accept-language': 'pt-PT,pt;q=0.9',
+          ...options.headers,
+        },
+      });
+
+      this.responses += 1;
+      const finalUrl = response.url || url;
+      const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), this.now());
+
+      const declared = Number(response.headers.get('content-length') ?? '0');
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        return {
+          response: {
+            ok: false,
+            status: response.status,
+            body: '',
+            error: `resposta demasiado grande (${declared} bytes)`,
+            url: finalUrl,
+          },
+          retryable: false,
+          retryAfterMs: null,
+        };
+      }
+
+      const text = await response.text();
+      const body = text.length > MAX_BODY_BYTES ? text.slice(0, MAX_BODY_BYTES) : text;
+
+      if (!response.ok) {
+        return {
+          response: {
+            ok: false,
+            status: response.status,
+            body,
+            error: `HTTP ${response.status}`,
+            url: finalUrl,
+          },
+          retryable: isRetryableStatus(response.status),
+          retryAfterMs,
+        };
+      }
+
+      return {
+        response: { ok: true, status: response.status, body, error: null, url: finalUrl },
+        retryable: false,
+        retryAfterMs: null,
+      };
+    } catch (error) {
+      // Sem resposta: DNS, TLS, ligação cortada ou tempo esgotado. É o caso
+      // que distingue «a agenda está vazia» de «o site não existe».
+      this.failures += 1;
+      return {
+        response: { ok: false, status: 0, body: '', error: describeError(error), url },
+        retryable: true,
+        retryAfterMs: null,
+      };
+    }
+  }
+}

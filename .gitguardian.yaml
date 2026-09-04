@@ -1,0 +1,50 @@
+# Configuração do varrimento de segredos (ggshield).
+#
+# **O que este ficheiro governa, e o que não governa.** Governa o ggshield
+# corrido à mão e a GitHub App do GitGuardian, se estiver ligada. **Não governa
+# o CI**: quem falha uma alteração com um segredo lá dentro é o gitleaks, no
+# trabalho `Segredos` de `.github/workflows/ci.yml`, escolhido por não precisar
+# de chave nenhuma e por isso passar também nos forks. Este ficheiro já esteve
+# aqui a fazer o `SECURITY.md` parecer verdadeiro sem nada o executar; a linha
+# acima existe para isso não voltar a acontecer.
+#
+# A regra desta casa é que o varrimento não se silencia. Já houve aqui um falso
+# positivo — literais com ar de palavra-passe em ficheiros de teste — e a
+# resposta foi mudar os testes para gerarem os valores em tempo de execução com
+# `randomBytes`, não acrescentar uma exceção. Uma exceção resolve o alerta de
+# hoje e esconde o segredo verdadeiro de amanhã.
+#
+# Correr localmente antes de submeter:
+#   pnpm dlx ggshield secret scan repo .
+#
+# O varrimento antes de cada commit não se pede a quem escreve: instala-se uma
+# vez com `./scripts/instalar-hooks.sh` e passa a correr sozinho.
+version: 2
+
+# Um segredo encontrado faz falhar o varrimento. É o comportamento por omissão
+# e está aqui escrito para que ninguém o mude por distração.
+exit_zero: false
+verbose: false
+
+secret:
+  # O valor encontrado nunca é impresso: o registo do CI é público e imprimir
+  # o segredo seria uma segunda fuga em cima da primeira.
+  show_secrets: false
+
+  # Só resultados de compilação e dependências — nada disto é código deste
+  # repositório e nada disto é versionado. Não há aqui um único caminho de
+  # código-fonte, e não deve passar a haver.
+  ignored_paths:
+    - '**/node_modules/**'
+    - '**/.next/**'
+    - '**/dist/**'
+    - '**/coverage/**'
+    - '**/*.tsbuildinfo'
+
+  # Vazio, e é para continuar assim. Um segredo que aqui aparecesse deixaria de
+  # ser detetado em todo o repositório, incluindo onde fosse a sério.
+  ignored_matches: []
+
+  # Nenhum detetor desligado. Se um deles der falsos positivos a mais, o que se
+  # corrige é o ficheiro que os provoca.
+  ignored_detectors: []
