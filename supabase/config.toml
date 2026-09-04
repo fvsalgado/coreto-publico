@@ -45,14 +45,31 @@ enabled = false
 enabled = false
 
 [storage]
-# Ligado porque a migração 0008 cria os baldes (`media`, `intake`) e as suas
-# policies — sem o serviço, o esquema `storage` fica aquém do que ela espera.
+# Ligado — e a razão medida não é a que aqui esteve escrita.
+#
+# Dizia-se que era a migração 0008, que insere em `storage.buckets` e cria uma
+# policy sobre `storage.objects`. **Não é.** Com `supabase start -x
+# gotrue,storage-api`, as 125 migrações aplicam-se todas sem um erro (execução
+# 33872432452 do CI).
+#
+# O que parte é o caminho de dados em execução. Sem estes dois serviços o
+# sítio deixou de conseguir ler as regiões, e a consequência foi total: TODOS
+# os anfitriões passaram a desconhecidos, a raiz caiu na página do produto e
+# tudo o resto respondeu 404 — 61 asserções do `verificar-regioes.mjs` em
+# baixo. O mecanismo exato não está apurado; o que está medido é que
+# excluí-los parte a leitura, e é quanto basta para não o fazer.
+#
+# Valeu a pena por outra razão: a queda passou despercebida a todas as
+# asserções de fuga («sem uma letra do Médio Tejo» passou em tudo, porque uma
+# página 404 não tem letra nenhuma). Foi o `responde 200` que a apanhou. Um
+# guardião que só procurasse fugas teria ficado verde sobre um sítio inteiro
+# em baixo.
 enabled = true
 
 [auth]
-# Ligado por arrasto do storage: o serviço de ficheiros valida os testes de
-# saúde com os JWT que o GoTrue emite, e sem ele não arranca. O sítio em si
-# nunca fala com nenhum dos dois — só com o PostgREST.
+# Ligado por arrasto do storage — ver acima. O sítio em si nunca fala com
+# nenhum dos dois; fala só com o PostgREST, o que torna a queda acima tão
+# pouco intuitiva quanto real.
 enabled = true
 
 [analytics]
