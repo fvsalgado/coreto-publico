@@ -67,6 +67,36 @@ jobs:
             exit 1
           fi
 
+          # Espaços e mudanças de linha que vieram na cópia.
+          #
+          # Nenhum destes seis valores pode conter espaço: são um URL, uma
+          # frase em base64url, duas chaves hexadecimais, um nome de balde e um
+          # endereço. Um salto de linha colado sem querer — porque a string
+          # apareceu quebrada no painel de onde se copiou — passa na verificação
+          # de «não está vazia» e rebenta três passos à frente, com o `pg_dump`
+          # a dizer «unexpected spaces» e a mostrar a string **mascarada**, que
+          # é precisamente o que impede de ver onde está o espaço.
+          #
+          # Aqui diz-se qual das configurações é, que é o que falta saber.
+          sujas=''
+          verificar_espacos() {
+            case "$2" in
+              *[[:space:]]*) sujas="${sujas} $1" ;;
+            esac
+          }
+          verificar_espacos BACKUP_DATABASE_URL         "${DATABASE_URL}"
+          verificar_espacos BACKUP_PASSPHRASE           "${BACKUP_PASSPHRASE}"
+          verificar_espacos BACKUP_S3_ACCESS_KEY_ID     "${BACKUP_S3_ACCESS_KEY_ID}"
+          verificar_espacos BACKUP_S3_SECRET_ACCESS_KEY "${BACKUP_S3_SECRET_ACCESS_KEY}"
+          verificar_espacos BACKUP_S3_BUCKET            "${BACKUP_S3_BUCKET}"
+          verificar_espacos BACKUP_S3_ENDPOINT          "${BACKUP_S3_ENDPOINT}"
+          if [ -n "${sujas}" ]; then
+            echo "Com espaços ou mudanças de linha:${sujas}" >&2
+            echo "Volta a colar cada uma numa linha só, sem espaço antes nem depois." >&2
+            echo "Ver docs/BACKUPS.md." >&2
+            exit 1
+          fi
+
           # Não é obrigatória — tem omissão — mas a omissão é uma região da AWS,
           # e contra um balde R2 da Cloudflare a assinatura falha. Aviso em vez
           # de falha: quem usar outro fornecedor tem a omissão certa.
