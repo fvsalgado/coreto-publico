@@ -123,7 +123,15 @@ jobs:
         run: |
           FICHEIRO="coreto-$(date --utc +%Y%m%d).dump"
           echo "FICHEIRO=${FICHEIRO}" >> "${GITHUB_ENV}"
-          docker run --rm --volume "${PWD}:/saida" --env DATABASE_URL postgres:17 \
+          # `--user` porque a imagem oficial do Postgres não declara nenhum, e
+          # um comando avulso corre como root: o ficheiro sairia de root, e o
+          # `shred` do passo seguinte — que precisa de escrever para destruir —
+          # ficaria com «Permission denied» sobre a própria cópia. Ler bastava
+          # ao `gpg`, o que fazia isto falhar só no passo a seguir ao que o
+          # causou. O `pg_dump` não precisa de utilizador do sistema: o nome
+          # com que se autentica vem no próprio endereço de ligação.
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "${PWD}:/saida" --env DATABASE_URL postgres:17 \
             pg_dump "${DATABASE_URL}" \
               --format=custom \
               --compress=9 \
