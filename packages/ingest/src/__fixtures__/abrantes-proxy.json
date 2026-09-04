@@ -1,0 +1,195 @@
+{
+ "_captured": "https://sitecmaproxy.cm-abrantes.pt/proxy/agenda/eventos — 2026-08-28, com Origin: https://www.cm-abrantes.pt (recolha autorizada pela CM de Abrantes). lstAtividadesPassado truncado a 3 de 222.",
+ "sucess": true,
+ "code": 200,
+ "message": "OK",
+ "errors": [],
+ "payload": {
+  "lstAtividadesPassado": [
+   {
+    "id": 1564,
+    "titulo": "Union Salsera ",
+    "projeto": "Animação de Verão ",
+    "local": "Praça Barão da Batalha",
+    "dataInicio": "27-08-2026",
+    "dataFim": "27-08-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a6381652d274c507016ee4e.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 1576,
+    "titulo": " PAI QUE SE TORNOU MÃE",
+    "projeto": "Animação de Verão ",
+    "local": "Jardim da República",
+    "dataInicio": "22-08-2026",
+    "dataFim": "22-08-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a637c3f2d274c507016edc9.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 639,
+    "titulo": "XVIII Torneio Internacional de Iniciados – Abrantes 2026",
+    "projeto": "",
+    "local": "Cidade Desportiva de Abrantes (campo nº1, campo nº2 e campo nº3 em Rossio ao Sul do Tejo), campo CUF em Alferrarede, campo Comendador Eduardo Duarte Ferreira me Tramagal e campo de jogos do Pego",
+    "dataInicio": "21-08-2026",
+    "dataFim": "23-08-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a7c476bb8332cec5cbc7904.png",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   }
+  ],
+  "lstAtividadesHoje": [
+   {
+    "id": 1501,
+    "titulo": "Armistício de verão",
+    "projeto": "",
+    "local": "MIAA – Museu Ibérico de Arqueologia e Arte de Abrantes",
+    "dataInicio": "16-05-2026",
+    "dataFim": "03-01-2027",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a033414861ee6aca032eec8.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 1571,
+    "titulo": "Um Rio de Memórias",
+    "projeto": "Bandeira Azul",
+    "local": "Praia Fluvial de Aldeia do Mato",
+    "dataInicio": "01-07-2026",
+    "dataFim": "31-08-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a6b232ca080138dc510fb43.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Ambiente"
+   },
+   {
+    "id": 1553,
+    "titulo": "ESPECTRO",
+    "projeto": "",
+    "local": "MIAA – Museu Ibérico de Arqueologia e Arte de Abrantes",
+    "dataInicio": "11-07-2026",
+    "dataFim": "10-01-2027",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a3cf4bc21b0631b8029b111.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   }
+  ],
+  "lstAtividadesFuturo": [
+   {
+    "id": 649,
+    "titulo": "FIF Abrantes",
+    "projeto": "",
+    "local": "Praça Barão da Batalha",
+    "dataInicio": "03-09-2026",
+    "dataFim": "03-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a88579bbc3d02fd31fb50cd.png",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 648,
+    "titulo": "Festival ao Alto ",
+    "projeto": "",
+    "local": "Alto de Santo António",
+    "dataInicio": "04-09-2026",
+    "dataFim": "06-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 1608,
+    "titulo": "DisCup – Torneio Concelhio de Pré-Época AFS - 2026",
+    "projeto": "DisCup – Torneio Concelhio de Pré-Época AFS",
+    "local": "Campos das Equipas Participantes e Cidade Desportiva de Abrantes",
+    "dataInicio": "05-09-2026",
+    "dataFim": "05-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a8dc35fa5c84d822e7bc250.png",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   },
+   {
+    "id": 1610,
+    "titulo": "InCup - Taça Concelhia Pré-Época INATEL - 2026",
+    "projeto": "InCup - Taça Concelhia Pré-Época INATEL",
+    "local": "Campos das Equipas Participantes e Cidade Desportiva de Abrantes",
+    "dataInicio": "06-09-2026",
+    "dataFim": "06-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a7dc16db8332cec5cbc92f3.png",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   },
+   {
+    "id": 1612,
+    "titulo": "Caminhadas Abrantes 2026 - Freguesia de São Miguel do Rio Torto e Rossio ao Sul do Tejo",
+    "projeto": "Caminhadas Abrantes ",
+    "local": "Largo das Festas Arreciadas",
+    "dataInicio": "12-09-2026",
+    "dataFim": "12-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a8442f66677ce64115cf84f.png",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   },
+   {
+    "id": 1617,
+    "titulo": "V Edição - Congresso do Desporto ",
+    "projeto": "",
+    "local": "Auditório Abrantes - Edifício Pirâmide",
+    "dataInicio": "25-09-2026",
+    "dataFim": "25-09-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a882ba3bc3d02fd31fb4c4a.jpg",
+    "tipo": "Atividade",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   },
+   {
+    "id": 624,
+    "titulo": "Trail Abrantes 100",
+    "projeto": "",
+    "local": "Partida, Praça Barão da Batalha",
+    "dataInicio": "10-10-2026",
+    "dataFim": "11-10-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a3132953b3411247c4cae6d.png",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   },
+   {
+    "id": 600,
+    "titulo": "Era uma vez outra vez - ciclo de contadores de histórias",
+    "projeto": "",
+    "local": "Biblioteca Municipal António Botto",
+    "dataInicio": "27-10-2026",
+    "dataFim": "27-10-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/698c79262c1eac1a03bf4fa8.jpg",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Cultura"
+   },
+   {
+    "id": 640,
+    "titulo": "Mini e Meia Maratona de Abrantes",
+    "projeto": "",
+    "local": "TAGUSVALLEY – Parque de Ciência e Tecnologia de Abrantes",
+    "dataInicio": "08-11-2026",
+    "dataFim": "08-11-2026",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a5f59ac2d274c507016ba9b.png",
+    "tipo": "Evento",
+    "estado": "Disponível",
+    "areaTematica": "Desporto"
+   }
+  ]
+ }
+}

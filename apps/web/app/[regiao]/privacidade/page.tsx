@@ -1,0 +1,340 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { PageHeader } from '@/src/components/PageHeader';
+import { Pontos } from '@/src/components/informacoes/Pontos';
+import { PorExtenso } from '@/src/components/informacoes/PorExtenso';
+import { PRIVACIDADE, SUBCONTRATANTES } from '@/src/components/informacoes/privacidade';
+import { hasAnalytics } from '@/src/lib/env';
+import { formatLongDate } from '@/src/lib/format';
+import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { seccaoLigada } from '@/src/lib/queries/seccoes';
+import { REVISAO_PRIVACIDADE } from '@/src/lib/revisao';
+
+export const metadata: Metadata = {
+  title: 'Privacidade',
+  description:
+    'O que o Coreto faz com os seus dados, e o que não faz: sem cookies de rastreio, sem conta, sem perfis. A política de privacidade por extenso, em português simples.',
+  alternates: { canonical: '/privacidade' },
+};
+
+/**
+ * A política de privacidade, com endereço próprio.
+ *
+ * Viveu dentro de `/informacoes`, e a fusão fazia sentido: quem quer saber o
+ * que é isto quer saber, no mesmo momento, se pode confiar. Deixou de fazer
+ * no dia em que as informações passaram a ser uma secção que se desliga no
+ * painel: desligada, a página responde 404 — e levava consigo a única
+ * descrição do que o sítio faz com o email de quem envia um evento. O RGPD
+ * (artigo 13.º) quer essa informação à vista de quem dá os dados, e
+ * `/submeter` pede um email em qualquer região, com as informações ligadas ou
+ * não. Um 404 num texto legal não é uma escolha que um painel possa dar.
+ *
+ * Por isso esta página não tem `exigirSeccao`: não pertence a secção nenhuma
+ * e não há interruptor que a apague. O resumo em quatro pontos continua em
+ * `/informacoes#privacidade`, a apontar para aqui; o texto por extenso está
+ * só aqui, para não haver duas cópias a divergir.
+ */
+export default async function PrivacidadePage({ params }: { params: Promise<{ regiao: string }> }) {
+  const { regiao: regiaoId } = await params;
+  const regiao = await exigirRegiao(regiaoId);
+
+  // O texto nomeia páginas que se desligam no painel; nomeia-as só quando
+  // existem. A página das informações é o contexto de onde isto veio, e a
+  // ligação de volta só se desenha quando há para onde voltar.
+  const [haCoretos, haInformacoes] = await Promise.all([
+    seccaoLigada(regiao.id, 'coretos'),
+    seccaoLigada(regiao.id, 'informacoes'),
+  ]);
+  const EMAIL = regiao.email;
+
+  return (
+    <article className="max-w-2xl">
+      <PageHeader
+        title="Privacidade"
+        eyebrow="O projeto"
+        lead="O que o Coreto faz com os seus dados, e o que não faz. Primeiro em quatro pontos; a política por extenso logo a seguir."
+      />
+
+      <p className="text-muted">
+        O Coreto é uma agenda de eventos, não um negócio de dados. Recolhe o mínimo para funcionar —
+        e o mínimo é isto:
+      </p>
+      <Pontos pontos={PRIVACIDADE} />
+
+      <PorExtenso titulo="A política de privacidade por extenso">
+        {/*
+          Quem responde pelo tratamento é a região que o declara — a coluna
+          `data_controller_*`, com a CIM como omissão. O MODELO (a CIM como
+          responsável, o Coreto como quem opera) é uma decisão contratual do
+          dono do software, CIM a CIM, e não deste código: o código limita-se
+          a mostrar o que a linha da região diz. Ver docs/RGPD.md.
+        */}
+        {regiao.responsavelPeloTratamento ? (
+          <>
+            <h2 className="font-semibold">Quem responde pelo tratamento</h2>
+            <p>
+              O responsável pelo tratamento dos dados pessoais recolhidos por este sítio é a{' '}
+              <a
+                href={regiao.responsavelPeloTratamento.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-4"
+              >
+                {regiao.responsavelPeloTratamento.nome}
+              </a>
+              {EMAIL ? (
+                <>
+                  . Para qualquer questão sobre os seus dados, o contacto é{' '}
+                  <a href={`mailto:${EMAIL}`} className="underline underline-offset-4">
+                    {EMAIL}
+                  </a>
+                </>
+              ) : null}
+              .
+            </p>
+          </>
+        ) : null}
+
+        <h2 className={regiao.responsavelPeloTratamento ? 'pt-2 font-semibold' : 'font-semibold'}>
+          Não há aviso de cookies, e porquê
+        </h2>
+        <p>
+          O artigo 5.º da Lei n.º 41/2004 exige consentimento para guardar informação no equipamento
+          de quem visita — mas ressalva o armazenamento estritamente necessário para um serviço que
+          a pessoa pediu. Uma preferência de visualização que alguém acabou de escolher, ela mesma,
+          ao carregar num botão, é precisamente isso. Pedir consentimento para cumprir a escolha que
+          se acabou de fazer seria perguntar duas vezes a mesma coisa.
+        </p>
+        <p>
+          A preferência fica no <i lang="en">localStorage</i> do navegador, na chave{' '}
+          <code className="rounded bg-accent-soft px-1">coreto-theme</code>, com o valor{' '}
+          <code className="rounded bg-accent-soft px-1">light</code> ou{' '}
+          <code className="rounded bg-accent-soft px-1">dark</code>. Enquanto não carregar no botão
+          não fica lá nada. Para a apagar, basta limpar os dados deste sítio no navegador. O único
+          cookie que o sítio pode criar é o de sessão da área de moderação, e só para quem tenha
+          credenciais.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Que dados são recolhidos</h2>
+        <p>
+          <strong>De quem envia um evento:</strong> o endereço de email, que é obrigatório — sem ele
+          não há como pedir um esclarecimento nem avisar que o evento foi publicado —, o nome e a
+          organização se os quiser dar, e os dados do evento, incluindo anexos como cartazes ou
+          agendas em PDF. O mesmo vale para o que chega ao endereço de submissões: guardamos o
+          remetente, o assunto, o corpo e os anexos.
+        </p>
+        <p>
+          <strong>Para travar abuso:</strong> um hash com sal do endereço IP de quem submete, nunca
+          o endereço em si. Serve para contar quantos pedidos vêm do mesmo sítio numa janela de
+          tempo. Não permite reconstruir o endereço nem identificar ninguém, e é apagado ao fim de
+          dois dias.
+        </p>
+        <p>
+          <strong>De quem só visita:</strong> nada. O fornecedor de alojamento mantém, como qualquer
+          alojamento, registos técnicos de acesso para segurança e diagnóstico; esses registos não
+          são usados por nós para analisar comportamentos.
+        </p>
+
+        <h2 className="pt-2 font-semibold">O que sai daqui para fora</h2>
+        <p>
+          <strong>Três coisas, e vale a pena dizer quais e onde.</strong> Nenhuma delas leva cookies
+          nem identificadores nossos; todas elas revelam o seu endereço IP ao servidor a que o
+          navegador vai buscar a imagem, como acontece com qualquer imagem servida por terceiros.
+        </p>
+        <p>
+          <strong>Os pedaços do mapa</strong>, e só em <Link href="/mapa">/mapa</Link>. O mapa da
+          agenda desenha ruas, e as ruas vêm do{' '}
+          <a
+            href="https://openfreemap.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            OpenFreeMap
+          </a>
+          , um serviço gratuito que publica dados do{' '}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            OpenStreetMap
+          </a>
+          . Ao abrir aquela página, e só então, o seu navegador pede os pedaços de mapa a{' '}
+          <code>tiles.openfreemap.org</code>, o que revela a esse servidor que pedaços do mapa está
+          a ver. Nada do que se passa no mapa volta para nós. Os contornos dos concelhos, esses, são
+          nossos: estão no repositório e desenham-se sem pedir nada a ninguém.
+        </p>
+        <p>
+          <strong>As fotografias dos espaços e dos coretos</strong>, servidas pelo{' '}
+          <a
+            href="https://commons.wikimedia.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            Wikimedia Commons
+          </a>
+          . São imagens de licença livre, e ficam onde estão em vez de serem copiadas para cá: é o
+          que mantém a atribuição ligada ao autor. Aparecem em <Link href="/espacos">/espacos</Link>
+          , na ficha de cada espaço
+          {haCoretos ? (
+            <>
+              , em <Link href="/coretos">/coretos</Link>
+            </>
+          ) : null}{' '}
+          e na página de cada concelho, e é aí que o seu navegador pede a imagem a{' '}
+          <code>commons.wikimedia.org</code>. A{' '}
+          <a
+            href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            política de privacidade da Fundação Wikimedia
+          </a>{' '}
+          diz o que essa fundação faz com o que recebe.
+        </p>
+        <p>
+          <strong>Os cartazes dos eventos</strong>, que vêm do sítio de quem organiza — as câmaras e
+          as juntas de freguesia da região, cada evento do seu. Pela mesma razão: um cartaz é de
+          quem o fez, e ligá-lo é mais honesto do que copiá-lo. Aparece onde o evento aparecer: na
+          agenda, na página inicial, no mapa e na ficha.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Como é medida a utilização</h2>
+        <p>
+          Cada ficha de evento tem quatro contadores: quantas vezes foi aberta e quantas vezes se
+          carregou em «Bilhetes e reservas», em «Adicionar ao calendário» e em «Partilhar». A tabela
+          onde ficam não tem coluna nenhuma que identifique quem visitou: nem endereço IP, nem
+          identificador de sessão ou de dispositivo, nem sequer a data e a hora de cada visita.
+          Respondem a «esta ficha foi aberta 412 vezes» e nunca a «por quem». Estes totais são
+          públicos, precisamente porque não há neles nada de ninguém.
+        </p>
+        {hasAnalytics ? (
+          <p>
+            Para além dos contadores, o sítio usa o PostHog para saber que páginas são usadas. Corre
+            sem cookies e sem <i lang="en">localStorage</i> — o identificador que a ferramenta gera
+            fica só em memória e desaparece quando o separador fecha —, sem gravação de sessão, sem
+            captura automática de cliques, sem inquéritos e sem criação de perfis. Os dados ficam em
+            servidores na União Europeia, com a opção que descarta o endereço IP ativada.
+          </p>
+        ) : (
+          <p>
+            Não corre aqui nenhuma ferramenta de estatísticas de terceiros. O código prevê o PostHog
+            em modo sem cookies, mas sem chave configurada não é carregado: não sai daqui um único
+            pedido para lá.
+          </p>
+        )}
+        <p>
+          Como estas contagens não permitem identificar ninguém, também não há maneira de as separar
+          por pessoa: não conseguimos dizer-lhe quais são as suas nem apagá-las isoladamente, porque
+          não sabemos quais são (artigo 11.º do RGPD). Se preferir não ser contado, qualquer
+          bloqueador de conteúdos trava estes pedidos, e o sítio continua a funcionar na mesma.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Com que fundamento</h2>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            <strong>Submissões de eventos</strong> — diligências a pedido do titular dos dados,
+            alínea b) do n.º 1 do artigo 6.º do RGPD. Quem envia um evento pede que o tratemos e
+            publiquemos.
+          </li>
+          <li>
+            <strong>Hash do IP e limitação de tráfego</strong> — interesse legítimo, alínea f) do
+            n.º 1 do artigo 6.º: manter o serviço de pé. Pesámos o impacto na privacidade, e foi por
+            isso que o endereço nunca é guardado em claro.
+          </li>
+          <li>
+            <strong>Contadores e estatísticas</strong> — o mesmo interesse legítimo: saber que
+            programação interessa, para o devolver a quem organiza. Contam-se acontecimentos, não
+            pessoas.
+          </li>
+        </ul>
+        <p>
+          O conteúdo do evento é publicado — é para isso que é enviado. Os dados de contacto de quem
+          o envia <strong>não são publicados</strong>: ficam na área de moderação.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Como é tratado o que nos enviam</h2>
+        <p>
+          O que chega é processado automaticamente para dele se extraírem os campos do evento e é
+          sempre revisto por uma pessoa antes de ser publicado. Nenhuma decisão com efeitos sobre
+          quem submete é tomada sem intervenção humana. Quando a extração falha, a mensagem original
+          fica guardada tal como chegou para que alguém a possa tratar à mão.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Durante quanto tempo</h2>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            <strong>Registos de limitação de tráfego</strong> (hashes de IP): apagados ao fim de
+            dois dias.
+          </li>
+          <li>
+            <strong>Submissões e emails recebidos</strong>, com os contactos de quem os enviou: até
+            24 meses após a data do evento.
+          </li>
+          <li>
+            <strong>Eventos publicados</strong>: ficam em arquivo, porque a memória da programação
+            de uma região tem valor próprio. Não contêm dados de contacto.
+          </li>
+          <li>
+            <strong>Contadores por evento</strong>: duram o que durar o evento no catálogo e são
+            apagados com ele.
+          </li>
+        </ul>
+
+        <h2 className="pt-2 font-semibold">Quem tem acesso</h2>
+        <p>
+          Apenas quem faz a moderação do Coreto, e apenas ao que precisa de ver para decidir se um
+          evento é publicado. Não vendemos, não trocamos nem cedemos dados a terceiros para fins
+          comerciais. Há fornecedores que atuam como subcontratantes e apenas segundo as nossas
+          instruções: {SUBCONTRATANTES}. Se algum deles tratar dados fora do Espaço Económico
+          Europeu, fá-lo ao abrigo das cláusulas contratuais-tipo aprovadas pela Comissão Europeia.
+        </p>
+
+        <h2 className="pt-2 font-semibold">Os seus direitos</h2>
+        <p>
+          Tem direito a pedir o acesso aos seus dados, a retificação do que estiver errado, o
+          apagamento, a limitação do tratamento e a portabilidade, e a opor-se ao tratamento fundado
+          em interesse legítimo. Basta escrever para{' '}
+          {EMAIL ? (
+            <a href={`mailto:${EMAIL}`} className="underline underline-offset-4">
+              {EMAIL}
+            </a>
+          ) : (
+            'o email da agenda'
+          )}
+          ; respondemos no prazo de um mês. Se entender que os seus dados não estão a ser tratados
+          como deviam, pode reclamar junto da Comissão Nacional de Proteção de Dados (CNPD).
+        </p>
+
+        <h2 className="pt-2 font-semibold">Quando esta política mudou</h2>
+        <p>
+          Última alteração a{' '}
+          <time dateTime={REVISAO_PRIVACIDADE}>{formatLongDate(REVISAO_PRIVACIDADE)}</time>: o mapa
+          da agenda passou a pedir os pedaços de mapa a um serviço de fora, e isso passou a estar
+          dito acima. Esta data muda quando mudar um tratamento — não quando mudar o resto da
+          página.
+        </p>
+      </PorExtenso>
+
+      <p className="mt-10 text-sm text-muted">
+        A declaração de acessibilidade tem a sua própria página, em{' '}
+        <Link href="/acessibilidade" className="underline underline-offset-4">
+          /acessibilidade
+        </Link>
+        {haInformacoes ? (
+          <>
+            . O que é o Coreto, porque se chama assim e quem o faz está nas{' '}
+            <Link href="/informacoes" className="underline underline-offset-4">
+              informações
+            </Link>
+          </>
+        ) : null}
+        .
+      </p>
+    </article>
+  );
+}

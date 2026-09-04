@@ -1,0 +1,143 @@
+{
+  "_nota": "Fixture INVENTADA para os testes do leitor wordpress-events. Imita a forma da resposta de /wp-json/tribe/events/v1/events (The Events Calendar) com eventos, sítios e endereços que não existem. Nada aqui é conteúdo de terceiros: o que está em prova é o contrato da API, não um sítio.",
+  "events": [
+    {
+      "id": 101,
+      "global_id": "agenda-inventada.example?id=101",
+      "status": "publish",
+      "date": "2026-08-20 10:12:33",
+      "modified": "2026-08-28 09:00:00",
+      "url": "https://agenda-inventada.example/event/noite-de-fado/",
+      "rest_url": "https://agenda-inventada.example/wp-json/tribe/events/v1/events/101",
+      "title": "Noite de Fado &#8211; Sess&atilde;o inventada",
+      "description": "<p>Uma noite de fado com vozes da terra. <strong>Reserva</strong> aconselhada.</p>\n<p>Abertura de portas às 21h00.</p>",
+      "excerpt": "<p>Uma noite de fado com vozes da terra.</p>",
+      "image": {
+        "url": "https://agenda-inventada.example/wp-content/uploads/2026/08/fado.jpg",
+        "id": 501,
+        "extension": "jpg",
+        "width": 1200,
+        "height": 800
+      },
+      "all_day": false,
+      "start_date": "2026-09-12 21:30:00",
+      "start_date_details": {
+        "year": "2026",
+        "month": "09",
+        "day": "12",
+        "hour": "21",
+        "minutes": "30",
+        "seconds": "00"
+      },
+      "end_date": "2026-09-12 23:30:00",
+      "utc_start_date": "2026-09-12 20:30:00",
+      "utc_end_date": "2026-09-12 22:30:00",
+      "timezone": "Europe/Lisbon",
+      "timezone_abbr": "WEST",
+      "cost": "10€",
+      "cost_details": {
+        "currency_symbol": "€",
+        "currency_position": "postfix",
+        "values": ["10"]
+      },
+      "website": "https://banda-inventada.example/fado",
+      "show_map": true,
+      "venue": {
+        "id": 31,
+        "venue": "Cine-Teatro da Charamela",
+        "slug": "cine-teatro-da-charamela",
+        "address": "Rua do Coreto 1",
+        "city": "Vila da Charamela",
+        "country": "Portugal",
+        "zip": "9999-001",
+        "geo_lat": 41.451,
+        "geo_lng": -7.201
+      },
+      "organizer": [],
+      "categories": [{ "name": "M&uacute;sica", "slug": "musica", "id": 7 }],
+      "tags": []
+    },
+    {
+      "id": 102,
+      "global_id": "agenda-inventada.example?id=102",
+      "status": "publish",
+      "url": "https://agenda-inventada.example/event/feira-do-livro-usado/",
+      "title": "Feira do Livro Usado",
+      "description": "",
+      "excerpt": "<p>Livros em segunda mão no jardim, o dia inteiro.</p>",
+      "image": false,
+      "all_day": true,
+      "start_date": "2026-09-19 00:00:00",
+      "end_date": "2026-09-19 23:59:59",
+      "timezone": "Europe/Lisbon",
+      "cost": "Free",
+      "website": "",
+      "venue": [],
+      "organizer": [],
+      "categories": [],
+      "tags": []
+    },
+    {
+      "id": 103,
+      "global_id": "agenda-inventada.example?id=103",
+      "status": "publish",
+      "url": "https://agenda-inventada.example/event/coretos-do-vale/",
+      "title": "Exposição «Coretos do Vale»",
+      "description": "<p>Fotografias de coretos inventados. Patente até 8 de novembro.</p>",
+      "excerpt": "",
+      "image": false,
+      "all_day": true,
+      "start_date": "2026-10-10 00:00:00",
+      "end_date": "2026-11-08 23:59:59",
+      "timezone": "Europe/Lisbon",
+      "cost": "",
+      "website": "",
+      "venue": {
+        "id": 32,
+        "venue": "Galeria da Charamela",
+        "slug": "galeria-da-charamela"
+      },
+      "organizer": [],
+      "categories": [
+        { "name": "Exposi&ccedil;&otilde;es", "slug": "exposicoes", "id": 9 },
+        { "name": "Artes Pl&aacute;sticas", "slug": "artes-plasticas", "id": 12 }
+      ],
+      "tags": []
+    },
+    {
+      "id": 104,
+      "global_id": "agenda-inventada.example?id=104",
+      "status": "publish",
+      "url": "https://agenda-inventada.example/event/baile-de-outono/",
+      "title": "Baile de Outono",
+      "description": "<p>Baile com a orquestra da casa. Termina de madrugada.</p>",
+      "excerpt": "",
+      "image": {
+        "url": "/wp-content/uploads/2026/09/baile.jpg",
+        "id": 502
+      },
+      "all_day": false,
+      "start_date": "2026-10-31 22:00:00",
+      "end_date": "2026-11-01 01:00:00",
+      "timezone": "Europe/Lisbon",
+      "cost": "Grátis",
+      "website": "",
+      "venue": {
+        "id": 33,
+        "venue": "Sociedade Filarmónica da Ponte",
+        "slug": "sociedade-filarmonica-da-ponte",
+        "address": "Largo da Ponte 3",
+        "city": "Ponte do Bombo",
+        "zip": "9999-100",
+        "geo_lat": "41.321",
+        "geo_lng": "-7.051"
+      },
+      "organizer": [],
+      "categories": [{ "name": "M&uacute;sica", "slug": "musica", "id": 7 }],
+      "tags": []
+    }
+  ],
+  "rest_url": "https://agenda-inventada.example/wp-json/tribe/events/v1/events?page=1&per_page=50&start_date=2026-09-01",
+  "total": 4,
+  "total_pages": 1
+}

@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Env files — nunca commitar segredos
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Vercel
+.vercel
+
+# Supabase
+supabase/.branches
+supabase/.temp
+supabase/seed.sql
+
+# Coverage
+coverage/
+*.lcov
+
+# Dados de execução da ingestão
+packages/ingest/.cache/
+packages/ingest/data/
+
+# Saída da sondagem das fontes. É obra de terceiros e sai como artefacto.
+sondagem/
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
+
+# Cache do Python: o extrator de fixtures corre como módulo quando se calibra
+# um adaptador à mão, e deixa isto para trás.
+__pycache__/
+*.pyc

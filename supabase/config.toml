@@ -1,0 +1,62 @@
+# A pilha Supabase local — só para o CI e para desenvolvimento.
+#
+# O projeto real vive no Supabase gerido; este ficheiro existe para o
+# `supabase start` do job `regioes`, que levanta uma base efémera, aplica as
+# migrações e a região de prova e serve o sítio inteiro sobre duas regiões.
+# Está reduzido ao que esse job usa: a base e a API REST. Tudo o resto
+# (Studio, realtime, correio) fica desligado — são contentores
+# que custavam minutos ao job e que nenhuma leitura pública toca: o sítio só
+# fala com o PostgREST, com a chave anónima.
+project_id = "coreto"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+# O mesmo tecto do projeto gerido: nenhuma consulta do sítio pede mais do que
+# isto, e um tecto diferente do real esconderia paginações partidas.
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# A maior versão que o Supabase gerido serve — a paridade com produção conta
+# mais do que a novidade.
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.seed]
+# O seed do CI (supabase/ci/9000_…) aplica-se À MÃO no job, depois do
+# `db reset`: não é um seed do produto, é a região de prova — e mantê-lo fora
+# daqui garante que um `db reset` de desenvolvimento produz exatamente a base
+# de produção, sem regiões fictícias.
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+# Ligado porque a migração 0008 cria os baldes (`media`, `intake`) e as suas
+# policies — sem o serviço, o esquema `storage` fica aquém do que ela espera.
+enabled = true
+
+[auth]
+# Ligado por arrasto do storage: o serviço de ficheiros valida os testes de
+# saúde com os JWT que o GoTrue emite, e sem ele não arranca. O sítio em si
+# nunca fala com nenhum dos dois — só com o PostgREST.
+enabled = true
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+enabled = false

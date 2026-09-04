@@ -1,0 +1,919 @@
+@import 'tailwindcss';
+
+/*
+ * O tema tem três estados: o do sistema (nenhum atributo), claro e escuro
+ * (`data-theme` na raiz, escrito pelo botão do masthead e reposto por um
+ * script antes da primeira pintura). A variante `dark:` do Tailwind tem de
+ * acompanhar os três — cobre o pedido explícito e, na falta dele, a
+ * preferência do sistema. Sem JavaScript nunca há atributo e vale sempre a
+ * preferência do sistema, como até aqui.
+ */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
+/*
+ * Paleta.
+ *
+ * As cores são as da Comunidade Intermunicipal do Médio Tejo, que promove
+ * esta agenda: o turquesa e o grafite que o `mediotejo.pt` publica no seu
+ * próprio tema — `--primary_color: #40C0C4`, `--headings_color: #181921`,
+ * `--footer_bg_color: #212129`, `--footer_text_color: #A4ACB3`. Uma agenda
+ * que se apresenta como a agenda da região usa a cara da região.
+ *
+ * O turquesa entra por dois tokens, e não por um, porque uma cor de logótipo
+ * não é uma cor de texto: `#40c0c4` sobre branco dá 2,2:1 — existe e não se
+ * lê. `--color-brand` guarda-o tal como a CIM o publica e é ele que pinta o
+ * toldo — o cabeçalho e a saia do lambrequim que lhe pende. Por cima dele não
+ * vai branco (2,2:1) mas tinta escura, `--color-on-brand` (7,9:1).
+ * `--color-accent` é o mesmo tom (matiz 182°) escurecido até passar os 4,5:1
+ * sobre o papel (6,3:1) e sob o branco dos botões (6,6:1) — não é outra cor, é
+ * a mesma, à luz a que se lê. No tema escuro o papel muda de lado e o
+ * `#40c0c4` publicado serve também para texto — 8,4:1 sobre o papel escuro.
+ *
+ * Todos os pares de cor usados para texto passam o contraste mínimo AA
+ * (4,5:1); os que delimitam um controlo passam os 3:1 do critério 1.4.11.
+ *
+ * A montra é a exceção, e está escrita mais abaixo, no âmbito
+ * `[data-paleta='montra']`: a página do produto não é de nenhuma região e não
+ * veste a cara de nenhuma — veste vermelho, para não se confundir com a
+ * agenda do Médio Tejo.
+ */
+@theme {
+  --color-paper: #f6fafb;
+  --color-surface: #ffffff;
+  --color-ink: #181921;
+  --color-muted: #4b545c;
+  --color-accent: #14676b;
+  --color-accent-deep: #212129;
+  --color-accent-soft: #dbf1f2;
+  --color-on-accent: #ffffff;
+  /*
+   * O toldo.
+   *
+   * O turquesa da CIM tal como ela o publica, sem correção nenhuma, a pintar o
+   * cabeçalho e a saia do lambrequim. É a cor viva da região e é ela que se vê
+   * primeiro; o grafite fica para o chão da casa — o rodapé, a barra de baixo
+   * e o visor.
+   *
+   * Estes dois tokens não voltam a aparecer nos blocos do tema escuro, e isso
+   * é de propósito: o toldo é a mesma cor de dia e de noite, porque é a cor da
+   * marca e não uma superfície do tema. O que muda à volta dele é que muda.
+   *
+   * Por cima do turquesa não vai branco: dá 2,2:1 e não se lê. Vai a tinta
+   * escura, que dá 7,9:1 — e é ela que a marca do coreto, o nome da casa, a
+   * navegação, o logótipo da CIM e o anel de foco usam lá dentro.
+   */
+  --color-brand: #40c0c4;
+  --color-on-brand: #181921;
+  /* Texto secundário sobre o grafite do rodapé e da barra de baixo (6,9:1). */
+  --color-on-deep-muted: #a4acb3;
+  /*
+   * A sobrancelha editorial. A paleta da CIM tem uma cor de marca só, e é
+   * esta: no `mediotejo.pt` a sobrancelha («[ NOTÍCIAS ]») é turquesa e o
+   * título por baixo é grafite. Fica num token à parte do `--color-accent` na
+   * mesma, porque os papéis são dois — uma ligação e uma etiqueta — e podem
+   * voltar a divergir sem se andar a caçar usos pelo sítio todo.
+   */
+  --color-highlight: #14676b;
+  --color-border: #dde4e7;
+  /*
+   * Uma linha que separa e uma linha que delimita um campo são coisas
+   * diferentes para a WCAG. `border` é decorativa (1,3:1 chega). A moldura de
+   * um campo de formulário, de uma caixa de seleção ou de um botão identifica
+   * um controlo, e o critério 1.4.11 exige 3:1 contra o fundo — daí o token
+   * próprio. Usar `border-border` num `<input>` é um erro de acessibilidade,
+   * não uma questão de gosto.
+   */
+  --color-field: #6b747c;
+  --color-focus: #14676b;
+
+  /*
+   * Pontos de categoria: decorativos (o nome está sempre escrito ao lado).
+   *
+   * Não se pintam todos de turquesa: são oito e o que se lhes pede é serem
+   * distinguíveis uns dos outros. Da paleta da CIM vêm os dois que eram a cor
+   * da casa antiga — a música, que passa ao turquesa, e os «outros», que
+   * passam ao cinzento-grafite. Os outros seis são o vocabulário das
+   * categorias, não a marca, e ficam como estavam.
+   */
+  --color-cat-musica: #14676b;
+  --color-cat-teatro: #9c3a1a;
+  --color-cat-danca: #8a2f62;
+  --color-cat-cinema: #24485c;
+  --color-cat-exposicoes: #a06c10;
+  --color-cat-literatura: #4a4470;
+  --color-cat-festas: #b04a12;
+  --color-cat-outros: #5c6570;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+}
+
+/*
+ * A paleta escura, escrita duas vezes de propósito: CSS não tem mixins e um
+ * seletor não entra numa media query, por isso o mesmo bloco vale uma vez
+ * para o pedido explícito (`data-theme='dark'`) e outra para a preferência
+ * do sistema quando ninguém pediu o contrário. Quem alterar uma cor altera
+ * nos dois blocos — o teste de contraste apanha o esquecimento.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-paper: #131418;
+  --color-surface: #1c1d24;
+  --color-ink: #eef1f4;
+  --color-muted: #a4acb3;
+  --color-accent: #40c0c4;
+  --color-accent-deep: #0d0e12;
+  --color-accent-soft: #172d30;
+  --color-on-accent: #101319;
+  /* `--color-brand` e `--color-on-brand` não vêm aqui: ver a paleta clara. */
+  --color-on-deep-muted: #a4acb3;
+  --color-highlight: #40c0c4;
+  --color-border: #2b2d35;
+  --color-field: #7b848d;
+  --color-focus: #40c0c4;
+
+  --color-cat-musica: #58cdd1;
+  --color-cat-teatro: #e8906a;
+  --color-cat-danca: #d989b8;
+  --color-cat-cinema: #82b3cc;
+  --color-cat-exposicoes: #d9b05e;
+  --color-cat-literatura: #a9a2d8;
+  --color-cat-festas: #e59a63;
+  --color-cat-outros: #a4acb3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --color-paper: #131418;
+    --color-surface: #1c1d24;
+    --color-ink: #eef1f4;
+    --color-muted: #a4acb3;
+    --color-accent: #40c0c4;
+    --color-accent-deep: #0d0e12;
+    --color-accent-soft: #172d30;
+    --color-on-accent: #101319;
+    /* `--color-brand` e `--color-on-brand` não vêm aqui: ver a paleta clara. */
+    --color-on-deep-muted: #a4acb3;
+    --color-highlight: #40c0c4;
+    --color-border: #2b2d35;
+    --color-field: #7b848d;
+    --color-focus: #40c0c4;
+
+    --color-cat-musica: #58cdd1;
+    --color-cat-teatro: #e8906a;
+    --color-cat-danca: #d989b8;
+    --color-cat-cinema: #82b3cc;
+    --color-cat-exposicoes: #d9b05e;
+    --color-cat-literatura: #a9a2d8;
+    --color-cat-festas: #e59a63;
+    --color-cat-outros: #a4acb3;
+  }
+}
+
+/*
+ * A paleta da montra: vermelho.
+ *
+ * A página do produto — em `coreto.org` e em qualquer anfitrião que não é de
+ * ninguém — não é a agenda de uma região e não pode parecer a do Médio Tejo,
+ * que é turquesa. Veste-se de vermelho por um atributo no invólucro,
+ * `data-paleta="montra"`, que redefine os tokens: os utilitários resolvem as
+ * cores por `var(--color-*)`, e uma variável herda-se do antepassado mais
+ * próximo que a declare — o invólucro ganha à raiz, seja qual for a
+ * especificidade dela. Nenhum componente muda de classe.
+ *
+ * O toldo, `#c2281c`, é escuro nos dois temas e por isso leva branco por cima
+ * (5,8:1) — o contrário do turquesa, que é claro e leva tinta. O
+ * `--color-accent` é o mesmo vermelho um pouco mais fundo, `#b3261e`, para se
+ * ler sobre o papel (6,2:1) e sob o branco dos botões (6,5:1). No escuro o
+ * vermelho de texto tem de clarear, `#f4806f` (7,2:1 sobre o papel escuro,
+ * 6,5:1 sobre a superfície), e o botão leva tinta escura por cima (7,2:1); o
+ * bloco de contactos assenta num vermelho apagado, `#3a1c19`, onde a tinta
+ * (13,6:1), o texto apagado (6,7:1) e o vermelho vivo (6,0:1) se leem todos.
+ * O grafite dos blocos escuros e as cores de categoria não mudam: não são a
+ * cara de uma região, são o chão da casa e o vocabulário dos dados.
+ *
+ * Escrito três vezes, como a paleta geral: uma para a luz, duas para o escuro
+ * (pedido explícito e preferência do sistema). O seletor escuro pinta o mesmo
+ * invólucro que o claro e ganha-lhe em especificidade (0,3,0 contra 0,1,0),
+ * que é o que tem de acontecer. `--color-brand` e `--color-on-brand` só se
+ * escrevem uma vez, pela mesma razão de sempre: o toldo não muda com o tema.
+ */
+[data-paleta='montra'] {
+  --color-brand: #c2281c;
+  --color-on-brand: #ffffff;
+  --color-accent: #b3261e;
+  --color-accent-soft: #fbe6e3;
+  --color-on-accent: #ffffff;
+  --color-highlight: #b3261e;
+  --color-focus: #b3261e;
+}
+
+:root[data-theme='dark'] [data-paleta='montra'] {
+  --color-accent: #f4806f;
+  --color-accent-soft: #3a1c19;
+  --color-on-accent: #101319;
+  --color-highlight: #f4806f;
+  --color-focus: #f4806f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [data-paleta='montra'] {
+    --color-accent: #f4806f;
+    --color-accent-soft: #3a1c19;
+    --color-on-accent: #101319;
+    --color-highlight: #f4806f;
+    --color-focus: #f4806f;
+  }
+}
+
+@layer base {
+  html {
+    /* Os controlos nativos (caixas de seleção, barras de scroll) seguem o
+       tema; os blocos escuros acima trocam para `dark`. */
+    color-scheme: light;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /*
+   * Guard global de movimento. `animation-delay` também vai a zero: com
+   * `animation-fill-mode: both`, um atraso sobrevivente deixaria o elemento
+   * no estado inicial (invisível) durante centenas de milissegundos.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      transition-delay: 0s !important;
+    }
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+    color: var(--color-ink);
+  }
+
+  /*
+   * O anel de foco é visível em tudo o que o recebe. Navegar o site inteiro
+   * só com teclado é requisito legal (DL 83/2018), não um extra — e é a
+   * diferença entre haver ou não agenda para quem não usa rato.
+   */
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  a,
+  button,
+  summary,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+}
+
+@layer components {
+  /*
+   * O elo que salta a navegação, e que aterra sempre por cima do toldo.
+   *
+   * O fundo é o grafite e não o `--color-accent`, e a razão é o tema escuro:
+   * lá, `--color-accent` **é** o turquesa do cabeçalho, e o elo aparecia como
+   * uma caixa da cor exacta do que está por baixo — texto a flutuar, sem
+   * caixa nem contorno, no primeiro sítio onde quem navega por teclado chega.
+   * O grafite dá 7,3:1 contra o turquesa no tema claro e 8,8:1 no escuro, e o
+   * branco por cima dele 16:1: vê-se chegar.
+   */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    padding: 0.75rem 1rem;
+    background: var(--color-accent-deep);
+    color: #ffffff;
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    left: 0.5rem;
+    top: 0.5rem;
+  }
+
+  /*
+   * E o anel também: com `outline-offset: 2px` ele cai fora da caixa, ou seja
+   * sobre o turquesa, e no tema escuro `--color-focus` é esse mesmo turquesa —
+   * 1:1. A tinta escura dá 8:1 nos dois temas.
+   */
+  .skip-link:focus-visible {
+    outline-color: var(--color-on-brand);
+  }
+
+  /*
+   * Blocos que não são papel — e o anel de foco lá dentro tem de mudar de cor.
+   *
+   * `--color-focus` é o turquesa: escurecido no tema claro, o publicado no
+   * escuro. Sobre o grafite do rodapé dá 2,4:1; sobre o próprio turquesa do
+   * toldo, no tema escuro, dá 1:1 — um anel invisível não cumpre o critério
+   * 2.4.11, e um anel invisível no cabeçalho é a primeira paragem de quem
+   * navega por teclado.
+   *
+   * São duas classes porque são dois fundos: `.ct-bloco-escuro` no grafite (o
+   * rodapé, a barra de baixo, o visor, a caixa do financiamento), com o anel
+   * a branco; `.ct-bloco-marca` no turquesa do cabeçalho, com o anel na tinta
+   * escura. Fora deles vale o anel normal, que sobre papel dá 6,3:1.
+   */
+  .ct-bloco-escuro :focus-visible {
+    outline-color: #ffffff;
+  }
+
+  .ct-bloco-marca :focus-visible {
+    outline-color: var(--color-on-brand);
+  }
+}
+
+/* ==========================================================================
+   Camada de identidade + cinética (prefixo `ct-`)
+   --------------------------------------------------------------------------
+   A linguagem vem do coreto: o lambrequim (a saia recortada do telhado), o
+   ferro fundido, o octógono do palco, o papel dos cartazes de festa. O
+   movimento está todo em CSS; o JS que existe (ScrollReveal) só escreve um
+   atributo e o browser trata do resto.
+   ========================================================================== */
+
+@layer utilities {
+  /* -------- Goteira ----------------------------------------------------- */
+
+  /*
+   * A margem lateral das caixas que ocupam a largura toda.
+   *
+   * Um `px-4` seco não chega desde que o `viewport` leva `viewportFit:
+   * 'cover'`. Esse `cover` estende a página ao ecrã inteiro — é o que dá valor
+   * ao `env(safe-area-inset-*)` e é ele que faz a barra de baixo saber onde
+   * acaba o ecrã do iPhone. Só que estende para os lados também: num iPhone
+   * deitado, o recorte do entalhe vale quatro a seis dezenas de pixéis de cada
+   * lado, e o nome da casa passava por baixo dele.
+   *
+   * `max()` é o que faz isto não custar nada a quem não tem entalhe: onde o
+   * `env()` responde zero — que é a esmagadora maioria dos ecrãs — ficam os
+   * mesmos 16 px de sempre.
+   */
+  .ct-goteira {
+    padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+  }
+
+  /* -------- Tipografia de cartaz -------------------------------------- */
+
+  /* Fraunces em escala de cartaz de festa. `clamp` para a linha respirar
+     entre larguras sem breakpoints. */
+  .ct-display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(2.4rem, 1.5rem + 3.2vw, 4.5rem);
+    line-height: 1;
+    letter-spacing: -0.025em;
+    font-variation-settings:
+      'SOFT' 40,
+      'WONK' 1;
+    text-wrap: balance;
+  }
+
+  /* O cabeçalho de secção. Entre o título da página e o texto corrido, e
+     nunca do tamanho de nenhum dos dois: era o que acontecia quando um `h2`
+     levava `ct-display-sm` — o clamp desta camada ganha às utilidades de
+     tamanho do Tailwind, que ficavam a não fazer nada, e a secção saía do
+     tamanho do título. Uma classe só, para o site inteiro ter uma escala. */
+  .ct-heading {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.3rem, 1.05rem + 0.85vw, 1.75rem);
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    font-variation-settings:
+      'SOFT' 20,
+      'WONK' 1;
+    text-wrap: balance;
+  }
+
+  .ct-display-sm {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(1.7rem, 1.1rem + 1.9vw, 2.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    font-variation-settings:
+      'SOFT' 30,
+      'WONK' 1;
+    text-wrap: balance;
+  }
+
+  /*
+   * Um bloco que se recolhe no telemóvel e está sempre aberto a partir do
+   * tablet — sem uma linha de JavaScript.
+   *
+   * É o padrão que salva a agenda no telemóvel: o formulário de filtros
+   * ocupava dois ecrãs inteiros e empurrava o primeiro evento para os mil e
+   * quatrocentos pixéis. Num ecrã largo o mesmo formulário cabe ao lado do
+   * conteúdo e não estorva ninguém, por isso não faz sentido escondê-lo lá.
+   *
+   * As duas regras cobrem as duas gerações de `<details>`: nos browsers
+   * novos o conteúdo vive num pseudo-elemento com `content-visibility`, nos
+   * antigos é um filho escondido pelo agente do utilizador. Verificado no
+   * Chromium 141: a 390 px o resumo aparece e o conteúdo fica recolhido; a
+   * 900 px o resumo desaparece e o conteúdo está lá, sem `open` nenhum.
+   */
+  .ct-recolhivel > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .ct-recolhivel > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* O sinal de abrir e fechar, que roda quando abre. */
+  .ct-recolhivel > summary::after {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translate(-25%, -25%);
+    transition: transform 150ms ease;
+  }
+
+  .ct-recolhivel[open] > summary::after {
+    transform: rotate(-135deg) translate(-25%, -25%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ct-recolhivel > summary::after {
+      transition: none;
+    }
+  }
+
+  @media (min-width: 40rem) {
+    .ct-recolhivel::details-content {
+      content-visibility: visible;
+      block-size: auto;
+    }
+
+    .ct-recolhivel > form,
+    .ct-recolhivel > .ct-recolhivel-conteudo {
+      display: block;
+    }
+
+    .ct-recolhivel > summary {
+      display: none;
+    }
+  }
+
+  /*
+   * Fila de fichas que desliza no telemóvel e se embrulha a partir do tablet.
+   *
+   * Onze concelhos em fichas do tamanho de um dedo enchem cinco linhas e
+   * trezentos e quarenta pixéis — mais de um terço do ecrã gasto antes do
+   * primeiro espaço da lista. Deitadas numa fila que desliza, ocupam uma
+   * linha e continuam todas lá. As margens negativas levam a fila até às
+   * bordas do ecrã, para a última ficha visível não parecer o fim da lista.
+   */
+  .ct-fila-fichas {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 1rem;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    scrollbar-width: none;
+  }
+
+  .ct-fila-fichas::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ct-fila-fichas > * {
+    flex: none;
+    scroll-snap-align: start;
+  }
+
+  @media (min-width: 40rem) {
+    .ct-fila-fichas {
+      flex-wrap: wrap;
+      overflow-x: visible;
+      margin-inline: 0;
+      padding-inline: 0;
+    }
+  }
+
+  /* Sobrancelha editorial: caixa alta, muito espaçada, no turquesa da CIM. */
+  .ct-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-highlight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * A mesma sobrancelha, para fundos escuros.
+   *
+   * `.ct-eyebrow` é o turquesa escurecido para se ler sobre papel, e esse
+   * turquesa sobre o grafite do rodapé dá 2,4:1 — não se lê. Não chega
+   * juntar-lhe uma utilidade de cor: esta camada vem depois das utilidades do
+   * Tailwind e ganha-lhes com a mesma especificidade, e a cor escrita ao lado
+   * ficava a não fazer nada. Daí uma classe própria, com o cinzento que a
+   * própria CIM usa sobre o grafite (6,9:1).
+   */
+  .ct-sobrancelha-clara {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-on-deep-muted);
+  }
+
+  /* Número em destaque — contagens, dias, anos. */
+  .ct-numeral {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Filete: mais escuro que --border, que é para caixas. */
+  .ct-rule {
+    border-top: 1px solid color-mix(in srgb, var(--color-ink) 16%, transparent);
+  }
+
+  /* -------- Lambrequim -------------------------------------------------- */
+
+  /* A saia recortada que pende do telhado de zinco de um coreto. É a
+     assinatura do sítio: pende do masthead e volta, invertida, no rodapé.
+     Máscara SVG embebida — sem pedido de rede — pintada com background, para
+     acompanhar o tema.
+
+     A cor por omissão é a do bloco a que ela remata, o grafite do rodapé. A
+     que pende do cabeçalho leva `.ct-lambrequim-marca` e sai turquesa: é a
+     saia do mesmo telhado, e uma saia de outra cor não é uma saia. */
+  .ct-lambrequim {
+    height: 10px;
+    background-color: var(--color-accent-deep);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='10'%3E%3Cpath d='M0 0h16v3a8 7 0 0 1-8 7A8 7 0 0 1 0 3z'/%3E%3C/svg%3E");
+    mask-size: 16px 10px;
+    mask-repeat: repeat-x;
+  }
+
+  .ct-lambrequim-marca {
+    background-color: var(--color-brand);
+  }
+
+  .ct-lambrequim-flip {
+    transform: scaleY(-1);
+  }
+
+  /* -------- Gaveta da barra de baixo ------------------------------------ */
+
+  /*
+   * Um `<summary>` sem o triângulo do navegador.
+   *
+   * `list-style: none` chega no Chromium e no Firefox; o Safari desenha o
+   * marcador por um pseudo-elemento próprio, que só sai com esta segunda
+   * regra. Faltando uma delas, o botão do «+» fica com uma seta a mais num
+   * dos dois lados do mundo — e nunca no lado onde se está a olhar.
+   */
+  .ct-sem-marca {
+    list-style: none;
+  }
+
+  .ct-sem-marca::-webkit-details-marker {
+    display: none;
+  }
+
+  /* O «+» que se torna «×» ao abrir: o mesmo traço, um oitavo de volta. */
+  .ct-cruz {
+    transition: transform 160ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ct-cruz {
+      transition: none;
+    }
+  }
+
+  /* -------- Octógono ---------------------------------------------------- */
+
+  /* A planta de um coreto. Para molduras de imagem e marcas de secção. */
+  .ct-octagon {
+    clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+  }
+
+  /* -------- Textura ----------------------------------------------------- */
+
+  /* Grão fino sobre blocos de cor lisa, como papel de cartaz. SVG embebido. */
+  /**
+   * A moldura de uma capa de evento.
+   *
+   * O cartaz é `background-image` — é o que faz a capa tipográfica aparecer
+   * limpa quando o endereço do cartaz morre, em vez do ícone de imagem
+   * partida. Só que um fundo não tem `loading="lazy"`: numa agenda de vinte e
+   * quatro cartões, o browser ia buscar os vinte e quatro cartazes de uma vez,
+   * incluindo os que estão a dez ecrãs de distância.
+   *
+   * `content-visibility: auto` é o `lazy` do CSS: o que está fora do ecrã não
+   * é desenhado, e o que não é desenhado não é descarregado. O
+   * `contain-intrinsic-size` dá a altura que o cartão teria, para a barra de
+   * scroll não saltar quando cada um entra.
+   *
+   * Onde não houver suporte, carrega tudo — que é o que fazia antes.
+   */
+  .ct-capa {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 300px;
+  }
+
+  .ct-grain {
+    position: relative;
+  }
+  .ct-grain::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  /* No escuro o grão multiplicado desaparecia; `screen` devolve-lhe a vida.
+     Os dois seletores acompanham os três estados do tema, como os tokens. */
+  [data-theme='dark'] .ct-grain::before {
+    opacity: 0.08;
+    mix-blend-mode: screen;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .ct-grain::before {
+      opacity: 0.08;
+      mix-blend-mode: screen;
+    }
+  }
+
+  /* O toldo é a exceção: é turquesa claro nos dois temas, e o `screen` do tema
+     escuro clareava-o em vez de o marcar — o grão desaparecia justamente onde
+     a textura de cartaz se vê melhor. Fica multiplicado sempre. */
+  [data-theme='dark'] .ct-bloco-marca.ct-grain::before {
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .ct-bloco-marca.ct-grain::before {
+      opacity: 0.05;
+      mix-blend-mode: multiply;
+    }
+  }
+  /* Na montra o toldo é vermelho, escuro nos dois temas, e a exceção acima
+     não lhe cabe: no escuro volta ao `screen` dos outros blocos escuros. */
+  [data-theme='dark'] [data-paleta='montra'] .ct-bloco-marca.ct-grain::before {
+    opacity: 0.08;
+    mix-blend-mode: screen;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) [data-paleta='montra'] .ct-bloco-marca.ct-grain::before {
+      opacity: 0.08;
+      mix-blend-mode: screen;
+    }
+  }
+
+  /* -------- Revelação ao scroll ----------------------------------------- */
+
+  /* A regra de ouro é falhar para VISÍVEL: `.ct-reveal` por si não esconde
+     nada. Quem esconde é o `data-ct-reveal="armed"` que o ScrollReveal
+     escreve, e só nas secções abaixo da dobra no arranque. Sem JS, com JS
+     avariado ou com menos movimento pedido, o atributo nunca aparece e a
+     página lê-se toda. */
+  [data-ct-reveal] {
+    transition:
+      opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  [data-ct-reveal='armed'] {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  /* Tabular para dentro de uma secção por revelar tem de a revelar: sem
+     isto, o anel de foco ficava dentro de um bloco a opacidade 0 (SC 2.4.7). */
+  [data-ct-reveal='armed']:focus-within {
+    opacity: 1;
+    transform: none;
+  }
+  [data-ct-reveal='in'] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Entrada do masthead — por tempo, acima da dobra. `--ct-i` escalona. */
+  .ct-enter {
+    animation: ct-enter 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--ct-i, 0) * 80ms);
+  }
+
+  @keyframes ct-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.85rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* -------- Banda de concelhos ------------------------------------------ */
+
+  /* O conteúdo é duplicado no markup e desloca-se exatamente -50%: o ponto
+     de recomeço coincide com o de partida, sem salto visível. */
+  .ct-marquee {
+    animation: ct-marquee var(--ct-marquee-duration, 48s) linear infinite;
+    will-change: transform;
+  }
+  /* Hover e foco pausam por cortesia; `.ct-paused` é o mecanismo a sério,
+     o que o botão liga (SC 2.2.2). */
+  .ct-marquee-host:hover .ct-marquee,
+  .ct-marquee-host:focus-within .ct-marquee,
+  .ct-marquee.ct-paused {
+    animation-play-state: paused;
+  }
+
+  @keyframes ct-marquee {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-50%, 0, 0);
+    }
+  }
+
+  /* -------- Rail horizontal --------------------------------------------- */
+
+  .ct-rail {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ct-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .ct-rail > * {
+    scroll-snap-align: start;
+  }
+
+  /* O desvanecer na margem direita de uma prateleira: é ele que diz «há
+     mais», já que a barra de scroll fica escondida. Só à direita — à
+     esquerda taparia a borda do primeiro cartão sem dizer nada de novo. */
+  .ct-shelf-wrap {
+    position: relative;
+  }
+  .ct-shelf-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 3rem;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--color-paper));
+  }
+
+  /* -------- Cartões ------------------------------------------------------ */
+
+  .ct-lift {
+    transition:
+      transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ct-lift:hover,
+  .ct-lift:focus-within {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--color-ink) 35%, transparent);
+  }
+}
+
+/* ==========================================================================
+   Impressão
+   --------------------------------------------------------------------------
+   O relatório mensal (/admin/relatorios) é para se entregar em papel, e o
+   que se entrega não leva a barra do painel, o formulário que escolheu o mês
+   nem o tema escuro. `.ct-sem-impressao` marca o que fica no ecrã.
+
+   As cores repõem-se à mão porque os tokens do tema escuro continuam a valer
+   ao imprimir — a preferência do sistema não muda por se carregar em Ctrl+P
+   —, e uma impressora a encher folhas de grafite é papel e tinta deitados
+   fora. O seletor duplo tem a especificidade do bloco escuro do sistema
+   (`:root:not([data-theme='light'])`) e vem depois dele, que é o que faz
+   ganhar. Fica fora das camadas de propósito: uma regra sem camada ganha a
+   todas as utilidades, e é isso que se quer de uma folha de impressão.
+   ========================================================================== */
+
+@media print {
+  .ct-sem-impressao {
+    display: none !important;
+  }
+
+  :root,
+  :root:not([data-theme='light']) {
+    color-scheme: light;
+    --color-paper: #ffffff;
+    --color-surface: #ffffff;
+    --color-ink: #000000;
+    --color-muted: #333333;
+    --color-accent: #000000;
+    --color-highlight: #000000;
+    --color-border: #999999;
+    --color-field: #666666;
+  }
+
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  /* Uma tabela cortada a meio da folha é uma tabela que se lê duas vezes. */
+  table,
+  thead,
+  tfoot,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  /* As caixas deslocáveis mostram-se inteiras: em papel não há para onde
+     deslocar. */
+  [role='region'] {
+    overflow: visible;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

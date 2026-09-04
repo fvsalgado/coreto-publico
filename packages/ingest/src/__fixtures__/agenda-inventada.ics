@@ -1,0 +1,100 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Coreto//Fixture inventada//PT
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Agenda inventada do Vale do Coreto
+X-CORETO-NOTA:Ficheiro INVENTADO para os testes do leitor iCalendar. Os eve
+ ntos\, os sítios e os endereços não existem\; nada aqui é conteúdo de terce
+ iros. Serve para provar o formato — RFC 5545 — e não um sítio.
+X-WR-TIMEZONE:Europe/Lisbon
+BEGIN:VTIMEZONE
+TZID:Europe/Lisbon
+BEGIN:STANDARD
+DTSTART:19961027T020000
+RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0000
+TZNAME:WET
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:19810329T010000
+RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU
+TZOFFSETFROM:+0000
+TZOFFSETTO:+0100
+TZNAME:WEST
+END:DAYLIGHT
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:evt-0001@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART;TZID=Europe/Lisbon:20260912T213000
+DTEND;TZID=Europe/Lisbon:20260912T230000
+SUMMARY:Concerto da Banda da Charamela
+DESCRIPTION:A banda toca o repertório de verão\, com convidados\; entrada
+  livre.\nTraga cadeira.
+LOCATION:Cine-Teatro da Charamela\, Rua do Coreto 1\, Vila da Charamela
+URL:https://agenda-inventada.example/eventos/concerto-da-banda
+CATEGORIES:Música,Bandas filarmónicas
+STATUS:CONFIRMED
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Lembrete do alarme — não é a descrição do evento
+TRIGGER:-PT30M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0002@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART;VALUE=DATE:20260919
+DTEND;VALUE=DATE:20260920
+SUMMARY:Feira do Livro Usado
+LOCATION:Jardim da Charamela
+URL:https://agenda-inventada.example/eventos/feira-do-livro-usado
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0003@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART:20261003T200000Z
+DTEND:20261003T220000Z
+SUMMARY:Cinema ao ar livre: sessão inventada
+DESCRIPTION:Sessão de cinema no adro. O servidor escreve as horas em UTC.
+LOCATION:Adro da Igreja da Ponte
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0004@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART;TZID=Europe/Lisbon:20260926T160000
+DTEND;TZID=Europe/Lisbon:20260926T180000
+SUMMARY:Oficina de cerâmica (cancelada)
+STATUS:CANCELLED
+LOCATION:Casa do Povo da Ponte
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0005@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART;TZID=Europe/Lisbon:20260908T183000
+DTEND;TZID=Europe/Lisbon:20260908T200000
+RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261215T235959Z
+SUMMARY:Oficina de teatro para famílias
+LOCATION:Cine-Teatro da Charamela
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0006@agenda-inventada.example
+DTSTAMP:20260801T100000Z
+DTSTART;VALUE=DATE:20260814
+DTEND;VALUE=DATE:20260817
+SUMMARY:Arraial de agosto
+LOCATION:Largo da Ponte
+END:VEVENT
+BEGIN:VEVENT
+UID:evt-0007@agenda-inventada.example
+DTSTAMP:20260901T100000Z
+DTSTART;VALUE=DATE:20261010
+DTEND;VALUE=DATE:20261109
+SUMMARY:Exposição «Coretos do Vale»
+DESCRIPTION:Fotografias de coretos inventados. Patente até 8 de novembro.
+LOCATION:Galeria da Charamela
+URL:https://agenda-inventada.example/eventos/coretos-do-vale
+END:VEVENT
+END:VCALENDAR

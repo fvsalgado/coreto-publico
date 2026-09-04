@@ -1,0 +1,28 @@
+node_modules/
+.next/
+dist/
+coverage/
+pnpm-lock.yaml
+supabase/migrations/
+LICENSE
+
+# Gerado pelo Next a cada compilação. Formatá-lo é uma verificação que falha
+# sozinha: o próximo `next build` reescreve-o na forma que o Prettier recusa.
+apps/web/next-env.d.ts
+
+# As fixtures são o que os servidores mandaram, byte a byte. Reformatá-las
+# destruiria a única coisa que lhes dá valor: serem um registo fiel do que a
+# câmara publica. Um adaptador calibrado contra HTML embelezado está calibrado
+# contra uma página que não existe.
+packages/ingest/src/__fixtures__/
+
+# Os instantâneos são o que o servidor mandou, byte a byte, no dia em que
+# alguém guardou a página. Pela mesma razão das fixtures: reformatá-los tira-
+# lhes a única coisa que lhes dá valor, que é serem um registo fiel.
+instantaneos/**/*.html
+
+# Escrito por `scripts/gerar-inventario.mjs` a partir da base. Formatá-lo é
+# uma verificação que falha sozinha: a próxima geração reescreve-o na forma
+# que o Prettier recusa. As tabelas saem alinhadas pelo gerador, não pelo
+# formatador.
+docs/INVENTARIO.md

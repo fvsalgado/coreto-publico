@@ -1,0 +1,318 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Uma execução por ramo. Um «push» novo torna a execução anterior irrelevante
+# antes de ela acabar, e deixá-la a correr só atrasa a que interessa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    name: Qualidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # A versão do pnpm vem do campo «packageManager» do package.json, para
+      # não haver duas fontes de verdade a divergir em silêncio.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Nada aqui recebe segredos, e é de propósito: o sítio tem de compilar e
+      # os testes têm de passar num fork, sem base de dados e sem chaves. Se um
+      # dia algum destes passos precisar de um segredo para passar, o que se
+      # partiu foi a degradação graciosa — não o CI.
+      - name: Formatação
+        run: pnpm format:check
+
+      - name: Tipos
+        run: pnpm -r typecheck
+
+      - name: Análise estática
+        run: pnpm lint
+
+      - name: Testes
+        run: pnpm test
+
+      - name: Compilação
+        run: pnpm build
+
+  segredos:
+    name: Segredos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # O `SECURITY.md` prometia «varrimento de segredos em cada alteração» e não
+    # havia trabalho nenhum que o fizesse: o `.gitguardian.yaml` existia,
+    # estava bem escrito, e ninguém o corria — o comentário dele manda correr à
+    # mão, que na prática é não correr. Este trabalho é o que torna a frase
+    # verdadeira.
+    #
+    # Gitleaks e não ggshield por uma razão que é a mesma do resto do CI:
+    # **nada aqui recebe segredos**, para o repositório poder ser bifurcado e o
+    # CI passar sem uma única chave. O ggshield precisa de `GITGUARDIAN_API_KEY`
+    # e falharia em todos os forks; o gitleaks corre local, sem conta e sem
+    # rede. O `.gitguardian.yaml` continua a valer para quem corra o ggshield à
+    # mão ou tenha a GitHub App ligada — são duas redes, não duas verdades.
+    # A ação lê a lista de commits do PR para saber o que varrer, e sem
+    # `pull-requests: read` a API responde 403 «Resource not accessible by
+    # integration» — que foi como este trabalho falhou na primeira execução. O
+    # `permissions:` do topo do ficheiro dá só `contents: read`, e é para
+    # continuar assim: cada trabalho pede o que precisa e mais nada.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      # `fetch-depth: 0` porque o varrimento é sobre a **história**, não sobre a
+      # árvore de trabalho: um segredo apagado num commit posterior continua no
+      # repositório de quem o clonar, e é esse que interessa apanhar.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Sem `GITLEAKS_LICENSE`: é exigida a organizações, e este repositório é
+      # de uma conta pessoal. No dia em que passar para uma organização, o
+      # trabalho falha a dizer isso — que é melhor do que passar a verde sem
+      # varrer nada.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Sem comentários no PR: o trabalho a falhar já é o sinal, e um bot a
+          # escrever no PR precisaria de permissão de escrita — que é o que
+          # este trabalho não deve ter para varrer segredos.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+
+  migracoes:
+    name: Migrações
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Sem palavra-passe, de propósito. A base existe durante o job, só
+          # aceita ligações da própria máquina e desaparece no fim; escrever
+          # aqui uma palavra-passe seria pôr num ficheiro versionado um
+          # literal com ar de segredo, que é coisa que este repositório não
+          # tem.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Instalar o cliente do PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # Aplica todas as migrações a uma base limpa, por ordem, e corre as
+      # asserções de `scripts/schema-checks.sql`. É o que garante que uma base
+      # de dados nova se reconstrói só a partir deste repositório — e o que
+      # apanha, entre outras coisas, um seed que deixe cair um concelho.
+      - name: Aplicar e verificar as migrações
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: ./scripts/verify-migrations.sh
+
+      # Sobre a mesma base, já migrada: semeia um registo de migrações torto
+      # como o que produção tinha e prova que `scripts/conciliar-registo.sh` o
+      # vê e o endireita. O registo é o que decide o que `aplicar-migracoes.sh`
+      # reaplica — um script que o conserta mal é pior do que nenhum.
+      - name: Ensaiar a conciliação do registo de migrações
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: ./scripts/conciliar-registo.test.sh
+
+  regioes:
+    name: Regiões
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # A versão executável da promessa comercial: a segunda CIM nasce com um
+    # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
+    # migrações E a região de prova (supabase/ci/9000_…), serve o sítio e
+    # bate-lhe à porta com dois cabeçalhos Host — o do Médio Tejo e o da
+    # região fictícia. `scripts/verificar-regioes.mjs` afirma que cada domínio
+    # serve a sua região, que nem uma letra de uma aparece na outra, e que a
+    # identidade de máquina (canónicos, sitemap, feeds, manifesto, widget) é a
+    # do domínio certo.
+    #
+    # Corre de propósito SEM `REGIAO_DE_OMISSAO`: essa variável é a escotilha
+    # que manda servir uma região aos anfitriões desconhecidos, e o que este
+    # job tem de provar é o comportamento por omissão — um Host que não é de
+    # ninguém vê a página do produto, nunca a agenda de uma CIM.
+    #
+    # Não recebe segredos, de propósito, como tudo aqui: a pilha local traz as
+    # suas chaves de demonstração e o job passa num fork tal e qual. É o mais
+    # pesado dos quatro (o arranque da pilha custa uns minutos) e corre em
+    # paralelo, fora do caminho crítico de ninguém.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Instalar o cliente do PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      # O npx fixa a versão da CLI no próprio comando — a mesma que se usa em
+      # desenvolvimento, sem uma segunda fonte de verdade num action.
+      - name: Levantar o Supabase local (migrações incluídas)
+        run: npx --yes supabase@2.40.7 start
+
+      # O endereço da base — palavra-passe incluída — vem da própria CLI em
+      # tempo de execução, como a chave anónima logo abaixo. É a credencial de
+      # demonstração da pilha local, mas a regra da casa é não versionar
+      # literais com ar de segredo (ver o serviço postgres do job `migracoes`):
+      # um verificador de segredos que aprende a ignorar avisos nossos é um
+      # verificador que um dia ignora um a sério.
+      - name: Semear a região de prova
+        run: |
+          DB_URL="$(npx --yes supabase@2.40.7 status -o env | grep '^DB_URL=' | sed -e 's/^DB_URL=//' -e 's/"//g')"
+          for ficheiro in supabase/ci/*.sql; do
+            echo "→ ${ficheiro} (só CI, nunca produção)"
+            psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f "${ficheiro}"
+          done
+
+      # O `status -o env` escreve os valores entre aspas; num $GITHUB_ENV as
+      # aspas fariam parte do valor, e uma chave com aspas dentro não abre
+      # porta nenhuma — daí o segundo sed.
+      - name: Guardar as credenciais locais
+        run: |
+          npx --yes supabase@2.40.7 status -o env | grep '^ANON_KEY=' \
+            | sed -e 's/^ANON_KEY=/NEXT_PUBLIC_SUPABASE_ANON_KEY=/' -e 's/"//g' >> "$GITHUB_ENV"
+          echo 'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321' >> "$GITHUB_ENV"
+
+      - name: Compilar com as duas regiões
+        run: pnpm --filter @coreto/web build
+
+      - name: Verificar as regiões no sítio a correr
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: |
+          pnpm --filter @coreto/web start --port 3000 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "${BASE_URL}/" \
+            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
+          node scripts/verificar-regioes.mjs
+
+  acessibilidade:
+    name: Acessibilidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    # Este job é o que sustenta a declaração de acessibilidade publicada em
+    # `/acessibilidade`. Uma declaração que ninguém verifica é uma promessa;
+    # isto torna-a um teste. Não leva `continue-on-error`: se falhar, a
+    # declaração deixou de ser verdade e o que se corrige é o sítio.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Sem CHROMIUM_PATH: aqui o navegador é o que o Playwright instala, e a
+      # versão bate certo com a biblioteca. A variável existe para as caixas de
+      # desenvolvimento onde já há um Chromium do sistema.
+      - name: Instalar o Chromium
+        run: npx playwright install --with-deps chromium
+
+      # As páginas de ficha existem a partir dos dados: sem credenciais de
+      # leitura, `/concelho/tomar` responde 404 porque o concelho não está lá.
+      # Vale a pena configurar `NEXT_PUBLIC_SUPABASE_URL` e
+      # `NEXT_PUBLIC_SUPABASE_ANON_KEY` nos segredos do repositório — são as
+      # credenciais públicas de leitura, as mesmas que o navegador de qualquer
+      # visitante recebe — para a auditoria cobrir também essas páginas.
+      #
+      # Sem credenciais a auditoria corre à mesma, sobre um catálogo vazio: o
+      # que se verifica é a estrutura, que é onde vivem quase todas as falhas
+      # de acessibilidade. As rotas de ficha, essas, são saltadas com aviso, e
+      # o resumo no fim diz quantas foram.
+      #
+      # Aviso e não falha, de propósito: o repositório tem de poder ser
+      # bifurcado e o CI passar sem um único segredo. Um trabalho que exige
+      # credenciais para arrancar é um trabalho que quem contribui de fora não
+      # consegue correr.
+      - name: Avisar quando a auditoria vai correr sem dados
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -z "${SUPABASE_URL}" ]; then
+            echo "::notice::Sem credenciais de leitura: as páginas de ficha ficam fora da auditoria."
+          fi
+
+      # A auditoria bate ao sítio por endereço IP, e um IP não é o domínio de
+      # região nenhuma: sem esta variável, o middleware serve-lhe a página do
+      # produto na raiz e 404 em tudo o resto, e não haveria uma única página
+      # de região para auditar. `REGIAO_DE_OMISSAO` é a escotilha que manda
+      # servir uma região aos anfitriões desconhecidos — ver
+      # `apps/web/src/lib/regiao-host.ts`. Vai nos dois passos porque o valor
+      # entra tanto na pré-geração como no servidor a correr.
+      - name: Compilar
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+        run: pnpm build
+
+      - name: Auditar o sítio a correr
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+          BASE_URL: http://127.0.0.1:3000
+        run: |
+          pnpm --filter @coreto/web start --port 3000 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "${BASE_URL}/" \
+            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
+          pnpm check:a11y
