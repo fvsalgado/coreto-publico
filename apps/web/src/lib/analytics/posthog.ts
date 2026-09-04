@@ -133,8 +133,54 @@ export function startPostHog(): Promise<PostHogBrowser | null> {
   return pending;
 }
 
+/**
+ * O valor de `regiao` para o que responde no `coreto.org`.
+ *
+ * A ficha técnica não é de região nenhuma — é isso que a define — mas é um
+ * sítio, e um sítio fora dos números é um sítio sobre o qual ninguém consegue
+ * dizer se é visto. Leva um nome que nenhuma região pode ter: os
+ * identificadores de região vêm da base, e não há nenhuma assim chamada.
+ */
+export const REGIAO_DA_FICHA = 'ficha-tecnica';
+
+/**
+ * As propriedades de uma vista de página.
+ *
+ * Separado da captura para poder ser verificado, porque é aqui que está o
+ * nome `regiao` — trocá-lo não parte a compilação, parte os painéis, e só se
+ * dá por isso semanas depois.
+ *
+ * **A região vai por extenso e não se deduz do anfitrião.** A biblioteca
+ * junta a qualquer evento o `$host` e o `$current_url`, e hoje esses bastavam
+ * para separar os três domínios. Mas o domínio é do cliente e muda: no dia em
+ * que uma CIM levar a agenda para o nome dela, o histórico partia-se em dois
+ * sem forma de o voltar a colar. O identificador da região é que não muda, e
+ * é por isso que é ele o eixo.
+ */
+export function propriedadesDaVista(path: string, regiao: string): Record<string, string> {
+  return { $pathname: path, regiao };
+}
+
+/**
+ * O que corre dentro do `iframe` de outra pessoa não é uma visita a este
+ * sítio.
+ *
+ * O widget vive no sítio de uma câmara, e carrega com ele: cada visita à
+ * página dela contaria como uma visita à agenda. Não seria um erro pequeno —
+ * o número passaria a crescer com o trânsito do sítio da câmara e não com o
+ * nosso, e mais gente «visitaria» a agenda do que alguma vez a abriu.
+ *
+ * O caminho aqui é o público, o que está na barra do navegador dentro do
+ * `iframe` (`/widget/tomar`) — o mesmo que a barra de navegação lê para não
+ * se acender lá dentro, ver `lib/navegacao.ts`.
+ */
+export function ehCaixaEmbebida(path: string): boolean {
+  return path.startsWith('/widget/');
+}
+
 /** Uma vista de página. Não faz nada quando o PostHog não está configurado. */
-export async function capturePageView(path: string): Promise<void> {
+export async function capturePageView(path: string, regiao: string): Promise<void> {
+  if (ehCaixaEmbebida(path)) return;
   const client = await startPostHog();
-  client?.capture('$pageview', { $pathname: path });
+  client?.capture('$pageview', propriedadesDaVista(path, regiao));
 }

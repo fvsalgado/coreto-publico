@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
+import { AnalyticsProvider } from '@/src/components/AnalyticsProvider';
 import { BandstandMark } from '@/src/components/BandstandMark';
 import { PaginaDaMontra } from '@/src/components/PaginaDaMontra';
 import { ThemeToggle } from '@/src/components/ThemeToggle';
+import { REGIAO_DA_FICHA } from '@/src/lib/analytics/posthog';
 import { CORES_DO_TOLDO } from '@/src/lib/marca';
 import { AUTOR, PRODUTO } from '@/src/lib/produto';
 
@@ -88,6 +90,12 @@ export default function PaginaDoProduto() {
    */
   return (
     <div data-paleta="montra" className="contents">
+      {/*
+        Esta página conta-se como as outras, com um nome que diz o que é: não
+        há região nenhuma aqui, e é isso que a define. Sem ela, o endereço do
+        produto era o único do sistema sobre o qual não se sabia nada.
+      */}
+      <AnalyticsProvider regiao={REGIAO_DA_FICHA} />
       <a className="skip-link" href="#conteudo">
         Saltar para o conteúdo
       </a>
