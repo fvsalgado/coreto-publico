@@ -1,0 +1,56 @@
+version: 2
+
+updates:
+  # O espaço de trabalho pnpm inteiro a partir da raiz: a raiz, `apps/web`,
+  # `packages/core` e `packages/ingest` partilham um só ficheiro de bloqueio.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Lisbon
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    labels: [dependencias]
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    groups:
+      # O Next e o React sobem juntos ou não sobem: uma atualização de um sem o
+      # outro dá quase sempre uma incompatibilidade de tipos que ninguém quer
+      # depurar num PR de dependências.
+      framework:
+        patterns:
+          - next
+          - eslint-config-next
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+      # Ferramentas de desenvolvimento em bloco. São muitas e mudam de versão
+      # menor todas as semanas; uma revisão por semana chega.
+      ferramentas:
+        dependency-type: development
+        exclude-patterns:
+          - next
+          - eslint-config-next
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Lisbon
+    open-pull-requests-limit: 3
+    labels: [dependencias]
+    commit-message:
+      prefix: ci
+    groups:
+      acoes:
+        patterns: ['*']

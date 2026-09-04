@@ -1,0 +1,235 @@
+name: Recolha
+
+on:
+  schedule:
+    # 03:20 UTC.
+    #
+    # O cron do GitHub corre sempre em UTC e não sabe da hora de verão.
+    # Portugal continental está em UTC no inverno (WET) e em UTC+1 no verão
+    # (WEST), por isso 03:20 UTC é 03:20 em Lisboa de novembro a março e 04:20
+    # de abril a outubro. Nos dois casos é de madrugada, que é a única
+    # exigência: os sites das câmaras estão parados, e uma recolha que corra
+    # mal tem a manhã inteira para ser vista antes de alguém precisar da
+    # agenda. Fixar a hora local exigiria dois crons e uma delas correria à
+    # hora errada meio ano — não vale o que custa.
+    - cron: '20 3 * * *'
+
+  workflow_dispatch:
+    inputs:
+      fonte:
+        description: 'Id de uma fonte (por exemplo, cm-tomar). Vazio corre todas as fontes ativas.'
+        required: false
+        type: string
+
+# Duas recolhas ao mesmo tempo escreveriam nas mesmas linhas e baralhavam as
+# contagens de saúde das fontes. A que está a correr ganha: `cancel-in-progress`
+# fica falso de propósito, porque interromper uma recolha a meio deixa metade
+# das fontes com uma execução por fechar.
+concurrency:
+  group: recolha
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  recolher:
+    name: Recolher agendas
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      # Para abrir ou comentar o aviso de falha.
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A fonte pedida vai por variável de ambiente e nunca interpolada no
+      # script: o valor vem de quem carrega no botão e não tem de ser de
+      # confiança. O CLI valida-o com Zod à entrada.
+      - name: Recolher
+        id: recolha
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FONTE: ${{ inputs.fonte }}
+          # O servidor da CM de Vila Nova da Barquinha envia o certificado sem
+          # o intermédio da cadeia. Isto acrescenta o intermédio genuíno da
+          # GlobalSign ao armazém do processo — aditivo, nada é desligado. A
+          # proveniência e a validade estão no cabeçalho do próprio ficheiro.
+          #
+          # Absoluto de propósito: o `pnpm --filter` muda o diretório de
+          # trabalho para packages/ingest, e o Node resolve este caminho a
+          # partir de lá — relativo, ignorava o ficheiro com um aviso que a
+          # primeira recolha registou («load failed: No such file»).
+          NODE_EXTRA_CA_CERTS: ${{ github.workspace }}/packages/ingest/certs/globalsign-gcc-r6-alphassl-ca-2025.pem
+        run: |
+          set -o pipefail
+          if [ -n "${FONTE}" ]; then
+            pnpm ingest --source "${FONTE}" 2>&1 | tee recolha.log
+          else
+            pnpm ingest --all 2>&1 | tee recolha.log
+          fi
+
+      # Corre mesmo quando a recolha falhou: uma execução que rebentou na
+      # décima fonte já escreveu as nove primeiras, e essas têm de aparecer no
+      # sítio. Sem segredo configurado, não se tenta — um 401 aqui só faria
+      # barulho.
+      #
+      # O endereço por omissão é o que a Vercel atribui ao projeto, e não
+      # `coreto.mediotejo.pt`, que ainda não resolve. A primeira recolha a sério
+      # deu-se por falhada por causa disso: as onze fontes correram todas bem,
+      # e o passo seguinte bateu contra um certificado que não cobre esse nome.
+      # É a mesma escada que o `resolveSiteUrl` do sítio já subia — primeiro o
+      # que está configurado, depois o endereço onde a coisa realmente está,
+      # e o domínio próprio só quando existir. Quando existir, basta pôr
+      # `SITE_URL` nas variáveis do repositório e esta omissão nunca mais é
+      # lida.
+      - name: Invalidar a cache do sítio
+        if: always() && steps.recolha.conclusion != 'skipped'
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://coreto-fvsalgado.vercel.app' }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          if [ -z "${REVALIDATE_SECRET}" ]; then
+            echo "REVALIDATE_SECRET não configurado — a cache expira sozinha ao fim de uma hora."
+            exit 0
+          fi
+
+          # A cache não vale uma recolha dada por falhada.
+          #
+          # O pior que acontece se este pedido não passar é o sítio servir a
+          # agenda de ontem durante uma hora, que é o tempo de vida das
+          # etiquetas — o mesmo desfecho que o ramo de cima aceita de bom grado
+          # quando não há segredo. Deitar a execução inteira fora por isso abre
+          # um issue a dizer «a recolha noturna falhou» quando a recolha
+          # correu bem, e um aviso que mente é um aviso que se aprende a
+          # ignorar. Fica em aviso, que aparece no resumo da execução.
+          codigo=0
+          curl --silent --show-error --fail --output /dev/null \
+            --request POST "${SITE_URL}/api/revalidate" \
+            --header "Authorization: Bearer ${REVALIDATE_SECRET}" \
+            --header 'Content-Type: application/json' \
+            --data '{}' || codigo=$?
+
+          if [ "${codigo}" -eq 0 ]; then
+            echo "Cache invalidada em ${SITE_URL}."
+          else
+            echo "::warning title=Cache não invalidada::POST ${SITE_URL}/api/revalidate falhou (curl ${codigo}). A agenda nova só aparece quando as etiquetas expirarem, ao fim de uma hora."
+          fi
+
+      # A política de privacidade promete que os hashes de IP usados na
+      # limitação de tráfego são apagados ao fim de dois dias. `prune_rate_limits`
+      # faz isso, mas alguém tem de a chamar — e é esta a única coisa que corre
+      # todas as noites com a chave de serviço na mão. Um prazo de conservação
+      # publicado e não executado é uma promessa que não se cumpre.
+      - name: Expurgo de retenção
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY}" ]; then
+            echo "Sem credenciais — expurgo saltado."
+            exit 0
+          fi
+          curl --silent --show-error --fail \
+            --request POST "${SUPABASE_URL}/rest/v1/rpc/prune_rate_limits" \
+            --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            --header 'Content-Type: application/json' \
+            --data '{}'
+          echo
+
+      # Duas funções mais, pela mesma porta e pela mesma razão — isto é o que
+      # corre todas as noites com a chave de serviço na mão. `renovar_montra`
+      # (0119) empurra para o futuro o programa inventado da montra que já
+      # acabou, para a demonstração nunca envelhecer; `snapshot_event_stats`
+      # (0120) tira a fotografia diária dos contadores por concelho, que é o
+      # que deixa o relatório mensal contar as visitas de um mês. Nenhuma das
+      # duas toca no catálogo de uma região a sério; as duas devolvem quantas
+      # linhas escreveram, e o número fica no registo.
+      - name: Renovar a montra e fotografar os contadores
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY}" ]; then
+            echo "Sem credenciais — saltado."
+            exit 0
+          fi
+          for funcao in renovar_montra snapshot_event_stats; do
+            printf '%s: ' "${funcao}"
+            curl --silent --show-error --fail \
+              --request POST "${SUPABASE_URL}/rest/v1/rpc/${funcao}" \
+              --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header 'Content-Type: application/json' \
+              --data '{}'
+            echo
+          done
+
+      - name: Guardar o registo da execução
+        if: always() && hashFiles('recolha.log') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: recolha-${{ github.run_id }}
+          path: recolha.log
+          retention-days: 14
+
+      # Um cron que falha em silêncio é um cron que ninguém repara que morreu.
+      # Um issue novo por noite é ruído que se aprende a ignorar; por isso há
+      # um só, reaberto e comentado enquanto o problema durar.
+      - name: Abrir ou atualizar o aviso de falha
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITULO: 'A recolha noturna falhou'
+          EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MANUAL: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/OPERACAO.md
+        run: |
+          {
+            echo "A recolha de $(date --utc --iso-8601=minutes) terminou com falhas."
+            echo
+            echo "- Execução: ${EXECUCAO}"
+            echo "- Disparada por: ${{ github.event_name }}"
+            echo
+            echo "Últimas linhas do registo:"
+            echo
+            echo '```'
+            tail --lines=40 recolha.log 2>/dev/null || echo '(sem registo — a recolha nem chegou a arrancar)'
+            echo '```'
+            echo
+            echo "O que fazer está no [manual de operação](${MANUAL})."
+          } > aviso.md
+
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body-file aviso.md
+          else
+            gh issue create --title "${TITULO}" --body-file aviso.md
+          fi
+
+      # `default` e não `urgent`: uma recolha falhada é para tratar de manhã —
+      # a agenda de ontem continua a servir. O que não pode é passar a noite
+      # inteira sem ninguém saber. Ver `scripts/avisar.sh`.
+      - name: Tocar a campainha
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: ./scripts/avisar.sh 'Coreto — a recolha noturna falhou' default aviso.md

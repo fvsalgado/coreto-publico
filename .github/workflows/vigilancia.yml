@@ -1,0 +1,95 @@
+name: Vigilância do sítio
+
+# A recolha abre um issue quando falha; o sítio, até aqui, caía em silêncio.
+# De hora a hora, um pedido de fora — como quem visita — à plataforma, a cada
+# região no seu domínio e a cada alias (`scripts/vigiar-sitio.sh`). Um só
+# issue enquanto durar, comentado a cada hora que continuar mal, e fechado
+# sozinho quando tudo voltar.
+on:
+  schedule:
+    # Num minuto fora da hora certa: a fila do GitHub está mais vazia aos :11
+    # do que aos :00. O atraso da fila (ver OPERACAO.md) aplica-se na mesma —
+    # isto é vigilância, não é um relógio.
+    - cron: '11 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vigilancia
+  cancel-in-progress: false
+
+jobs:
+  vigiar:
+    name: Perguntar de fora
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      # Para abrir, comentar e fechar o aviso.
+      issues: write
+
+    env:
+      # O endereço que a Vercel dá ao deploy, sem DNS nosso pelo meio. Uma
+      # variável do repositório sobrepõe-se; a omissão é o alias de produção.
+      PLATAFORMA: ${{ vars.PLATAFORMA_URL || 'https://coreto-fvsalgado.vercel.app' }}
+      TITULO: 'O sítio não responde'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Perguntar
+        run: ./scripts/vigiar-sitio.sh
+
+      - name: Abrir ou atualizar o aviso
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MANUAL: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/OPERACAO.md
+        run: |
+          {
+            echo "Às $(date --utc --iso-8601=minutes) o sítio não respondeu como devia:"
+            echo
+            cat relatorio.md 2>/dev/null || echo '- (a vigilância nem chegou a perguntar)'
+            echo
+            echo "- Execução: ${EXECUCAO}"
+            echo
+            echo "O que fazer está no [manual de operação](${MANUAL})."
+          } > aviso.md
+
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body-file aviso.md
+          else
+            gh issue create --title "${TITULO}" --body-file aviso.md
+          fi
+
+      # O issue guarda o histórico; isto é o que acorda alguém. Prioridade
+      # `urgent` porque um sítio em baixo é a única coisa aqui que não espera
+      # pela manhã. Sem `NTFY_URL` configurada, o passo não faz nada e passa.
+      - name: Tocar a campainha
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: ./scripts/avisar.sh 'Coreto — o sítio não responde' urgent relatorio.md
+
+      # O issue fecha-se sozinho: um aviso que fica aberto depois de o sítio
+      # voltar é um aviso que se aprende a ignorar.
+      - name: Fechar o aviso quando voltar
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body "Voltou a responder às $(date --utc --iso-8601=minutes)."
+            gh issue close "${NUMERO}" --reason completed
+          fi

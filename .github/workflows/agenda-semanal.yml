@@ -1,0 +1,106 @@
+name: Contagem semanal da agenda
+
+# A vigilância de hora a hora pergunta «o sítio serve alguma coisa?» e basta
+# um evento em toda a região para ela passar. Isto pergunta o que uma CIM
+# pergunta: **e o meu concelho?** Uma vez por semana, de fora e pela API
+# pública (`scripts/contar-agenda.sh`).
+#
+# Semanal e não horário de propósito: a agenda de um concelho pequeno enche-se
+# ao ritmo de dias, e um alarme diário sobre isto ensinava-se a ignorar em duas
+# semanas. O aviso vai sempre — é um relatório, não só um alarme —, e só abre
+# issue quando há concelhos a zero.
+on:
+  schedule:
+    # Segunda-feira de manhã em Lisboa: a semana começa com a lista à frente de
+    # quem a pode arranjar, e não ao domingo à noite, que é quando ninguém
+    # arranja nada. O cron é UTC — 08:07 são 09:07 no inverno e 10:07 no verão.
+    - cron: '7 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agenda-semanal
+  cancel-in-progress: false
+
+jobs:
+  contar:
+    name: Contar por concelho
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      # Para abrir e comentar o aviso dos concelhos a zero.
+      issues: write
+
+    env:
+      PLATAFORMA: ${{ vars.PLATAFORMA_URL || 'https://coreto-fvsalgado.vercel.app' }}
+      TITULO: 'Há concelhos sem programação'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Contar
+        id: contar
+        # `continue-on-error` e não `if: failure()` nos passos seguintes: o
+        # relatório é para enviar sempre, com zeros ou sem eles, e é o que
+        # distingue isto de um alarme. O resultado do passo decide só se
+        # também se abre um issue.
+        continue-on-error: true
+        run: ./scripts/contar-agenda.sh
+
+      - name: Mandar o relatório
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          if [ '${{ steps.contar.outcome }}' = 'success' ]; then
+            ./scripts/avisar.sh 'Coreto — a agenda da semana' low relatorio.md
+          else
+            ./scripts/avisar.sh 'Coreto — há concelhos sem programação' default relatorio.md
+          fi
+
+      - name: Abrir ou atualizar o aviso
+        if: steps.contar.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Contagem de $(date --utc --iso-8601=date):"
+            echo
+            cat relatorio.md 2>/dev/null || echo '- (a contagem nem chegou a correr)'
+            echo
+            echo "Um concelho a zero tanto pode ser a fonte partida como a"
+            echo "câmara sem nada marcado. A saúde de cada fonte está em"
+            echo "\`/admin/fontes\`, e a versão pública disto em \`/estado\`."
+            echo
+            echo "- Execução: ${EXECUCAO}"
+          } > aviso.md
+
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body-file aviso.md
+          else
+            gh issue create --title "${TITULO}" --body-file aviso.md
+          fi
+
+      # Fecha-se sozinho quando a semana vier limpa, pela mesma razão da
+      # vigilância: um aviso que fica aberto depois de resolvido é um aviso
+      # que se aprende a ignorar.
+      - name: Fechar o aviso quando encher
+        if: steps.contar.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body "Todos os concelhos com programação a $(date --utc --iso-8601=date)."
+            gh issue close "${NUMERO}" --reason completed
+          fi

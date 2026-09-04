@@ -1,0 +1,62 @@
+# Endereços candidatos para a sondagem. Uma linha por pedido.
+#
+# id            — nome do ficheiro que a sondagem escreve
+# tipo          — html | rss | json. Só decide o que se guarda e como se resume
+# endereco      — o que se pede, tal e qual
+#
+# A lista vem do levantamento em docs/PLANO-DADOS.md, feito contra os sites
+# verdadeiros a 28 de agosto de 2026. A sondagem existe precisamente para o
+# confirmar a partir do executor do GitHub Actions, que é de onde a recolha
+# vai mesmo correr — e não de uma máquina de desenvolvimento, cujo endereço
+# de origem tem outra reputação.
+#
+# Os endereços atualmente semeados (o molde `/pt/agenda`) vão junto, de
+# propósito: se todos derem 404 e os novos derem 200, fica provado no registo
+# e não por afirmação.
+
+# --- o que está semeado hoje, para comparação -------------------------------
+semeado-tomar	html	https://www.cm-tomar.pt/pt/agenda
+semeado-alcanena	html	https://www.cm-alcanena.pt/pt/agenda
+semeado-serta	html	https://www.cm-serta.pt/pt/agenda
+
+# --- via A: Joomla + com_eventbooking, dez concelhos ------------------------
+alcanena	html	https://cm-alcanena.pt/index.php/comunicacao/agenda
+constancia	html	https://www.cm-constancia.pt/comunicacao/agenda
+entroncamento	html	https://www.cm-entroncamento.pt/index.php/agenda
+ferreira-do-zezere	html	https://cm-ferreiradozezere.pt/comunicacao/agenda
+macao	html	https://www.cm-macao.pt/index.php/comunicacao/eventos
+sardoal	html	https://www.cm-sardoal.pt/comunicacao/agenda
+serta	html	https://www.cm-serta.pt/comunicacao/agendaserta
+tomar	html	https://www.cm-tomar.pt/comunicacao/agenda
+vila-de-rei	html	https://www.cm-viladerei.pt/index.php/comunicacao/agenda
+vila-nova-da-barquinha	html	https://www.cm-vnbarquinha.pt/index.php/viver/agenda
+
+# --- os mesmos dez em RSS: a segunda opinião de graça -----------------------
+alcanena-rss	rss	https://cm-alcanena.pt/index.php/comunicacao/agenda?format=feed&type=rss
+constancia-rss	rss	https://www.cm-constancia.pt/comunicacao/agenda?format=feed&type=rss
+entroncamento-rss	rss	https://www.cm-entroncamento.pt/index.php/agenda?format=feed&type=rss
+ferreira-do-zezere-rss	rss	https://cm-ferreiradozezere.pt/comunicacao/agenda?format=feed&type=rss
+macao-rss	rss	https://www.cm-macao.pt/index.php/comunicacao/eventos?format=feed&type=rss
+sardoal-rss	rss	https://www.cm-sardoal.pt/comunicacao/agenda?format=feed&type=rss
+serta-rss	rss	https://www.cm-serta.pt/comunicacao/agendaserta?format=feed&type=rss
+tomar-rss	rss	https://www.cm-tomar.pt/comunicacao/agenda?format=feed&type=rss
+vila-de-rei-rss	rss	https://www.cm-viladerei.pt/index.php/comunicacao/agenda?format=feed&type=rss
+vila-nova-da-barquinha-rss	rss	https://www.cm-vnbarquinha.pt/index.php/viver/agenda?format=feed&type=rss
+
+# --- via B: a API pública de Ourém ------------------------------------------
+ourem-api	json	https://servicos.ourem.pt/api/index.php?service=list_eventos
+
+# --- via C: os dois que se suspeita não se resolverem com código ------------
+# Espera-se 403 em Abrantes e 503 em Torres Novas. Se assim for, fica provado
+# do executor e as cartas à CIM passam a ter um registo em vez de uma memória.
+abrantes-proxy	json	https://sitecmaproxy.cm-abrantes.pt/proxy/agenda/eventos
+torres-novas	html	https://www.cm-torresnovas.pt/
+
+# --- equipamentos -----------------------------------------------------------
+teatro-virginia	html	https://teatrovirginia.pt/index.php/arquivo
+cine-teatro-paraiso	html	https://cineteatro.cm-tomar.pt/
+viral-agenda-tomar	html	https://www.viralagenda.com/pt/santarem/tomar
+caminhos-cimt	html	https://caminhos.mediotejo.pt/programacao/
+virginia-raiz	html	https://www.teatrovirginia.pt/
+virginia-cinema-artigo	html	https://www.teatrovirginia.pt/index.php/cinema/cinema
+virginia-cinema-categoria	html	https://www.teatrovirginia.pt/index.php/cinema
