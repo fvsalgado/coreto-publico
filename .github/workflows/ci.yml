@@ -125,10 +125,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Instalar o cliente do PostgreSQL
+      # O `psql` já vem na imagem do runner do Ubuntu. Este passo instalava-o
+      # à mesma, e um `apt-get update` inteiro custa quinze segundos a cada
+      # execução para não mudar nada. A guarda mantém o trabalho a funcionar
+      # no dia em que a imagem deixar de o trazer — e a dizê-lo alto, em vez
+      # de o job partir numa linha de `psql: command not found`.
+      - name: Garantir o cliente do PostgreSQL
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client
+          if command -v psql >/dev/null 2>&1; then
+            psql --version
+          else
+            echo "::warning::O runner deixou de trazer o psql; a instalar."
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
 
       # Aplica todas as migrações a uma base limpa, por ordem, e corre as
       # asserções de `scripts/schema-checks.sql`. É o que garante que uma base
@@ -183,22 +193,45 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Instalar o cliente do PostgreSQL
+      # O `psql` já vem na imagem do runner do Ubuntu. Este passo instalava-o
+      # à mesma, e um `apt-get update` inteiro custa quinze segundos a cada
+      # execução para não mudar nada. A guarda mantém o trabalho a funcionar
+      # no dia em que a imagem deixar de o trazer — e a dizê-lo alto, em vez
+      # de o job partir numa linha de `psql: command not found`.
+      - name: Garantir o cliente do PostgreSQL
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends postgresql-client
+          if command -v psql >/dev/null 2>&1; then
+            psql --version
+          else
+            echo "::warning::O runner deixou de trazer o psql; a instalar."
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
 
       # O npx fixa a versão da CLI no próprio comando — a mesma que se usa em
       # desenvolvimento, sem uma segunda fonte de verdade num action.
+      #
+      # **Guardar as imagens na cache do GitHub foi tentado e medido, e é
+      # pior.** Na execução 33870383712, no mesmo commit e nas duas pernas:
+      #
+      #   sem cache   puxar do registo          2m43s
+      #   com cache   restaurar 37s + docker load 3m28s + start 38s = 4m43s
+      #
+      # O `docker load` importa imagens inteiras e descomprimidas, uma a uma;
+      # o `docker pull` traz camadas em paralelo e em fluxo, direto do registo
+      # da AWS. A cache trocava a segunda coisa pela primeira, e ainda ocupava
+      # vários gigabytes da cota de 10 GB do repositório. Não repetir sem
+      # medir de novo.
+      #
+      # (O que fez os 16m33s de uma execução anterior foi um dia mau do
+      # runner, não este passo: na mesma semana o mesmo comando custou 9m32s e
+      # 2m43s, e o `pnpm/action-setup` oscilou entre 26s e 5m30s.)
+      #
+      # **Excluir serviços daqui foi tentado e parte tudo** — ver o porquê
+      # medido em `supabase/config.toml`, nas secções `[storage]` e `[auth]`.
       - name: Levantar o Supabase local (migrações incluídas)
         run: npx --yes supabase@2.40.7 start
 
-      # O endereço da base — palavra-passe incluída — vem da própria CLI em
-      # tempo de execução, como a chave anónima logo abaixo. É a credencial de
-      # demonstração da pilha local, mas a regra da casa é não versionar
-      # literais com ar de segredo (ver o serviço postgres do job `migracoes`):
-      # um verificador de segredos que aprende a ignorar avisos nossos é um
-      # verificador que um dia ignora um a sério.
       - name: Semear a região de prova
         run: |
           DB_URL="$(npx --yes supabase@2.40.7 status -o env | grep '^DB_URL=' | sed -e 's/^DB_URL=//' -e 's/"//g')"
