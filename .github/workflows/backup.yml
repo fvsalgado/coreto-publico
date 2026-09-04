@@ -32,24 +32,51 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # As seis, e não quatro.
+      #
+      # Este passo verificava só metade: faltavam as duas credenciais do balde,
+      # que são usadas três passos à frente. Sem elas o trabalho corria o
+      # `pg_dump` inteiro, cifrava, e só rebentava no envio, com um erro da AWS
+      # sobre uma credencial vazia — a dois minutos e a três passos de distância
+      # da causa. O sítio de dar por falta de uma configuração é antes de se
+      # fazer trabalho nenhum.
       - name: Confirmar a configuração
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          BACKUP_S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
           BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
           BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
+          # Aqui e não interpolada no script: um `${{ }}` dentro de um bloco de
+          # shell é o padrão que abre a porta a injeção, mesmo quando o valor é
+          # de confiança. O hábito vale mais do que o caso.
+          BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
         run: |
           em_falta=''
-          [ -n "${DATABASE_URL}" ]       || em_falta="${em_falta} BACKUP_DATABASE_URL"
-          [ -n "${BACKUP_PASSPHRASE}" ]  || em_falta="${em_falta} BACKUP_PASSPHRASE"
-          [ -n "${BACKUP_S3_BUCKET}" ]   || em_falta="${em_falta} BACKUP_S3_BUCKET"
-          [ -n "${BACKUP_S3_ENDPOINT}" ] || em_falta="${em_falta} BACKUP_S3_ENDPOINT"
+          [ -n "${DATABASE_URL}" ]                 || em_falta="${em_falta} BACKUP_DATABASE_URL"
+          [ -n "${BACKUP_PASSPHRASE}" ]            || em_falta="${em_falta} BACKUP_PASSPHRASE"
+          [ -n "${BACKUP_S3_ACCESS_KEY_ID}" ]      || em_falta="${em_falta} BACKUP_S3_ACCESS_KEY_ID"
+          [ -n "${BACKUP_S3_SECRET_ACCESS_KEY}" ]  || em_falta="${em_falta} BACKUP_S3_SECRET_ACCESS_KEY"
+          [ -n "${BACKUP_S3_BUCKET}" ]             || em_falta="${em_falta} BACKUP_S3_BUCKET"
+          [ -n "${BACKUP_S3_ENDPOINT}" ]           || em_falta="${em_falta} BACKUP_S3_ENDPOINT"
           if [ -n "${em_falta}" ]; then
             echo "Falta configurar:${em_falta}" >&2
             echo "Uma cópia de segurança que falha em silêncio é pior do que não ter nenhuma." >&2
             echo "Ver docs/BACKUPS.md." >&2
             exit 1
           fi
+
+          # Não é obrigatória — tem omissão — mas a omissão é uma região da AWS,
+          # e contra um balde R2 da Cloudflare a assinatura falha. Aviso em vez
+          # de falha: quem usar outro fornecedor tem a omissão certa.
+          case "${BACKUP_S3_ENDPOINT}" in
+            *r2.cloudflarestorage.com*)
+              if [ "${BACKUP_S3_REGION}" != 'auto' ]; then
+                echo "::warning::O destino é R2 e BACKUP_S3_REGION não é 'auto'; a assinatura vai falhar."
+              fi
+              ;;
+          esac
 
       # O `pg_dump` corre dentro da imagem oficial do PostgreSQL 17, e não com o
       # cliente do runner, para a versão da ferramenta acompanhar a do servidor.
