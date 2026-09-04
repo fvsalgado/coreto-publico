@@ -206,6 +206,10 @@ describe('o que é do produto não tem região', () => {
     '/icones/coreto-192.png',
     '/logos/medio-tejo/cim-escuro.png',
     '/og/medio-tejo.png',
+    // As capturas da ficha técnica. Entraram na lista depois de as quatro
+    // darem 404 numa pré-visualização, com os ficheiros em `public/` à espera:
+    // o que não está aqui é tratado como caminho de página.
+    '/produto/agenda.webp',
     '/.well-known/carta-qualquer.txt',
   ])('%s é um ficheiro: sai tal como está, mesmo num anfitrião desconhecido', async (caminho) => {
     const resposta = await middleware(pedido(`https://agenda.exemplo-qualquer.pt${caminho}`));

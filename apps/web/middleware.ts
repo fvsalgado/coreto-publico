@@ -35,8 +35,22 @@ import {
  * direto. O que as duas barreiras partilham está em `admin/guarda.ts`.
  */
 
-/** As pastas de `public/` e as convenções de raiz — ficheiros, não páginas. */
-const CAMINHOS_DE_FICHEIROS = ['/icones/', '/logos/', '/og/', '/.well-known/'] as const;
+/**
+ * As pastas de `public/` e as convenções de raiz — ficheiros, não páginas.
+ *
+ * **Esta lista é fechada, e é por isso que uma pasta nova tem de entrar aqui.**
+ * O que não estiver nela é tratado como caminho de página: passa pela
+ * resolução de região e acaba num 404, mesmo com o ficheiro em `public/` à
+ * espera. Aconteceu com o `/produto/`, das capturas da ficha técnica — o HTML
+ * referenciava-as com as medidas certas e as quatro davam 404.
+ */
+const CAMINHOS_DE_FICHEIROS = [
+  '/icones/',
+  '/logos/',
+  '/og/',
+  '/produto/',
+  '/.well-known/',
+] as const;
 const FICHEIROS_DE_RAIZ = ['/favicon.ico', '/icon.svg', '/apple-icon.png'] as const;
 
 /** O caminho interno da página do produto — ver `app/pagina-do-produto`. */
