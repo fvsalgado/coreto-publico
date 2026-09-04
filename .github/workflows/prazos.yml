@@ -1,0 +1,110 @@
+name: Prazos
+
+# O que expira num calendário, e não numa avaria.
+#
+# A vigilância horária pergunta se o sítio responde. Não apanha o que caduca: um
+# registo de domínio não avaria, chega ao fim. No dia seguinte o DNS deixa de
+# resolver, o sítio inteiro desaparece dos três domínios ao mesmo tempo, e a
+# vigilância diz «não responde» quando já não há nada a fazer senão pagar — se
+# ainda houver período de graça, e se o nome ainda lá estiver.
+#
+# Semanal e não horário porque é o que a pergunta pede: isto renova-se com um
+# cartão, uma vez por ano, e o aviso serve para haver semanas para tratar dele.
+# Bater ao RDAP de hora a hora seria pedir a um registo público que nos
+# aguentasse uma pergunta cuja resposta muda uma vez por ano.
+
+on:
+  schedule:
+    # Segunda de manhã: o aviso chega quando há semana pela frente para agir.
+    # Aos :25 e não aos :00 pela mesma razão da vigilância — a fila do GitHub
+    # está mais vazia fora da hora certa.
+    - cron: '25 6 * * 1'
+
+  workflow_dispatch:
+
+concurrency:
+  group: prazos
+  cancel-in-progress: false
+
+jobs:
+  vigiar:
+    name: Ver o que está a caducar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      # Para abrir, comentar e fechar o aviso.
+      issues: write
+
+    env:
+      # Explícita, ao contrário do resto da vigilância, que lê o mapa de
+      # regiões. Os subdomínios de uma região vivem debaixo de um registo que já
+      # está nesta lista; o domínio próprio de um cliente é registado por ele, e
+      # vigiá-lo é uma escolha — útil, porque se caducar somos nós que levamos
+      # com o telefonema — que se escreve em vez de se herdar.
+      DOMINIOS: ${{ vars.DOMINIOS_A_VIGIAR || 'coreto.org' }}
+      DIAS_DE_DOMINIO: ${{ vars.DIAS_DE_DOMINIO || '45' }}
+      TITULO: 'Um domínio está a chegar ao fim'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Perguntar ao RDAP
+        run: ./scripts/vigiar-prazos.sh
+
+      - name: Abrir ou atualizar o aviso
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MANUAL: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/OPERACAO.md
+        run: |
+          {
+            echo "A $(date --utc --iso-8601=minutes), o que está a caducar:"
+            echo
+            cat relatorio.md 2>/dev/null || echo '- (a verificação nem chegou a perguntar)'
+            echo
+            echo "Renova-se no registador. Um domínio que expira leva o sítio"
+            echo "inteiro com ele, nos três anfitriões ao mesmo tempo, e o"
+            echo "período de graça não é uma promessa."
+            echo
+            echo "- Execução: ${EXECUCAO}"
+            echo
+            echo "O que fazer está no [manual de operação](${MANUAL})."
+          } > aviso.md
+
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body-file aviso.md
+          else
+            gh issue create --title "${TITULO}" --body-file aviso.md
+          fi
+
+      # Prioridade normal, e não `urgent` como a do sítio em baixo: isto avisa
+      # com semanas de antecedência e não é motivo para acordar ninguém. Sem
+      # `NTFY_URL` configurada, o passo não faz nada e passa.
+      - name: Tocar a campainha
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: ./scripts/avisar.sh 'Coreto — um domínio está a chegar ao fim' default relatorio.md
+
+      # Fecha-se sozinho depois da renovação, pela mesma razão que o da
+      # vigilância: um aviso que fica aberto depois de resolvido é um aviso que
+      # se aprende a ignorar.
+      - name: Fechar o aviso depois de renovado
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body "Renovado. A $(date --utc --iso-8601=minutes) todos os registos têm folga."
+            gh issue close "${NUMERO}" --reason completed
+          fi
