@@ -183,6 +183,71 @@ const A_FUNCIONAR: ReadonlyArray<{
   },
 ];
 
+/**
+ * Os ecrãs, e porque são os da demonstração e não os de um cliente.
+ *
+ * A escolha foi entre capturar a agenda real de uma CIM — o que se vê melhor,
+ * com programação verdadeira e o cartaz de cada evento — e capturar o Vale do
+ * Coreto, o território inventado. Ganhou o inventado, pela mesma razão que
+ * tirou o nome da CIM do texto desta página: **isto é servido a qualquer
+ * anfitrião que o mapa de domínios não conheça**, incluindo o domínio de um
+ * cliente apontado para cá antes de a região dele existir. Uma imagem expõe o
+ * mesmo que uma frase — mais, até, porque traz a marca, os concelhos e o mapa
+ * — e o `semFugas` do `scripts/verificar-regioes.mjs` só varre texto: passaria
+ * em silêncio. Fechar a porta ao texto e deixá-la aberta à imagem não era
+ * fechar porta nenhuma.
+ *
+ * O que se perde é pouco: a interface é a mesma, o desenho é o mesmo, e o
+ * cartaz tipográfico que aparece na lista é o verdadeiro — é o que cada evento
+ * sem imagem recebe em qualquer agenda. O que muda é o conteúdo, e esse diz
+ * que é inventado.
+ *
+ * **A cor é a da demonstração.** O vermelho é a paleta da montra; cada
+ * território leva a sua, e a legenda di-lo, para ninguém pensar que o produto
+ * chega numa cor só.
+ *
+ * As medidas vão declaradas, como em toda a casa desde a 0126: o navegador
+ * reserva a caixa antes de a imagem existir, e a página não salta.
+ */
+const ECRAS: ReadonlyArray<{
+  ficheiro: string;
+  alt: string;
+  legenda: string;
+  largura: number;
+  altura: number;
+}> = [
+  {
+    ficheiro: 'agenda',
+    alt: 'A agenda da demonstração: filtros por pesquisa, datas, concelho, categoria, entrada livre e acessibilidade, e por baixo a lista de eventos agrupada por dia.',
+    legenda:
+      'A agenda, com os filtros. Cada filtro é uma ligação — guarda-se e partilha-se tal como está.',
+    largura: 1400,
+    altura: 875,
+  },
+  {
+    ficheiro: 'mapa',
+    alt: 'O mapa da demonstração, com os limites dos concelhos desenhados e marcas redondas a contar quantos eventos há em cada um.',
+    legenda: 'O mapa. Marca cheia quando se sabe a morada, tracejada quando só se sabe o concelho.',
+    largura: 1400,
+    altura: 875,
+  },
+  {
+    ficheiro: 'evento',
+    alt: 'A ficha de um evento da demonstração, com o cartaz tipográfico, a data, o espaço, o preço e as ligações para o calendário e para a fonte.',
+    legenda:
+      'A ficha de um evento. O cartaz tipográfico é o verdadeiro: é o que recebe quem não tem imagem.',
+    largura: 1400,
+    altura: 875,
+  },
+  {
+    ficheiro: 'telemovel',
+    alt: 'A mesma agenda no telemóvel, num ecrã estreito, com os filtros recolhidos e a lista a ocupar a largura toda.',
+    legenda: 'No telemóvel, que é por onde a maior parte das pessoas chega.',
+    largura: 460,
+    altura: 995,
+  },
+];
+
 const FUNCIONALIDADES: ReadonlyArray<{ titulo: string; itens: readonly string[] }> = [
   {
     titulo: 'Para quem visita',
@@ -301,6 +366,36 @@ export function PaginaDaMontra() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section aria-labelledby="ecras" className="ct-reveal mt-16">
+        <p className="ct-eyebrow">Os ecrãs</p>
+        <h2 id="ecras" className="ct-heading mt-2.5">
+          O que quem visita vê.
+        </h2>
+        <p className="mt-3 max-w-2xl text-muted">
+          Capturados da demonstração, que é o produto inteiro a funcionar sobre um território
+          inventado. A cor é a dela — cada agenda leva a identidade do seu território.
+        </p>
+        <div className="mt-6 grid gap-6 sm:grid-cols-2">
+          {ECRAS.map((ecra) => (
+            <figure key={ecra.ficheiro} className="min-w-0">
+              {/* A casa não usa `next/image` — ver `cartaz.ts`; aqui são
+                  ficheiros nossos, já dimensionados e em WebP. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/produto/${ecra.ficheiro}.webp`}
+                alt={ecra.alt}
+                width={ecra.largura}
+                height={ecra.altura}
+                loading="lazy"
+                decoding="async"
+                className="w-full rounded-xl border border-border bg-surface"
+              />
+              <figcaption className="mt-2.5 text-sm text-muted">{ecra.legenda}</figcaption>
+            </figure>
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="ficha" className="ct-reveal mt-16 scroll-mt-6">
