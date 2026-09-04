@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import { Fraunces } from 'next/font/google';
-import { AnalyticsProvider } from '@/src/components/AnalyticsProvider';
 import { ScrollReveal } from '@/src/components/ScrollReveal';
 import { CORES_DO_TOLDO } from '@/src/lib/marca';
 import './globals.css';
@@ -8,11 +7,16 @@ import './globals.css';
 /**
  * O esqueleto do produto — o que é igual em todas as regiões, sempre.
  *
- * O documento, a letra, o tema e a medição vivem aqui; o toldo, a navegação,
- * o rodapé e os metadados vivem no layout da região (`[regiao]/layout.tsx`),
- * porque são dela. O que fica por baixo deste layout sem passar pelo da
- * região — a área interna e a página de erro de raiz — recebe o esqueleto e
- * mais nada, que é o que essas superfícies precisam.
+ * O documento, a letra e o tema vivem aqui; o toldo, a navegação, o rodapé e
+ * os metadados vivem no layout da região (`[regiao]/layout.tsx`), porque são
+ * dela. O que fica por baixo deste layout sem passar pelo da região — a área
+ * interna e a página de erro de raiz — recebe o esqueleto e mais nada, que é
+ * o que essas superfícies precisam.
+ *
+ * A medição esteve aqui e saiu, por ser aqui que ela não sabe o que está a
+ * medir: este layout não tem região para declarar e serve também a área
+ * interna. Montam-na agora o layout da região e a página do produto — ver
+ * `components/AnalyticsProvider.tsx`.
  */
 
 /**
@@ -81,8 +85,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: TEMA_ARRANQUE }} />
         {children}
 
-        {/* Sem chave configurada não carrega nada nem faz um único pedido. */}
-        <AnalyticsProvider />
         <ScrollReveal />
       </body>
     </html>

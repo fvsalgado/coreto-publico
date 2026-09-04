@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
+import { AnalyticsProvider } from '@/src/components/AnalyticsProvider';
 import { BandstandMark } from '@/src/components/BandstandMark';
 import { BarraInferior } from '@/src/components/BarraInferior';
 import { NavegacaoDoToldo } from '@/src/components/NavegacaoDoToldo';
@@ -23,7 +24,9 @@ import { seccoesDesligadas } from '@/src/lib/queries/seccoes';
  * dela, rodapé. Um identificador que a base não conhece é um 404.
  *
  * O que é do produto e não muda com a região — o esqueleto do documento, a
- * letra, o tema, a medição — ficou no layout de raiz, por cima deste.
+ * letra, o tema — ficou no layout de raiz, por cima deste. A medição é a
+ * exceção que confirma a regra: mora aqui, e não lá em cima, porque só aqui
+ * se sabe de que região é a página que se está a contar.
  */
 
 interface Props {
@@ -157,6 +160,14 @@ export default async function RegiaoLayout({ children, params }: Props) {
     <>
       {/* Quem é o sítio e quem responde por ele, em todas as páginas. */}
       <SiteStructuredData regiao={regiao} origem={origem} />
+
+      {/*
+        A medição, com o nome da região colado a cada vista de página: é o que
+        deixa somar por cliente sem depender do domínio, que muda quando uma
+        CIM leva a agenda para o nome dela. Sem chave configurada não carrega
+        nada nem faz um único pedido.
+      */}
+      <AnalyticsProvider regiao={regiao.id} />
       <a className="skip-link" href="#conteudo">
         Saltar para o conteúdo
       </a>

@@ -144,10 +144,18 @@ tratamento que não existe.
 | Elemento                | Conteúdo                                                                                                                                                                                                                                                              |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Finalidade**          | Perceber que páginas são usadas                                                                                                                                                                                                                                       |
-| **Categorias de dados** | Páginas vistas e um identificador efémero gerado pela ferramenta                                                                                                                                                                                                      |
+| **Categorias de dados** | Páginas vistas, a região a que a página pertence, e um identificador efémero gerado pela ferramenta                                                                                                                                                                   |
 | **Base legal**          | Artigo 6.º, n.º 1, alínea f) — interesse legítimo                                                                                                                                                                                                                     |
 | **Configuração**        | Sem cookies e sem armazenamento local (o identificador fica em memória e desaparece com o separador); sem gravação de sessão; sem captura automática de cliques; sem inquéritos; sem criação de perfis; com descarte do endereço IP ativado nas definições do projeto |
 | **Onde está**           | Servidores do PostHog na União Europeia. Nada disto é guardado na base de dados do Coreto                                                                                                                                                                             |
+
+**O que fica de fora, e porquê.** A área interna não é medida — quem modera
+passeia por lá muitas vezes ao dia, e essas passagens não são utilização do
+sítio. O widget também não: corre dentro de um `iframe` no sítio de uma
+câmara, e cada visita à página dela carrega-o junto; contá-lo era contar
+visitas a um sítio que não é este. Nenhuma das duas exclusões é uma opção de
+configuração no PostHog — estão no código, em quem monta a medição
+(`components/AnalyticsProvider.tsx`) e em `capturePageView`.
 
 **Porque não há pedido de consentimento.** O consentimento que a lei exige para
 «cookies» é, na letra do **artigo 5.º da Lei n.º 41/2004**, o consentimento para
