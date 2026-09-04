@@ -343,11 +343,38 @@ describe('o anfitrião mta-sts. serve a política, e mais nada', () => {
     expect(resposta.status).not.toBe(308);
   });
 
-  it('cada domínio de região tem o seu, e não o de outra', async () => {
+  /*
+   * A regressão que este bloco passa a prender, e que aconteceu mesmo.
+   *
+   * Aqui estava escrito que «cada domínio de região tem o seu»: o prefixo
+   * caía, o que sobrava procurava-se no mapa das regiões, e a política saía
+   * se estivesse lá. No dia em que o `coreto.org` deixou de ser uma região —
+   * a montra mudou-se, e é isso que faz dele a ficha técnica —, a política
+   * de correio foi atrás dela: `mta-sts.coreto.org` passou a 404, e um
+   * domínio que recebe correio ficou sem publicar a política que promete TLS.
+   *
+   * A pergunta estava errada de origem. A política não é de uma região: a
+   * rota que a serve nem olha para o segmento, lê o MX e o modo do ambiente.
+   * É do domínio de correio do deployment — e um domínio de região que não
+   * seja esse não deve receber esta política, porque anunciaria este MX para
+   * correio que não passa por aqui. Uma política de MTA-STS errada é pior do
+   * que nenhuma.
+   */
+  it('um domínio que não é o do correio deste deployment não recebe política', async () => {
     const resposta = await middleware(pedido('https://mta-sts.coreto.org/.well-known/mta-sts.txt'));
     expect(resposta.headers.get('x-middleware-rewrite')).toBe(
-      'https://mta-sts.coreto.org/vale-do-coreto/mta-sts-txt',
+      'https://mta-sts.coreto.org/pagina-do-produto/nao-e-endereco',
     );
+  });
+
+  it('e o do domínio de correio sai mesmo quando ele não é de região nenhuma', async () => {
+    // É o caso do `coreto.org` em produção: serve a ficha técnica, não é de
+    // região nenhuma, e continua a receber correio. A política tem de sair.
+    const resposta = await middleware(
+      pedido('https://mta-sts.coreto.mediotejo.pt/.well-known/mta-sts.txt'),
+    );
+    expect(resposta.headers.get('x-middleware-rewrite')).toContain('/mta-sts-txt');
+    expect(resposta.headers.get('x-middleware-rewrite')).not.toContain('nao-e-endereco');
   });
 
   it.each(['/', '/agenda', '/feed.xml', '/admin'])(

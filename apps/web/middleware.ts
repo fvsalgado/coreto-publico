@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { ADMIN_LOGIN_PATH, ADMIN_PATH_HEADER, adminLoginPath } from '@/src/lib/admin/guarda';
 import { ADMIN_COOKIE_NAME, readSessionToken } from '@/src/lib/admin/session';
+import { SITE_URL } from '@/src/lib/env';
 import {
+  REGIAO_PRINCIPAL,
   dominiosDasRegioes,
   normalizarHost,
   redirecionamentosDosDominios,
@@ -52,6 +54,30 @@ const PAGINA_DO_PRODUTO = '/pagina-do-produto';
 const PREFIXO_MTA_STS = 'mta-sts';
 const CAMINHO_MTA_STS = '/.well-known/mta-sts.txt';
 
+/**
+ * O domínio de correio deste deployment — o do `SITE_URL`.
+ *
+ * **Isto esteve preso ao mapa das regiões, e partiu-se.** A resolução era:
+ * tirar o prefixo `mta-sts.`, procurar o que sobra no mapa domínio→região, e
+ * servir a política se estivesse lá. Funcionou enquanto o `coreto.org` foi a
+ * montra. No dia em que a montra mudou de casa e o `coreto.org` deixou de ser
+ * de região nenhuma — que é o que faz dele a ficha técnica —, a política de
+ * correio foi atrás: `mta-sts.coreto.org` passou a 404, e um domínio que
+ * recebe correio ficou sem publicar a política que promete TLS.
+ *
+ * O engano de origem é que a pergunta estava errada. A política **não é de
+ * uma região**: a rota que a serve nem olha para o segmento, lê
+ * `MTA_STS_MX` e `MTA_STS_MODO` do ambiente. É do domínio de correio do
+ * deployment, e é esse que aqui se compara. O segmento de região que a
+ * reescrita usa é um preenchimento — tem de ser válido, e nada mais.
+ *
+ * Mais: com a regra antiga, `mta-sts.<domínio de qualquer região>` servia
+ * esta mesma política, com este MX, a um domínio cujo correio não passa por
+ * aqui. Uma política de MTA-STS errada é pior do que nenhuma — promete TLS
+ * para servidores que não são os do domínio.
+ */
+const DOMINIO_DE_CORREIO = normalizarHost(new URL(SITE_URL).host);
+
 const NOMES_PUBLICOS = new Map<string, string>([
   ['/sitemap.xml', 'sitemap-xml'],
   ['/.well-known/security.txt', 'seguranca-txt'],
@@ -86,12 +112,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const anfitriao = normalizarHost(request.headers.get('host'));
   if (anfitriao?.startsWith(`${PREFIXO_MTA_STS}.`)) {
     const dominioDaPolitica = anfitriao.slice(PREFIXO_MTA_STS.length + 1);
-    const mapa = await dominiosDasRegioes(request.nextUrl.origin);
-    const regiaoDaPolitica = regiaoDoHost(dominioDaPolitica, mapa);
     const destinoDaPolitica = request.nextUrl.clone();
     destinoDaPolitica.pathname =
-      regiaoDaPolitica !== null && pathname === CAMINHO_MTA_STS
-        ? `/${regiaoDaPolitica}/mta-sts-txt`
+      dominioDaPolitica === DOMINIO_DE_CORREIO && pathname === CAMINHO_MTA_STS
+        ? `/${REGIAO_PRINCIPAL}/mta-sts-txt`
         : `${PAGINA_DO_PRODUTO}/nao-e-endereco`;
     const resposta = NextResponse.rewrite(destinoDaPolitica);
     resposta.headers.set('X-Robots-Tag', 'noindex, nofollow');
