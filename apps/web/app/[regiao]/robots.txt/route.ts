@@ -29,6 +29,43 @@ export async function GET(
   const regiao = await exigirRegiao(regiaoId);
   const origem = urlDoSitio(regiao, SITE_URL);
 
+  /*
+   * A montra fecha-se aos robôs por inteiro, e sai daqui com um ficheiro
+   * curto — não é o normal com uma linha trocada.
+   *
+   * O porquê do fecho está no `generateMetadata` do layout: o programa dela é
+   * inventado, e um evento falso indexado leva alguém a deslocar-se a uma
+   * coisa que não existe.
+   *
+   * O porquê de ser um ficheiro **próprio** é que o resto deste robots.txt
+   * contradiria o fecho. Ele convida os agentes de resposta, explica que os
+   * dados são CC BY e existem para ser reutilizados, e anuncia o sitemap.
+   * Tudo isso está certo para uma agenda a sério e está errado para uma
+   * demonstração: seria pedir que não se indexasse e, na linha seguinte,
+   * entregar o mapa de tudo e autorizar a reutilização. Um ficheiro que se
+   * contradiz é um ficheiro que alguém há-de resolver pelo lado errado.
+   */
+  if (regiao.tipo === 'montra') {
+    return new Response(
+      [
+        '# Demonstração do Coreto. O programa desta agenda é inventado de',
+        '# propósito — eventos que nunca aconteceram, em concelhos que não',
+        '# existem — e por isso não se indexa nem se reutiliza. A agenda a',
+        '# sério de cada território vive no domínio dela.',
+        '',
+        'User-Agent: *',
+        'Disallow: /',
+        '',
+      ].join('\n'),
+      {
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
+        },
+      },
+    );
+  }
+
   const texto = [
     'User-Agent: *',
     'Allow: /',

@@ -124,3 +124,51 @@ describe('GET /robots.txt', () => {
     expect(notFound).toHaveBeenCalledOnce();
   });
 });
+
+describe('a montra fecha-se aos robôs, e com um ficheiro próprio', () => {
+  /*
+   * O programa da montra é inventado — eventos que nunca aconteceram, em
+   * concelhos que não existem, com datas empurradas para a frente todas as
+   * noites. Numa agenda cultural isso é conteúdo plausível: tem título, data,
+   * sítio e cartaz, e um motor de busca não tem como saber que é ficção.
+   * Indexá-lo leva alguém a deslocar-se a uma coisa que não existe.
+   */
+  const MONTRA: Regiao = { ...TRAVESSIA, id: 'vale-do-coreto', tipo: 'montra' };
+
+  beforeEach(() => {
+    exigirRegiao.mockReset();
+    exigirRegiao.mockResolvedValue(MONTRA);
+  });
+
+  it('fecha tudo', async () => {
+    const texto = await (
+      await GET(new Request('http://x/robots.txt'), {
+        params: Promise.resolve({ regiao: 'vale-do-coreto' }),
+      })
+    ).text();
+    expect(texto).toContain('User-Agent: *');
+    expect(texto).toContain('Disallow: /');
+    expect(texto).not.toContain('Allow: /');
+  });
+
+  /*
+   * E não se contradiz, que é o que este bloco existe para prender.
+   *
+   * O robots.txt normal convida os agentes de resposta, diz que os dados são
+   * CC BY e existem para ser reutilizados, e anuncia o sitemap. Está certo
+   * para uma agenda a sério. Numa demonstração seria pedir que não se
+   * indexasse e, na linha seguinte, entregar o mapa de tudo e autorizar a
+   * reutilização — e um ficheiro que se contradiz é um ficheiro que alguém
+   * há-de resolver pelo lado errado.
+   */
+  it('não anuncia sitemap nem convida agentes de resposta', async () => {
+    const texto = await (
+      await GET(new Request('http://x/robots.txt'), {
+        params: Promise.resolve({ regiao: 'vale-do-coreto' }),
+      })
+    ).text();
+    expect(texto).not.toContain('Sitemap:');
+    expect(texto).not.toContain('llms.txt');
+    expect(texto).not.toContain('CC BY');
+  });
+});

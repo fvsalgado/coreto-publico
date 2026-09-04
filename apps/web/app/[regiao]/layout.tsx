@@ -52,6 +52,27 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description: descricaoDoSitio(regiao),
     applicationName: 'Coreto',
     /*
+     * A demonstração não se indexa, e a razão não é de arrumação.
+     *
+     * O programa da montra é inventado de propósito — trinta eventos que
+     * nunca aconteceram, em dois concelhos que não existem, com datas que a
+     * `renovar_montra()` empurra para a frente todas as noites para nunca
+     * envelhecerem. Numa agenda cultural isso é conteúdo perfeitamente
+     * plausível: tem título, data, sítio e cartaz, e um motor de busca não
+     * tem como saber que não é verdade.
+     *
+     * Um evento falso indexado é pior do que uma página a menos. Alguém
+     * procura o que há para fazer, encontra-o, e desloca-se. E os dados desta
+     * casa saem sob CC BY, com API aberta e `llms.txt` a convidar os agentes
+     * de resposta — o que torna a ficção fácil de propagar e difícil de
+     * desmentir.
+     *
+     * Fica só na montra: uma agenda a sério indexa-se, que é para o que
+     * existe. O `robots.txt` da região diz o mesmo, para a regra valer também
+     * para quem nunca chega a ler o HTML.
+     */
+    ...(regiao.tipo === 'montra' ? { robots: { index: false, follow: false } } : {}),
+    /*
      * Sem `og:url` aqui, de propósito — e já cá esteve um `url: './'`. Um
      * caminho relativo resolve contra o caminho da rota, e numa página
      * pré-gerada esse caminho é o interno, com o segmento da região: o
