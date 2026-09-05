@@ -20,8 +20,56 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # A ação do gitleaks lê a lista de commits do PR para saber o que varrer, e
+    # sem `pull-requests: read` a API responde 403 «Resource not accessible by
+    # integration» — que foi como o varrimento falhou na primeira execução. O
+    # `permissions:` do topo do ficheiro dá só `contents: read`, e é para
+    # continuar assim: cada trabalho pede o que precisa e mais nada.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    # Os trabalhos pesados perguntam a este se vale a pena arrancarem. Ver o
+    # passo «Ver se a alteração é só documentação», no fim.
+    outputs:
+      so_documentacao: ${{ steps.mudancas.outputs.so_documentacao }}
+
     steps:
+      # `fetch-depth: 0` por causa do varrimento de segredos, que é sobre a
+      # **história** e não sobre a árvore de trabalho: um segredo apagado num
+      # commit posterior continua no repositório de quem o clonar, e é esse que
+      # interessa apanhar. A história inteira deste repositório são três
+      # megabytes.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Era um trabalho só para si, que corria doze segundos e custava um
+      # minuto: a faturação do Actions arredonda **cada trabalho** para cima, e
+      # seis trabalhos em paralelo pagam seis arredondamentos. Como passo de um
+      # trabalho que já existia, custa o tempo que demora. A promessa do
+      # `SECURITY.md` — varrer em cada alteração, sem exceções — mantém-se
+      # inteira: o Qualidade corre em todos os eventos, e é o único que corre
+      # sempre.
+      #
+      # Gitleaks e não ggshield pela razão do costume: **nada aqui recebe
+      # segredos**, para o repositório poder ser bifurcado e o CI passar sem uma
+      # única chave. O ggshield precisa de `GITGUARDIAN_API_KEY` e falharia em
+      # todos os forks; o gitleaks corre local, sem conta e sem rede. O
+      # `.gitguardian.yaml` continua a valer para quem corra o ggshield à mão ou
+      # tenha a GitHub App ligada — são duas redes, não duas verdades.
+      #
+      # Sem `GITLEAKS_LICENSE`: é exigida a organizações, e este repositório é
+      # de uma conta pessoal. No dia em que passar para uma organização, o passo
+      # falha a dizer isso — que é melhor do que passar a verde sem varrer nada.
+      - name: Varrimento de segredos
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Sem comentários no PR: o passo a falhar já é o sinal, e um bot a
+          # escrever no PR precisaria de permissão de escrita — que é o que um
+          # varrimento de segredos não deve ter.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
 
       # A versão do pnpm vem do campo «packageManager» do package.json, para
       # não haver duas fontes de verdade a divergir em silêncio.
@@ -58,51 +106,47 @@ jobs:
       - name: Compilação
         run: pnpm build
 
-  segredos:
-    name: Segredos
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    # O `SECURITY.md` prometia «varrimento de segredos em cada alteração» e não
-    # havia trabalho nenhum que o fizesse: o `.gitguardian.yaml` existia,
-    # estava bem escrito, e ninguém o corria — o comentário dele manda correr à
-    # mão, que na prática é não correr. Este trabalho é o que torna a frase
-    # verdadeira.
-    #
-    # Gitleaks e não ggshield por uma razão que é a mesma do resto do CI:
-    # **nada aqui recebe segredos**, para o repositório poder ser bifurcado e o
-    # CI passar sem uma única chave. O ggshield precisa de `GITGUARDIAN_API_KEY`
-    # e falharia em todos os forks; o gitleaks corre local, sem conta e sem
-    # rede. O `.gitguardian.yaml` continua a valer para quem corra o ggshield à
-    # mão ou tenha a GitHub App ligada — são duas redes, não duas verdades.
-    # A ação lê a lista de commits do PR para saber o que varrer, e sem
-    # `pull-requests: read` a API responde 403 «Resource not accessible by
-    # integration» — que foi como este trabalho falhou na primeira execução. O
-    # `permissions:` do topo do ficheiro dá só `contents: read`, e é para
-    # continuar assim: cada trabalho pede o que precisa e mais nada.
-    permissions:
-      contents: read
-      pull-requests: read
-
-    steps:
-      # `fetch-depth: 0` porque o varrimento é sobre a **história**, não sobre a
-      # árvore de trabalho: um segredo apagado num commit posterior continua no
-      # repositório de quem o clonar, e é esse que interessa apanhar.
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      # Sem `GITLEAKS_LICENSE`: é exigida a organizações, e este repositório é
-      # de uma conta pessoal. No dia em que passar para uma organização, o
-      # trabalho falha a dizer isso — que é melhor do que passar a verde sem
-      # varrer nada.
-      - uses: gitleaks/gitleaks-action@v2
+      # Uma alteração que só mexe em prosa não pode mudar o que os trabalhos
+      # pesados verificam: nenhum `.md` deste repositório entra na compilação —
+      # são documentação e mais nada. Quando é esse o caso, poupam-se os nove
+      # minutos faturados que Regiões e Auditorias custam juntos.
+      #
+      # Calculado aqui, e não dentro de cada trabalho pesado, para haver uma só
+      # definição de «só documentação» — e porque um trabalho que existisse só
+      # para responder a isto custava o minuto que se está a tentar poupar.
+      #
+      # Na dúvida corre-se tudo: sem PR, sem intervalo, ou sem ficheiros na
+      # diferença, a resposta é «não».
+      - name: Ver se a alteração é só documentação
+        id: mudancas
+        # Os SHA vão por ambiente e não interpolados no shell: um `${{ }}`
+        # dentro de um bloco de shell é o padrão que abre a porta a injeção,
+        # mesmo quando o valor é de confiança. O hábito vale mais do que o caso.
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          # Sem comentários no PR: o trabalho a falhar já é o sinal, e um bot a
-          # escrever no PR precisaria de permissão de escrita — que é o que
-          # este trabalho não deve ter para varrer segredos.
-          GITLEAKS_ENABLE_COMMENTS: 'false'
+          BASE: ${{ github.event.pull_request.base.sha }}
+          TOPO: ${{ github.event.pull_request.head.sha }}
+        run: |
+          responder() {
+            echo "Só documentação: $1"
+            echo "so_documentacao=$1" >> "${GITHUB_OUTPUT}"
+            exit 0
+          }
+
+          [ -n "${BASE}" ] && [ -n "${TOPO}" ] || responder nao
+
+          # Três pontos: a diferença desde o ponto em que o ramo saiu, e não
+          # contra a ponta de `main` — senão o que entrou em `main` entretanto
+          # contava como alteração deste PR. Se a comparação falhar por o que
+          # for, corre-se tudo.
+          ficheiros="$(git diff --name-only "${BASE}...${TOPO}")" || responder nao
+          [ -n "${ficheiros}" ] || responder nao
+
+          # `grep -v` sai a zero quando encontra **alguma** linha que não é
+          # documentação — que é exatamente a pergunta a fazer.
+          if printf '%s\n' "${ficheiros}" | grep -qvE '(^docs/|\.md$)'; then
+            responder nao
+          fi
+          responder sim
 
   migracoes:
     name: Migrações
@@ -168,6 +212,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # Só em PR, e só quando a alteração toca em código.
+    #
+    # O que este trabalho prova não muda entre o último commit de um PR e o
+    # merge desse PR: é a mesma árvore. Repetir a bateria inteira no push para
+    # `main` custava quinze minutos faturados por push para reconfirmar um verde
+    # de há minutos. O que guarda produção — Qualidade e Migrações — continua a
+    # correr nos dois eventos.
+    #
+    # `needs: qualidade` não é ordem por gosto: é onde se calcula se a alteração
+    # é só prosa. Traz de borla o que faltava — quando a formatação, os tipos,
+    # o lint ou os testes reprovam, os quatro minutos do Supabase efémero
+    # deixam de arder para dizer o que já se sabe. Custa ver este resultado
+    # dois minutos mais tarde.
+    needs: qualidade
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.qualidade.outputs.so_documentacao != 'sim'
+
     # A versão executável da promessa comercial: a segunda CIM nasce com um
     # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
     # migrações E a região de prova (supabase/ci/9000_…), serve o sítio e
@@ -184,8 +246,8 @@ jobs:
     #
     # Não recebe segredos, de propósito, como tudo aqui: a pilha local traz as
     # suas chaves de demonstração e o job passa num fork tal e qual. É o mais
-    # pesado dos quatro (o arranque da pilha custa uns minutos) e corre em
-    # paralelo, fora do caminho crítico de ninguém.
+    # pesado dos três — o arranque da pilha são dois minutos e meio dos quatro
+    # que custa — e corre em paralelo com o das auditorias.
     steps:
       - uses: actions/checkout@v7
 
@@ -272,15 +334,31 @@ jobs:
             || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
           node scripts/verificar-regioes.mjs
 
-  acessibilidade:
-    name: Acessibilidade
+  auditorias:
+    name: Auditorias do sítio
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
-    # Este job é o que sustenta a declaração de acessibilidade publicada em
-    # `/acessibilidade`. Uma declaração que ninguém verifica é uma promessa;
-    # isto torna-a um teste. Não leva `continue-on-error`: se falhar, a
-    # declaração deixou de ser verdade e o que se corrige é o sítio.
+    # Eram dois trabalhos — «Acessibilidade» e «Desempenho» — e faziam duas
+    # vezes exatamente o mesmo antes de medirem coisas diferentes: instalar
+    # dependências, instalar o Chromium, compilar com as mesmas variáveis e
+    # levantar o sítio. Um minuto e meio de trabalho idêntico por execução,
+    # mais um arredondamento de faturação, para preparar duas vezes a mesma
+    # página. Prepara-se uma vez e medem-se as duas.
+    #
+    # A razão de terem nascido separados continua de pé, e é por isso que o
+    # nome deste trabalho não é o de nenhuma delas: «uma falha de orçamento a
+    # aparecer sob o nome Acessibilidade é a melhor maneira de alguém desligar
+    # o que não devia». Cada medição é o seu passo, e é o nome do passo que
+    # aparece numa execução falhada — «Medir o desempenho» ou «Auditar a
+    # acessibilidade», nunca uma pela outra.
+    #
+    # Só em PR e só com código, pela razão escrita no trabalho anterior.
+    needs: qualidade
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.qualidade.outputs.so_documentacao != 'sim'
+
     steps:
       - uses: actions/checkout@v7
 
@@ -304,32 +382,33 @@ jobs:
       # Vale a pena configurar `NEXT_PUBLIC_SUPABASE_URL` e
       # `NEXT_PUBLIC_SUPABASE_ANON_KEY` nos segredos do repositório — são as
       # credenciais públicas de leitura, as mesmas que o navegador de qualquer
-      # visitante recebe — para a auditoria cobrir também essas páginas.
+      # visitante recebe — para as auditorias cobrirem também essas páginas.
       #
-      # Sem credenciais a auditoria corre à mesma, sobre um catálogo vazio: o
-      # que se verifica é a estrutura, que é onde vivem quase todas as falhas
-      # de acessibilidade. As rotas de ficha, essas, são saltadas com aviso, e
-      # o resumo no fim diz quantas foram.
+      # Sem credenciais corre-se à mesma, sobre um catálogo vazio: na
+      # acessibilidade verifica-se a estrutura, que é onde vivem quase todas as
+      # falhas, e as rotas de ficha são saltadas com aviso; no desempenho os
+      # orçamentos são só tectos, e é por isto — um mínimo faria este trabalho
+      # reprovar em qualquer fork.
       #
       # Aviso e não falha, de propósito: o repositório tem de poder ser
       # bifurcado e o CI passar sem um único segredo. Um trabalho que exige
       # credenciais para arrancar é um trabalho que quem contribui de fora não
       # consegue correr.
-      - name: Avisar quando a auditoria vai correr sem dados
+      - name: Avisar quando as auditorias vão correr sem dados
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         run: |
           if [ -z "${SUPABASE_URL}" ]; then
-            echo "::notice::Sem credenciais de leitura: as páginas de ficha ficam fora da auditoria."
+            echo "::notice::Sem credenciais de leitura: as páginas de ficha ficam fora da auditoria e mede-se um catálogo vazio."
           fi
 
-      # A auditoria bate ao sítio por endereço IP, e um IP não é o domínio de
-      # região nenhuma: sem esta variável, o middleware serve-lhe a página do
-      # produto na raiz e 404 em tudo o resto, e não haveria uma única página
-      # de região para auditar. `REGIAO_DE_OMISSAO` é a escotilha que manda
-      # servir uma região aos anfitriões desconhecidos — ver
-      # `apps/web/src/lib/regiao-host.ts`. Vai nos dois passos porque o valor
-      # entra tanto na pré-geração como no servidor a correr.
+      # As auditorias batem ao sítio por endereço IP, e um IP não é o domínio de
+      # região nenhuma: sem `REGIAO_DE_OMISSAO` o middleware serve-lhe a página
+      # do produto na raiz e 404 em tudo o resto, e não haveria uma única página
+      # de região para auditar ou medir. É a escotilha que manda servir uma
+      # região aos anfitriões desconhecidos — ver `apps/web/src/lib/regiao-host.ts`.
+      # Vai na compilação e no servidor porque o valor entra tanto na
+      # pré-geração como no sítio a correr.
       - name: Compilar
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -337,7 +416,12 @@ jobs:
           REGIAO_DE_OMISSAO: medio-tejo
         run: pnpm build
 
-      - name: Auditar o sítio a correr
+      # Um servidor lançado com `&` sobrevive ao fim do passo — o executor não
+      # mata o que ficou de fundo entre passos —, e é o que permite às duas
+      # medições seguintes partilharem este arranque. A espera fica aqui, para
+      # nenhuma delas começar a medir uma porta que ainda não abriu.
+      - name: Levantar o sítio
+        id: servidor
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -353,73 +437,30 @@ jobs:
           done
           curl --silent --fail --output /dev/null "${BASE_URL}/" \
             || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
-          pnpm check:a11y
 
-  desempenho:
-    name: Desempenho
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    # Irmão do de acessibilidade, e pela mesma razão: o README abre a dizer que
-    # o sítio é rápido, e nada o media. Aqui verificam-se as promessas que são
-    # função da compilação e não do humor do executor — o peso por rota, zero
-    # pedidos a terceiros, zero cookies, e o essencial a funcionar sem
-    # JavaScript. O TTFB e o LCP saem em `::notice::` e nunca reprovam.
-    #
-    # Trabalho próprio e não um passo do de acessibilidade: uma falha de
-    # orçamento a aparecer sob o nome «Acessibilidade» é a melhor maneira de
-    # alguém desligar o que não devia.
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Instalar o Chromium
-        run: npx playwright install --with-deps chromium
-
-      # Os orçamentos são só tectos, e é por isto: sem credenciais o catálogo
-      # está vazio e as páginas saem mais pequenas. Um mínimo faria este
-      # trabalho reprovar em qualquer fork.
-      - name: Avisar quando a medição vai correr sem dados
+      # Este passo é o que sustenta a declaração de acessibilidade publicada em
+      # `/acessibilidade`. Uma declaração que ninguém verifica é uma promessa;
+      # isto torna-a um teste. Não leva `continue-on-error`: se falhar, a
+      # declaração deixou de ser verdade e o que se corrige é o sítio.
+      - name: Auditar a acessibilidade
         env:
-          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-        run: |
-          if [ -z "${SUPABASE_URL}" ]; then
-            echo "::notice::Sem credenciais de leitura: mede-se um catálogo vazio."
-          fi
-
-      # `REGIAO_DE_OMISSAO` nos dois passos, pela mesma razão do trabalho de
-      # acessibilidade: sem ela o middleware vê um IP, não reconhece região
-      # nenhuma e serve a página do produto — não havia uma página de região
-      # para medir.
-      - name: Compilar
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          REGIAO_DE_OMISSAO: medio-tejo
-        run: pnpm build
-
-      - name: Medir o sítio a correr
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          REGIAO_DE_OMISSAO: medio-tejo
           BASE_URL: http://127.0.0.1:3000
-        run: |
-          pnpm --filter @coreto/web start --port 3000 &
-          for _ in $(seq 1 60); do
-            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
-              break
-            fi
-            sleep 2
-          done
-          curl --silent --fail --output /dev/null "${BASE_URL}/" \
-            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
-          pnpm check:desempenho
+        run: pnpm check:a11y
+
+      # O README abre a dizer que o sítio é rápido, e nada o media. Aqui
+      # verificam-se as promessas que são função da compilação e não do humor do
+      # executor — o peso por rota, zero pedidos a terceiros, zero cookies, e o
+      # essencial a funcionar sem JavaScript. O TTFB e o LCP saem em
+      # `::notice::` e nunca reprovam.
+      #
+      # Corre mesmo quando a acessibilidade reprova: eram trabalhos paralelos e
+      # independentes, e passarem a ser dois passos do mesmo trabalho não pode
+      # fazer da primeira falha uma venda de olhos sobre a segunda. Preso ao
+      # arranque do servidor e não a `always()` — sem sítio a correr não há nada
+      # para medir, e a medição falharia a dizer o que o passo anterior já
+      # disse.
+      - name: Medir o desempenho
+        if: always() && steps.servidor.outcome == 'success'
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: pnpm check:desempenho
