@@ -22,6 +22,7 @@ import {
   rawEventSchema,
   reconcileDecision,
   applyManualLocks,
+  detectLayoutDrift,
   type EventRow,
   type RawEvent,
   type RunStatus,
@@ -47,9 +48,6 @@ import { RunLogger, emptyCounters, type RunCounters } from './run-logger.js';
  * propósito — uma data errada leva alguém a uma porta fechada.
  */
 export const MIN_AUTOPUBLISH_CONFIDENCE = 0.5;
-
-/** Abaixo desta linha de base não se tiram conclusões sobre a contagem. */
-export const DRIFT_MIN_BASELINE = 5;
 
 /**
  * Porque é que este candidato foi à fila, dito a quem a abre.
@@ -146,26 +144,6 @@ export interface SourceOutcome {
   http: HttpCounters;
   error: string | null;
   warnings: number;
-}
-
-export interface DriftInput {
-  itemsFound: number;
-  baseline: number | null;
-  minExpected: number;
-}
-
-/**
- * Um seletor que deixou de casar parece exatamente uma agenda vazia.
- *
- * A diferença entre as duas coisas é tudo: sem esta verificação, o dia em que
- * uma câmara mudasse de tema o site apagava a programação inteira do concelho
- * e ninguém dava por isso até alguém reclamar. Na dúvida, não se escreve nada
- * e a execução fica marcada para ser vista.
- */
-export function detectLayoutDrift(input: DriftInput): boolean {
-  if (input.minExpected > 0 && input.itemsFound < input.minExpected) return true;
-  if (input.baseline === null || input.baseline < DRIFT_MIN_BASELINE) return false;
-  return input.itemsFound * 2 < input.baseline;
 }
 
 /**

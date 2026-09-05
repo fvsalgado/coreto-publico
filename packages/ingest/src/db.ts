@@ -14,7 +14,13 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { FALHAS_ATE_PAUSA, HORAS_EM_PAUSA, type EventRow, type SessionRow } from '@coreto/core';
+import {
+  FALHAS_ATE_PAUSA,
+  HORAS_EM_PAUSA,
+  nextBaseline,
+  type EventRow,
+  type SessionRow,
+} from '@coreto/core';
 import { sourceRowSchema, type SourceRow } from './adapter.js';
 import type { CloseRunInput, OpenRunInput, RunStore } from './run-logger.js';
 
@@ -834,19 +840,6 @@ class SupabaseIngestDatabase implements IngestDatabase {
       .eq('id', runId);
     if (error) fail('fechar execução', error.message);
   }
-}
-
-/**
- * Nova linha de base, suavizada.
- *
- * Média móvel em vez do último valor: a agenda de agosto é legitimamente mais
- * magra do que a de outubro, e uma linha de base que copiasse a última
- * recolha ficava presa no mês mais fraco — e deixava de dar pela mudança de
- * layout que ela existe para apanhar.
- */
-export function nextBaseline(current: number | null, found: number): number {
-  if (current === null || current <= 0) return found;
-  return Math.max(0, Math.round(current * 0.7 + found * 0.3));
 }
 
 /** Cliente com chave de serviço. `null` quando não há credenciais. */

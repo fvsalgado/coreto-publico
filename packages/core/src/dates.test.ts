@@ -8,6 +8,9 @@ import {
   expandRecurrence,
   isValidIsoDate,
   isoWeekday,
+  janelaDaSemana,
+  janelaDeHoje,
+  janelaDoFimDeSemana,
   isoWithLisbonOffset,
   parsePortugueseDate,
   parsePortugueseDates,
@@ -451,5 +454,60 @@ describe('isoWithLisbonOffset', () => {
   it('deita fora uma hora que não é uma hora, e fica pela data', () => {
     expect(isoWithLisbonOffset('2026-07-15', 'a sério?')).toBe('2026-07-15');
     expect(isoWithLisbonOffset('2026-07-15', '')).toBe('2026-07-15');
+  });
+});
+
+describe('janelas de data da agenda', () => {
+  // A semana de 7 a 13 de setembro de 2026: segunda a domingo.
+  const SEGUNDA = '2026-09-07';
+  const SEXTA = '2026-09-11';
+  const SABADO = '2026-09-12';
+  const DOMINGO = '2026-09-13';
+
+  it('«hoje» é só hoje, nos dois extremos', () => {
+    expect(janelaDeHoje(SEXTA)).toEqual({ from: SEXTA, to: SEXTA });
+  });
+
+  it('de segunda a quinta, o fim de semana ainda está todo à frente', () => {
+    for (const dia of ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10']) {
+      expect(janelaDoFimDeSemana(dia)).toEqual({ from: SEXTA, to: DOMINGO });
+    }
+  });
+
+  it('à sexta começa hoje — a noite de sexta é metade do fim de semana', () => {
+    expect(janelaDoFimDeSemana(SEXTA)).toEqual({ from: SEXTA, to: DOMINGO });
+  });
+
+  it('encolhe à medida que o fim de semana passa, e nunca começa no passado', () => {
+    expect(janelaDoFimDeSemana(SABADO)).toEqual({ from: SABADO, to: DOMINGO });
+    // O caso que a implementação ingénua erra: «o sábado e o domingo desta
+    // semana» devolvia aqui um intervalo a começar ontem.
+    expect(janelaDoFimDeSemana(DOMINGO)).toEqual({ from: DOMINGO, to: DOMINGO });
+  });
+
+  it('a semana são sete dias a contar de hoje', () => {
+    expect(janelaDaSemana(SEGUNDA)).toEqual({ from: SEGUNDA, to: '2026-09-14' });
+  });
+
+  it('atravessa a virada do ano sem se enganar', () => {
+    // 2026-12-28 é uma segunda-feira.
+    expect(janelaDoFimDeSemana('2026-12-28')).toEqual({ from: '2027-01-01', to: '2027-01-03' });
+    expect(janelaDaSemana('2026-12-28')).toEqual({ from: '2026-12-28', to: '2027-01-04' });
+  });
+
+  it('não se mexe nas mudanças da hora legal', () => {
+    // Os dois domingos em que o relógio anda em Portugal, em 2026. As janelas
+    // são datas e não instantes; este teste existe para provar que continuam a
+    // ser, e é o que trava quem as reescreva com `Date` local.
+    expect(janelaDoFimDeSemana('2026-03-29')).toEqual({ from: '2026-03-29', to: '2026-03-29' });
+    expect(janelaDoFimDeSemana('2026-10-25')).toEqual({ from: '2026-10-25', to: '2026-10-25' });
+  });
+
+  it('o dia certo é o de Lisboa, e não o do relógio da máquina', () => {
+    // Às 23h30 UTC de sábado já é domingo em Lisboa (+01:00). Um
+    // `new Date().getDay()` no servidor daria a janela do sábado.
+    const hoje = todayInLisbon(new Date('2026-09-12T23:30:00Z'));
+    expect(hoje).toBe(DOMINGO);
+    expect(janelaDoFimDeSemana(hoje)).toEqual({ from: DOMINGO, to: DOMINGO });
   });
 });

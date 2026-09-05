@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EventRow } from '@coreto/core';
-import { mergeEventUpdate, nextBaseline } from './db.js';
+import { mergeEventUpdate } from './db.js';
 
 function makeEvent(overrides: Partial<EventRow> = {}): EventRow {
   return {
@@ -199,17 +199,5 @@ describe('mergeEventUpdate', () => {
     const incoming = makeEvent({ confidence: 0.6 });
 
     expect(mergeEventUpdate(existing, incoming).confidence).toBe(0.95);
-  });
-});
-
-describe('nextBaseline', () => {
-  it('a primeira recolha fixa a linha de base', () => {
-    expect(nextBaseline(null, 24)).toBe(24);
-    expect(nextBaseline(0, 24)).toBe(24);
-  });
-
-  it('as seguintes puxam-na devagar, para agosto não a arrastar', () => {
-    expect(nextBaseline(20, 10)).toBe(17);
-    expect(nextBaseline(20, 30)).toBe(23);
   });
 });

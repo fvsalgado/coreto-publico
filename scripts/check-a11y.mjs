@@ -252,6 +252,30 @@ const ESTADOS = [
       });
     },
   },
+  {
+    /*
+     * A ficha de atalho acesa.
+     *
+     * Não é uma rota nova de propósito: um endereço com datas fixas
+     * (`?from=2026-09-11`) apodrecia na lista e passava a auditar uma agenda
+     * vazia. Chega-se ao estado como quem lá chega — carregando no atalho — e
+     * o que se audita é o par de cores do activo e o `aria-current`, que a
+     * volta pelas rotas nunca vê porque em repouso nenhum está aceso.
+     */
+    nome: 'atalho de data aceso',
+    route: '/agenda',
+    width: 360,
+    height: 720,
+    async abrir(page) {
+      await page.click('nav[aria-label="Atalhos de data"] a');
+      await page.waitForFunction(
+        () =>
+          document.querySelector('nav[aria-label="Atalhos de data"] [aria-current="page"]') !==
+          null,
+        { timeout: 5_000 },
+      );
+    },
+  },
 ];
 
 for (const estado of ESTADOS) {
