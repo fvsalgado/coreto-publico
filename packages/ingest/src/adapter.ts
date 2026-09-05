@@ -39,7 +39,7 @@ const sourceKindSchema: z.ZodType<SourceKind> = z.enum([
   'manual',
 ]);
 
-export const sourceRowSchema: z.ZodType<SourceRow, z.ZodTypeDef, unknown> = z.object({
+export const sourceRowSchema: z.ZodType<SourceRow, unknown> = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   kind: sourceKindSchema,
@@ -58,7 +58,7 @@ export const sourceRowSchema: z.ZodType<SourceRow, z.ZodTypeDef, unknown> = z.ob
   url: z.string().min(1),
   adapter: z.string().min(1),
   config: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .nullish()
     .transform((value) => value ?? {}),
   is_enabled: z

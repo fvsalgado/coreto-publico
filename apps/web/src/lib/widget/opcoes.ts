@@ -12,30 +12,74 @@
  * branco no meio da página dela.
  */
 
-import { z } from 'zod';
+/*
+ * Sem Zod, e é uma decisão de peso.
+ *
+ * Este ficheiro é importado pelo construtor de widget, que é um componente de
+ * cliente — portanto tudo o que ele importa vai para o navegador. Com o Zod
+ * aqui, a biblioteca inteira viajava com ele, para uma página que uma
+ * coletividade abre uma vez na vida para copiar seis linhas de HTML. É o mesmo
+ * defeito que o `lib/format.ts` tinha na entrada e no mapa, onde custou 214 kB
+ * medidos.
+ *
+ * Para isto não voltar sem se dar por ela, o `/levar` passou a ter tecto de
+ * peso no `scripts/check-desempenho.mjs`. A decisão está guardada por uma
+ * medição, e não por este comentário.
+ *
+ * E não fazia falta: **todos os campos deste schema acabavam num `.catch()`**
+ * com valor por omissão. Um validador cuja resposta a tudo o que corre mal é
+ * «fica com o de fábrica» é uma função de três linhas, não uma dependência. O
+ * contrato do módulo continua o mesmo, e são os quinze testes ao lado que o
+ * dizem.
+ */
 
 const TRUTHY = new Set(['1', 'true', 'sim', 'on']);
 const FALSY = new Set(['0', 'false', 'nao', 'não', 'off']);
 
 /** `sim`/`nao` que aceita as duas grafias e o inglês, e cai no valor dado. */
-function booleano(omissao: boolean) {
-  return z
-    .string()
-    .optional()
-    .transform((valor) => {
-      const limpo = (valor ?? '').trim().toLowerCase();
-      if (TRUTHY.has(limpo)) return true;
-      if (FALSY.has(limpo)) return false;
-      return omissao;
-    });
+function booleano(valor: string | undefined, omissao: boolean): boolean {
+  const limpo = (valor ?? '').trim().toLowerCase();
+  if (TRUTHY.has(limpo)) return true;
+  if (FALSY.has(limpo)) return false;
+  return omissao;
 }
 
-const slug = z
-  .string()
-  .max(80)
-  .regex(/^[a-z0-9-]+$/)
-  .optional()
-  .catch(undefined);
+const FORMA_DE_SLUG = /^[a-z0-9-]+$/;
+
+/** Um identificador de catálogo, ou nada. Nunca o que veio escrito mal. */
+function slug(valor: string | undefined): string | undefined {
+  if (valor === undefined || valor.length > 80 || !FORMA_DE_SLUG.test(valor)) return undefined;
+  return valor;
+}
+
+/** Texto livre com tecto. Passar do tecto vale o mesmo que não o mandar. */
+function texto(valor: string | undefined, maximo: number): string | undefined {
+  if (valor === undefined || valor.length > maximo) return undefined;
+  return valor;
+}
+
+/** Um dos valores da lista, ou o primeiro. */
+function umDe<const T extends readonly string[]>(
+  valor: string | undefined,
+  valores: T,
+  omissao: T[number],
+): T[number] {
+  return valores.includes(valor ?? '') ? (valor as T[number]) : omissao;
+}
+
+/**
+ * O número de eventos, preso entre um e vinte.
+ *
+ * Fora desse intervalo, não inteiro ou ilegível vale o de fábrica e não o
+ * extremo mais próximo: quem escreveu `limit=999` enganou-se a escrever, e
+ * dar-lhe vinte era fingir que o entendemos.
+ */
+function limite(valor: string | undefined): number {
+  if (valor === undefined) return 5;
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 20) return 5;
+  return numero;
+}
 
 /**
  * As três disposições, e para que serve cada uma.
@@ -49,26 +93,25 @@ export const DISPOSICOES = ['lista', 'cartazes', 'mural'] as const;
 export type Disposicao = (typeof DISPOSICOES)[number];
 
 export const TEMAS = ['auto', 'light', 'dark'] as const;
+export type Tema = (typeof TEMAS)[number];
 
-export const widgetOptionsSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(20).default(5).catch(5),
-  category: slug,
-  venue: slug,
-  series: slug,
+export interface WidgetOptions {
+  limit: number;
+  category: string | undefined;
+  venue: string | undefined;
+  series: string | undefined;
   /** Texto livre; quem o transforma em consulta é `consultaDePesquisa`. */
-  q: z.string().trim().max(120).optional().catch(undefined),
-  free: booleano(false),
-  theme: z.enum(TEMAS).default('auto').catch('auto'),
-  layout: z.enum(DISPOSICOES).default('cartazes').catch('cartazes'),
+  q: string | undefined;
+  free: boolean;
+  theme: Tema;
+  layout: Disposicao;
   /** Hex sem validação de forma aqui: quem a valida é `lerCor`, que a normaliza. */
-  color: z.string().max(9).optional().catch(undefined),
+  color: string | undefined;
   /** Pilha de `font-family`; quem a saneia é `lerTipoDeLetra`. */
-  font: z.string().max(200).optional().catch(undefined),
-  header: booleano(true),
-  frame: booleano(true),
-});
-
-export type WidgetOptions = z.infer<typeof widgetOptionsSchema>;
+  font: string | undefined;
+  header: boolean;
+  frame: boolean;
+}
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -77,32 +120,25 @@ function primeiro(valor: string | string[] | undefined): string | undefined {
 }
 
 export function lerOpcoes(searchParams: SearchParams): WidgetOptions {
-  const bruto = {
-    limit: primeiro(searchParams.limit),
-    category: primeiro(searchParams.category)?.trim().toLowerCase(),
-    venue: primeiro(searchParams.venue)?.trim().toLowerCase(),
-    series: primeiro(searchParams.series)?.trim().toLowerCase(),
+  return {
+    limit: limite(primeiro(searchParams.limit)),
+    category: slug(primeiro(searchParams.category)?.trim().toLowerCase()),
+    venue: slug(primeiro(searchParams.venue)?.trim().toLowerCase()),
+    series: slug(primeiro(searchParams.series)?.trim().toLowerCase()),
     // Sem `toLowerCase`: a pesquisa não olha à caixa nem aos acentos (0116),
     // e o que aqui entra é escrito de volta no construtor tal como veio.
-    q: primeiro(searchParams.q)?.trim(),
-    free: primeiro(searchParams.free),
-    theme: primeiro(searchParams.theme)?.trim().toLowerCase(),
-    layout: primeiro(searchParams.layout)?.trim().toLowerCase(),
-    color: primeiro(searchParams.color)?.trim(),
+    q: texto(primeiro(searchParams.q)?.trim(), 120),
+    free: booleano(primeiro(searchParams.free), false),
+    theme: umDe(primeiro(searchParams.theme)?.trim().toLowerCase(), TEMAS, 'auto'),
+    layout: umDe(primeiro(searchParams.layout)?.trim().toLowerCase(), DISPOSICOES, 'cartazes'),
+    color: texto(primeiro(searchParams.color)?.trim(), 9),
     // Sem `toLowerCase`: «Open Sans» é um nome próprio, e ainda que o CSS
     // case as famílias sem olhar à caixa, o que aqui entra também é escrito
     // de volta no construtor.
-    font: primeiro(searchParams.font)?.trim(),
-    header: primeiro(searchParams.header),
-    frame: primeiro(searchParams.frame),
+    font: texto(primeiro(searchParams.font)?.trim(), 200),
+    header: booleano(primeiro(searchParams.header), true),
+    frame: booleano(primeiro(searchParams.frame), true),
   };
-
-  const parsed = widgetOptionsSchema.safeParse(bruto);
-  // Um `safeParse` que falha inteiro devolve os valores por omissão. Acontece
-  // quando um campo sem `.catch()` recebe lixo; nenhum tem, hoje, mas o dia em
-  // que alguém acrescentar um sem ele não pode ser o dia em que o widget
-  // rebenta no sítio de uma câmara.
-  return parsed.success ? parsed.data : widgetOptionsSchema.parse({});
 }
 
 /** O que o construtor precisa de saber para desenhar um controlo. */

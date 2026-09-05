@@ -177,10 +177,21 @@ function translateIssue(issue: ZodIssue): string {
       return typeof issue.maximum === 'number'
         ? `Não pode passar dos ${issue.maximum} caracteres.`
         : 'Texto demasiado longo.';
-    case 'invalid_string':
-      return issue.validation === 'url' ? URL_MESSAGE : issue.message;
+    /*
+     * O caso do formato não está aqui, e é de propósito.
+     *
+     * O Zod 3 tinha um `invalid_string` com `validation`, que este `switch`
+     * lia para dizer a mensagem dos endereços. O 4 juntou-os num
+     * `invalid_format` — mas ao traduzir descobriu-se que o ramo nunca corria:
+     * a guarda dos `URL_FIELDS`, acima, já devolve antes de chegar aqui, e o
+     * único outro campo com formato é o email, que traz mensagem própria do
+     * schema e cai bem no `default`. Um ramo que nunca corre é um ramo que
+     * ninguém mantém.
+     */
+    // O tipo recebido passou a vir em `input`; no Zod 3 era o nome do tipo em
+    // `received`.
     case 'invalid_type':
-      return issue.received === 'undefined' ? 'Falta preencher este campo.' : issue.message;
+      return issue.input === undefined ? 'Falta preencher este campo.' : issue.message;
     default:
       return issue.message;
   }
@@ -193,7 +204,9 @@ function translateIssue(issue: ZodIssue): string {
  * problema num campo que o formulário não mostra — a armadilha, por exemplo —
  * nunca chega a aparecer no ecrã de ninguém.
  */
-function fieldErrorsFrom(issues: readonly ZodIssue[]): Partial<Record<SubmitFieldName, string>> {
+export function fieldErrorsFrom(
+  issues: readonly ZodIssue[],
+): Partial<Record<SubmitFieldName, string>> {
   const errors: Partial<Record<SubmitFieldName, string>> = {};
   for (const name of SUBMIT_FIELD_NAMES) {
     const issue = issues.find((candidate) => candidate.path[0] === name);

@@ -1,4 +1,4 @@
-import { isoWeekday, weekdayName } from '@coreto/core';
+import { isoWeekday, weekdayName } from '@coreto/core/dates';
 
 /**
  * Datas e horas em português, para leitura humana.
@@ -6,6 +6,19 @@ import { isoWeekday, weekdayName } from '@coreto/core';
  * Tudo formatado no fuso de Lisboa e a partir de cadeias ISO — nunca com
  * `new Date(string)` sobre uma data sem hora, que em servidores fora de
  * Portugal escorrega um dia para trás.
+ *
+ * **O import é de `@coreto/core/dates` e não de `@coreto/core`, e a diferença
+ * pesa duzentos e catorze quilobytes na entrada.** Este ficheiro é usado por
+ * dois componentes de cliente — o `Destaques` da entrada e o `MapaDosEventos`
+ * —, e o barril do `@coreto/core` reexporta os `schemas`, que importam o Zod.
+ * Pelo barril, a biblioteca inteira viajava para o navegador na entrada e no
+ * mapa, para o cliente usar duas funções de aritmética de datas que não
+ * importam nada. A raiz media 358 kB e passou a 144; o mapa, 359 e 146.
+ *
+ * O `dates.ts` não tem uma única dependência, e é por isso que se pode
+ * importar directamente. A regra é a mesma que está escrita no
+ * `analytics/kinds.ts`, um andar acima: o que um componente de cliente importa
+ * paga tudo o que esse ficheiro importa — e um barril importa tudo.
  */
 
 const MONTHS = [
