@@ -58,7 +58,8 @@ export const rawEventSchema = z.object({
   accessibilityNotes: z.string().max(2000).nullish(),
   seriesId: z.string().max(120).nullish(),
   isOngoing: z.boolean().nullish(),
-  payload: z.record(z.unknown()).nullish(),
+  // O Zod 4 exige o tipo da chave por extenso; o 3 deixava-o implícito.
+  payload: z.record(z.string(), z.unknown()).nullish(),
 });
 
 export type RawEventInput = z.infer<typeof rawEventSchema>;
@@ -90,7 +91,7 @@ const publicSubmissionFields = z.object({
   accessibilityNotes: z.string().trim().max(1000).optional().default(''),
   howToArrive: z.string().trim().max(1000).optional().default(''),
   consent: z.literal(true, {
-    errorMap: () => ({ message: 'É preciso aceitar a política de privacidade.' }),
+    error: 'É preciso aceitar a política de privacidade.',
   }),
   website: z.string().max(0).optional(),
 });

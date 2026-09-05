@@ -164,7 +164,7 @@ const audienceSchema = z
   .nullish()
   .transform((value) => value ?? null);
 
-const storedEventSchema: z.ZodType<StoredEvent, z.ZodTypeDef, unknown> = z.object({
+const storedEventSchema: z.ZodType<StoredEvent, unknown> = z.object({
   id: z.string(),
   slug: z.string(),
   title: z.string(),

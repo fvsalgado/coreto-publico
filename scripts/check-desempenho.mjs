@@ -78,25 +78,53 @@ const MAPA_HOST = 'tiles.openfreemap.org';
  * preciso um teste frágil sobre nomes de pacotes, que em produção vêm com
  * resumo no nome.
  *
- * Os 165 kB do `/agenda` e do `/espacos` são baixos porque agora medem só o que
- * a rota carrega. Enquanto isto contava também o pré-carregamento dos vizinhos,
- * o tecto tinha de ser 340 para caber o ruído — e a essa distância já não
- * travava nada.
+ * Os 170 kB são baixos porque medem só o primeiro carregamento da rota.
+ * Enquanto isto contava também o pré-carregamento dos vizinhos, o tecto tinha
+ * de ser 340 para caber o ruído — e a essa distância já não travava nada.
+ *
+ * A raiz e o mapa estiveram em 330 e 700, e desceram no dia em que o Zod saiu
+ * do navegador: 288 kB e 289 passaram a 144 e 146. O Zod chegava lá pelo
+ * barril do `@coreto/core`, importado pelo `lib/format.ts`, que é usado por
+ * dois componentes de cliente — ver o cabeçalho desse ficheiro. Foi só trocar
+ * o barril pelo `@coreto/core/dates`, e as quatro rotas passaram a medir
+ * praticamente o mesmo.
+ *
+ * O que deu por isto foi a subida do Zod 3 para o 4, no mesmo PR: com o 4 a
+ * raiz saltava para 358 kB e o tecto de 330 reprovava-a. Mas o defeito era
+ * anterior à subida e custava quase o mesmo — medido: no `main`, ainda com o
+ * Zod 3, trocar só o barril pelo `dates` levava a raiz de 288 kB a 144 e o
+ * mapa de 289 a 146, os mesmos números que se medem aqui com o Zod 4. Ninguém
+ * o via porque os tectos de 330 e 700 tinham sido calibrados por cima dele —
+ * é o que acontece a um orçamento semeado de uma medição real sem se perguntar
+ * se o que se mediu estava certo.
  */
 const ORCAMENTOS = {
-  '/': { js: 330, css: 30, html: 250 },
-  '/agenda': { js: 165, css: 30, html: 250 },
-  '/espacos': { js: 165, css: 30, html: 250 },
+  '/': { js: 170, css: 30, html: 250 },
+  '/agenda': { js: 170, css: 30, html: 250 },
+  '/espacos': { js: 170, css: 30, html: 250 },
   /*
-   * O mapa leva o MapLibre, e leva-o sozinho — mas só quando há marcas.
+   * O `/levar` está aqui pelo construtor de widget.
    *
-   * Sem credenciais não há lugares, o `MapaVivo` nunca chega a montar e esta
-   * rota mede o mesmo que as outras. Ou seja: **este tecto quase nunca é
-   * exercitado em CI**, e não é ele que guarda o isolamento do MapLibre. Quem
-   * o guarda são os 340 kB das rotas comuns: um import estático em vez do
-   * `next/dynamic` levava-as para lá dos seiscentos, com ou sem base ligada.
+   * É a página onde uma coletividade copia o código para embeber a agenda, e
+   * o `ConstrutorDeWidget` é um componente de cliente que importa o
+   * `lib/widget/opcoes.ts`. Esse ficheiro validava as opções com Zod e deixou
+   * de o fazer justamente por isso — sem um tecto aqui, nada travava quem lho
+   * voltasse a pôr.
    */
-  '/mapa': { js: 700, css: 40, html: 250, terceiros: [MAPA_HOST] },
+  '/levar': { js: 170, css: 30, html: 250 },
+  /*
+   * O mapa tem o mesmo tecto que as outras, e isso é uma mudança.
+   *
+   * Teve 700 enquanto se contava tudo o que passava na rede, para caber o
+   * MapLibre. Agora conta-se o que está no HTML, e o MapLibre não está lá: entra
+   * por `next/dynamic` depois da hidratação. Fica fora da medição, e um tecto de
+   * 700 seria um número que nunca reprovaria nada.
+   *
+   * A trava que interessa não se perde. Trocar o `next/dynamic` por um import
+   * estático punha o MapLibre no HTML de todas as rotas comuns, e são estes
+   * 170 kB que o apanham.
+   */
+  '/mapa': { js: 170, css: 30, html: 250, terceiros: [MAPA_HOST] },
 };
 
 /** Um salto de layout acima disto sente-se. Ver `docs/ARQUITETURA.md`. */
@@ -126,23 +154,36 @@ async function medir(rota) {
   const page = await context.newPage();
 
   /*
-   * O peso é o da rota, e não o dos vizinhos.
+   * O peso é o da rota, e não o dos vizinhos — e sem olhar para o relógio.
    *
-   * O Next pré-carrega as rotas para que a página aponta, e essas transferências
-   * chegam como `script` iguais às outras. A contá-las, `/agenda` media 291 kB
-   * quando o que ela própria carrega são 141 — e o número passava a depender de
-   * quantas ligações a página tem, não do que ela pesa. Pior: uma melhoria real
-   * ficava invisível, que foi como este defeito se descobriu.
+   * O Next pré-carrega as rotas para que a página aponta, e essas
+   * transferências chegam como `script` iguais às outras. A contá-las, o
+   * `/agenda` media 291 kB quando o que ela própria carrega são 146: o número
+   * passava a depender de quantas ligações a página tem.
    *
-   * Por isso marca-se o instante do `load` e só conta para o orçamento o que
-   * chegou antes dele. **Os pedidos de depois continuam a ser recolhidos** —
-   * são eles que provam que nenhum terceiro é contactado, e um pedido a
-   * terceiros feito tarde continua a ser um pedido a terceiros.
+   * A primeira separação foi pelo instante do `load`: contava o que tinha
+   * chegado antes dele. Dá o número certo — medida a par com esta, sobre a
+   * mesma compilação, sai exactamente o mesmo nas quatro rotas. Mas é uma
+   * regra sobre **quando** um pedido chegou, e o pré-carregamento só começa
+   * depois do `load` por hábito do router, não por garantia. Um orçamento
+   * apertado assente numa corrida é a espécie de número que este ficheiro
+   * diz, logo no cabeçalho, que não pode reprovar uma compilação.
+   *
+   * Por isso o que conta é **o que o servidor escreveu no HTML**, lido do HTML
+   * e não do documento já vivo — ver `primeiroCarregamento`. É função da
+   * compilação e não do relógio, e o conjunto é o mesmo em qualquer máquina.
+   *
+   * O que fica de fora: um pacote pedido por `next/dynamic` depois da
+   * hidratação não está no HTML e não é contado — é o caso do MapLibre no
+   * `/mapa`. A trava que interessa continua a valer, porque um import estático
+   * dele apareceria no HTML das rotas comuns e rebentava-lhes o tecto.
+   *
+   * **Todos os pedidos continuam a ser recolhidos**, e é sobre todos que se
+   * verificam os terceiros: um pedido a terceiros feito tarde continua a ser um
+   * pedido a terceiros.
    */
   const pedidos = [];
-  let momentoDoLoad = Infinity;
   page.on('requestfinished', (request) => {
-    const quando = Date.now();
     pedidos.push(
       (async () => {
         const resposta = await request.response();
@@ -150,15 +191,12 @@ async function medir(rota) {
         return {
           url: request.url(),
           tipo: request.resourceType(),
-          bytes: tamanhos.responseBodySize ?? 0,
+          // Um recurso servido da cache do navegador devolve tamanho negativo.
+          bytes: Math.max(0, tamanhos.responseBodySize ?? 0),
           estado: resposta?.status() ?? 0,
-          daRota: quando <= momentoDoLoad,
         };
       })(),
     );
-  });
-  page.once('load', () => {
-    momentoDoLoad = Date.now();
   });
 
   // Mede o salto de layout desde a primeira pintura. Injectado antes de
@@ -194,6 +232,40 @@ async function medir(rota) {
   return { recolhidos, cls, cookies, guardado, ttfb };
 }
 
+/**
+ * O que o servidor escreveu no HTML — lido do HTML, e não do DOM.
+ *
+ * Ler `document.querySelectorAll('script[src]')` depois do carregamento parece
+ * equivalente e não é: durante a espera pela rede o router do Next acrescenta ao
+ * documento os pacotes das rotas que pré-carrega, e o conjunto cresce enquanto
+ * se olha para ele — que é o mesmo defeito, um passo mais tarde.
+ *
+ * O HTML servido não cresce. É o mesmo texto para toda a gente, é função da
+ * compilação, e é dele que sai o conjunto.
+ *
+ * **Isto devolve um conjunto de endereços, não um peso.** Quem soma é o
+ * `medir`, cruzando este conjunto com o que o navegador chegou mesmo a pedir, e
+ * o cruzamento não é uma formalidade: o Next escreve no `<head>` um
+ * `<script noModule>` com os polyfills para navegadores antigos, e um navegador
+ * com módulos ES nunca o vai buscar. São 40 kB comprimidos que estão no HTML e
+ * não viajam. Somar o que aqui está devolvido, sem cruzar, inflaciona a raiz de
+ * 144 para 184 kB e mede um navegador que já ninguém usa.
+ */
+async function primeiroCarregamento(rota) {
+  const resposta = await fetch(`${BASE_URL}${rota}`);
+  const html = await resposta.text();
+  const enderecos = new Set([new URL(rota, BASE_URL).href]);
+  for (const [, src] of html.matchAll(/<script[^>]+src="([^"]+)"/g)) {
+    enderecos.add(new URL(src, BASE_URL).href);
+  }
+  for (const [, tag] of html.matchAll(/(<link[^>]+>)/g)) {
+    if (!/rel="stylesheet"/.test(tag)) continue;
+    const href = tag.match(/href="([^"]+)"/)?.[1];
+    if (href) enderecos.add(new URL(href, BASE_URL).href);
+  }
+  return enderecos;
+}
+
 /** Só o carregamento se repete — a asserção, nunca. Um soluço não é uma regressão. */
 async function medirComPaciencia(rota) {
   let ultimoErro;
@@ -220,13 +292,14 @@ for (const rota of rotas) {
   // milissegundos de variância que não dizem nada sobre o código.
   await fetch(`${BASE_URL}${rota}`).catch(() => {});
 
+  const daRota = await primeiroCarregamento(rota);
   const { recolhidos, cls, cookies, guardado, ttfb } = await medirComPaciencia(rota);
 
   const kb = (bytes) => Math.round(bytes / 1024);
   const somar = (tipos) =>
     kb(
       recolhidos
-        .filter((pedido) => pedido.daRota && tipos.includes(pedido.tipo))
+        .filter((pedido) => daRota.has(pedido.url) && tipos.includes(pedido.tipo))
         .reduce((total, pedido) => total + pedido.bytes, 0),
     );
 

@@ -357,6 +357,34 @@ recusa tudo com 503 em vez de degradar. Um endereço que cria submissões sem
 verificar quem as manda é uma fila de moderação inundada, e uma fila inundada é
 uma fila que ninguém lê.
 
+### Um componente de cliente paga tudo o que importa — e um barril importa tudo
+
+O que um ficheiro com `'use client'` importa viaja para o navegador por
+inteiro, incluindo o que esse componente não usa e o que vem de segunda mão.
+A regra prática que daí sai: **um ficheiro partilhado pelos dois lados não pode
+importar um barril.**
+
+Custou duas vezes, das duas por Zod:
+
+- O `analytics/kinds.ts` tinha ao lado os _schemas_ do corpo do pedido a
+  `POST /api/stats`. Como o `AnalyticsProvider` está no layout da região, a
+  biblioteca ia para o navegador em **todas** as páginas do sítio, para o
+  cliente usar quatro constantes. Os _schemas_ mudaram-se para `request.ts`,
+  que só o servidor importa, e o `kinds.ts` ficou sem uma única dependência.
+- O `lib/format.ts` importava `isoWeekday` e `weekdayName` do barril
+  `@coreto/core`, que reexporta os `schemas`. Como o `Destaques` e o
+  `MapaDosEventos` são componentes de cliente e ambos formatam datas, a mesma
+  biblioteca viajava outra vez — 214 kB na entrada e no mapa. O `dates.ts` não
+  tem dependências e passou a ser importado directamente, por
+  `@coreto/core/dates`; é para isso que o `@coreto/core` declara subcaminhos no
+  `exports` além do barril.
+
+O segundo só se descobriu porque o `scripts/check-desempenho.mjs` reprovou uma
+subida de versão do Zod. O defeito era anterior e valia quase o mesmo com a
+versão antiga: o tecto tinha sido calibrado por cima dele. **Um orçamento
+semeado de uma medição real herda o que essa medição já tinha de errado** — e
+é a razão pela qual os tectos das quatro rotas comuns são hoje o mesmo número.
+
 ---
 
 ## Cache e invalidação
