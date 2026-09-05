@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { addDays, listMunicipalityNames, todayInLisbon } from '@coreto/core';
+import { janelaDaSemana, listMunicipalityNames, todayInLisbon } from '@coreto/core';
 import { Destaques } from '@/src/components/Destaques';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
@@ -32,9 +32,6 @@ export async function generateMetadata({
   // resolvia contra o caminho interno na pré-geração.
   return { alternates: enderecos(urlDoSitio(regiao, SITE_URL), '/') };
 }
-
-/** Sete dias contam a semana a partir de hoje, não a semana do calendário. */
-const WEEK_DAYS = 7;
 
 /** Quantos eventos cabem na montra antes de valer mais a pena ir à agenda. */
 const WEEK_LIMIT = 40;
@@ -70,9 +67,11 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
   const today = todayInLisbon();
 
   const [week, municipalities, counts, venueNames, desligadas] = await Promise.all([
+    // A mesma semana que o atalho «Esta semana» da agenda mostra — a definição
+    // vive em `@coreto/core` para as duas vistas serem os mesmos sete dias por
+    // construção, e não por coincidência.
     listEvents(regiao.id, {
-      from: today,
-      to: addDays(today, WEEK_DAYS),
+      ...janelaDaSemana(today),
       page: 1,
       limit: WEEK_LIMIT,
     }),

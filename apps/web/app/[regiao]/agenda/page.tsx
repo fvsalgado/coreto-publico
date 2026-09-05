@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { eventFilterSchema, todayInLisbon, type EventFilter } from '@coreto/core';
+import Link from 'next/link';
+import { todayInLisbon, type EventFilter } from '@coreto/core';
 import { ActiveFilters, type ActiveFilter } from '@/src/components/ActiveFilters';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
@@ -17,102 +18,24 @@ import {
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
-import { formatLongDate, formatShortDate, formatWeekdayDate } from '@/src/lib/format';
+import { formatLongDate } from '@/src/lib/format';
+import {
+  ATALHOS,
+  PATH,
+  atalhosDeData,
+  buildHref,
+  descreverDatas,
+  filtroIndexavel,
+  janelaActiva,
+  readFilter,
+  type FilterKey,
+  type SearchParams,
+} from '@/src/lib/agenda';
 import { urlDoSitio, type Regiao } from '@/src/lib/regiao';
-
-type SearchParams = Record<string, string | string[] | undefined>;
 
 interface Props {
   params: Promise<{ regiao: string }>;
   searchParams: Promise<SearchParams>;
-}
-
-const PATH = '/agenda';
-
-/** Os defaults do schema, para não repetir números mágicos por aqui. */
-const DEFAULTS = eventFilterSchema.parse({});
-
-const FILTER_KEYS = [
-  'municipality',
-  'category',
-  'from',
-  'to',
-  'free',
-  'accessible',
-  'venue',
-  'series',
-  'q',
-  'page',
-  'limit',
-] as const;
-
-/** Um parâmetro repetido no endereço vale pela primeira ocorrência. */
-function firstValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-/**
- * Lê os filtros do endereço.
- *
- * Um formulário GET submete também os campos que ficaram por preencher
- * («from=»), e uma data vazia não passa no schema — daí limpar os vazios antes
- * de validar, senão bastava um campo em branco para o botão «Filtrar» deixar
- * de funcionar. Um parâmetro inválido cai nos defaults em vez de rebentar: quem
- * escreveu o endereço à mão vê a agenda, não uma página de erro.
- */
-function readFilter(searchParams: SearchParams): EventFilter {
-  const raw: Record<string, string> = {};
-  for (const key of FILTER_KEYS) {
-    const value = firstValue(searchParams[key])?.trim();
-    if (value) raw[key] = value;
-  }
-
-  const parsed = eventFilterSchema.safeParse(raw);
-  return parsed.success ? parsed.data : DEFAULTS;
-}
-
-/** Os campos que se mostram como fichas removíveis. `page` e `limit` não são filtros. */
-type FilterKey =
-  'q' | 'from' | 'to' | 'municipality' | 'category' | 'venue' | 'series' | 'free' | 'accessible';
-
-/**
- * Reconstrói o endereço a partir dos filtros já validados — nunca do que veio
- * em bruto.
- *
- * `omit` tira um filtro e leva de volta à primeira página: quem larga o
- * concelho estava na página 3 de uma lista que agora tem trinta, e cair num
- * «sem resultados» que é só uma página vazia seria dar-lhe a entender que
- * alargar o filtro tirou eventos.
- */
-function buildHref(filter: EventFilter, page: number, omit?: FilterKey): string {
-  const params = new URLSearchParams();
-  const keep = (key: FilterKey): boolean => key !== omit;
-
-  if (filter.q && keep('q')) params.set('q', filter.q);
-  if (filter.from && keep('from')) params.set('from', filter.from);
-  if (filter.to && keep('to')) params.set('to', filter.to);
-  if (filter.municipality && keep('municipality')) params.set('municipality', filter.municipality);
-  if (filter.category && keep('category')) params.set('category', filter.category);
-  if (filter.venue && keep('venue')) params.set('venue', filter.venue);
-  if (filter.series && keep('series')) params.set('series', filter.series);
-  if (filter.free && keep('free')) params.set('free', '1');
-  if (filter.accessible && keep('accessible')) params.set('accessible', '1');
-  if (filter.limit !== DEFAULTS.limit) params.set('limit', String(filter.limit));
-  if (page > 1) params.set('page', String(page));
-
-  const query = params.toString();
-  return query ? `${PATH}?${query}` : PATH;
-}
-
-/** As datas escolhidas, por extenso — «a sábado, 5 de setembro», «de 5 a 12 set». */
-function descreverDatas(from?: string, to?: string): string | null {
-  if (from && to) {
-    if (from === to) return `a ${formatWeekdayDate(from)}`;
-    return `de ${formatShortDate(from)} a ${formatShortDate(to)}`;
-  }
-  if (from) return `a partir de ${formatWeekdayDate(from)}`;
-  if (to) return `até ${formatWeekdayDate(to)}`;
-  return null;
 }
 
 interface Descricao {
@@ -131,14 +54,18 @@ interface Descricao {
  * duas: a agenda de um fim-de-semana anunciava-se como a agenda inteira, sem
  * dizer de que dias falava — no título, na descrição e no cabeçalho da página.
  */
-async function describeFilter(regiao: Regiao, filter: EventFilter): Promise<Descricao> {
+async function describeFilter(
+  regiao: Regiao,
+  filter: EventFilter,
+  hoje: string,
+): Promise<Descricao> {
   const [municipalities, categories] = await Promise.all([
     listMunicipalities(regiao.id),
     listCategories(),
   ]);
   const municipality = municipalities.find((item) => item.id === filter.municipality);
   const category = categories.find((item) => item.slug === filter.category);
-  const datas = descreverDatas(filter.from, filter.to);
+  const datas = descreverDatas(filter.from, filter.to, hoje);
 
   const partes: string[] = [];
   if (category) partes.push(category.name);
@@ -199,7 +126,7 @@ async function describeFilter(regiao: Regiao, filter: EventFilter): Promise<Desc
  * se repete daqui a pouco; um `noindex` é uma coisa que se acredita.
  */
 async function deixaIndexar(regiao: Regiao, filter: EventFilter): Promise<boolean> {
-  if (filter.q || filter.venue || filter.series) return false;
+  if (!filtroIndexavel(filter)) return false;
   const { total } = await listEvents(regiao.id, filter);
   return total > 0;
 }
@@ -209,7 +136,8 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const regiao = await exigirRegiao(regiaoId);
   const origem = urlDoSitio(regiao, SITE_URL);
   const filter = readFilter(await searchParams);
-  const description = await describeFilter(regiao, filter);
+  const hoje = todayInLisbon();
+  const description = await describeFilter(regiao, filter, hoje);
 
   return {
     title: description.rotulo ? `Agenda: ${description.rotulo}` : 'Agenda',
@@ -235,6 +163,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
  */
 function activeFilters(
   filter: EventFilter,
+  hoje: string,
   names: {
     municipalities: Record<string, string>;
     categories: Record<string, string>;
@@ -252,8 +181,25 @@ function activeFilters(
   if (filter.category) ficha('category', names.categories[filter.category] ?? filter.category);
   if (filter.venue) ficha('venue', names.venues[filter.venue] ?? filter.venue);
   if (filter.series) ficha('series', names.series[filter.series] ?? filter.series);
-  if (filter.from) ficha('from', `De ${formatLongDate(filter.from)}`);
-  if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
+  /*
+   * Um recorte com nome é uma ficha só, e larga-se inteiro.
+   *
+   * Sem isto, «Hoje» aparecia como «De 5 de setembro» **e** «Até 5 de
+   * setembro» — duas fichas para um filtro, removíveis uma de cada vez e a
+   * deixar meia janela para trás. E o contador do formulário dizia «2», o que
+   * levava quem carregou num atalho a pensar que tinha escondido dois filtros
+   * que não pôs.
+   */
+  const atalho = janelaActiva(filter, hoje);
+  if (atalho) {
+    fichas.push({
+      label: ATALHOS.find((item) => item.id === atalho)?.rotulo ?? 'Datas',
+      href: buildHref(filter, 1, ['from', 'to']),
+    });
+  } else {
+    if (filter.from) ficha('from', `De ${formatLongDate(filter.from)}`);
+    if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
+  }
   if (filter.free) ficha('free', 'Entrada livre');
   if (filter.accessible) ficha('accessible', 'Acesso a cadeiras de rodas');
 
@@ -280,14 +226,15 @@ export default async function AgendaPage({ params, searchParams }: Props) {
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
 
-  const fichas = activeFilters(filter, {
+  const fichas = activeFilters(filter, today, {
     municipalities: municipalityNames,
     categories: Object.fromEntries(categories.map((category) => [category.slug, category.name])),
     venues: venueNames,
     series: Object.fromEntries(series.map((item) => [item.id, item.name])),
   });
 
-  const descricao = await describeFilter(regiao, filter);
+  const descricao = await describeFilter(regiao, filter, today);
+  const atalhos = atalhosDeData(filter, today);
   const totalPages = Math.max(1, Math.ceil(result.total / filter.limit));
   const origem = urlDoSitio(regiao, SITE_URL);
 
@@ -303,6 +250,17 @@ export default async function AgendaPage({ params, searchParams }: Props) {
    */
   const indexavel = await deixaIndexar(regiao, filter);
 
+  /*
+   * E só quando não há recorte nenhum a valer.
+   *
+   * `deixaIndexar` deixa passar o concelho, a categoria e as caixas, por isso
+   * `indexavel` sozinho não chegava: `/agenda?category=musica` publicava uma
+   * `CollectionPage` com o endereço da agenda inteira — `url` vira `@id` — e
+   * vinte eventos de música lá dentro. É a mesma falha que o comentário acima
+   * diz estar a evitar, por uma porta que ele não cobria.
+   */
+  const afirmaAListaInteira = indexavel && fichas.length === 0;
+
   const summary =
     result.total === 0
       ? 'Nenhum evento corresponde a estes filtros.'
@@ -312,7 +270,7 @@ export default async function AgendaPage({ params, searchParams }: Props) {
 
   return (
     <>
-      {indexavel ? (
+      {afirmaAListaInteira ? (
         <ListagemStructuredData
           nome="Agenda"
           descricao={`A programação dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}.`}
@@ -343,6 +301,30 @@ export default async function AgendaPage({ params, searchParams }: Props) {
             : `A programação dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}. Cada filtro é uma ligação — dá para guardar nos favoritos e para partilhar tal como está.`
         }
       />
+
+      {/* Fora do recolhível de propósito: no telemóvel o formulário está
+          fechado por omissão e sem JavaScript, e um atalho atrás de uma gaveta
+          é um campo de formulário com outro nome. São três fichas numa linha,
+          não os dois ecrãs de formulário que o recolhível existe para poupar. */}
+      <nav aria-label="Atalhos de data" className="mt-5">
+        <ul className="flex flex-wrap gap-2">
+          {atalhos.map((atalho) => (
+            <li key={atalho.id}>
+              <Link
+                href={atalho.href}
+                aria-current={atalho.activo ? 'page' : undefined}
+                className={
+                  atalho.activo
+                    ? 'inline-flex min-h-11 items-center rounded-full border border-accent bg-accent-soft px-4 text-sm font-semibold text-accent'
+                    : 'inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-4 text-sm font-medium hover:border-accent/40'
+                }
+              >
+                {atalho.rotulo}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
       <FilterBar
         filter={filter}

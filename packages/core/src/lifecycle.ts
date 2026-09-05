@@ -68,31 +68,47 @@ export function shouldSkipReconcile(existing: number, seen: number): boolean {
   return reconcileDecision(existing, seen).skip;
 }
 
+/** Abaixo desta linha de base não se tiram conclusões sobre a contagem. */
+export const DRIFT_MIN_BASELINE = 5;
+
+export interface DriftInput {
+  itemsFound: number;
+  baseline: number | null;
+  minExpected: number;
+}
+
 /**
  * Alteração de layout: a recolha rendeu muito abaixo da linha de base.
  *
  * Parente próximo da trava acima, mas noutro momento — esta pergunta-se ANTES
  * de escrever seja o que for, comparando com o que a fonte costuma dar. Um
- * seletor que deixou de casar parece uma agenda vazia, e a diferença entre as
- * duas é o que impede um site com tema novo de apagar um concelho.
+ * seletor que deixou de casar parece exatamente uma agenda vazia, e a
+ * diferença entre as duas coisas é tudo: sem esta verificação, o dia em que
+ * uma câmara mudasse de tema o site apagava a programação inteira do concelho
+ * e ninguém dava por isso até alguém reclamar. Na dúvida, não se escreve nada
+ * e a execução fica marcada para ser vista.
+ *
+ * O mínimo esperado é a trava de quem sabe o que a fonte tem: uma fonte
+ * configurada com `min_expected_items` maior que zero acusa a queda mesmo sem
+ * história nenhuma, que é o que protege uma recolha nova.
  */
-export function detectLayoutDrift(found: number, baseline: number | null): boolean {
-  if (baseline === null || baseline < 5) return false;
-  return found < baseline / 2;
+export function detectLayoutDrift(input: DriftInput): boolean {
+  if (input.minExpected > 0 && input.itemsFound < input.minExpected) return true;
+  if (input.baseline === null || input.baseline < DRIFT_MIN_BASELINE) return false;
+  return input.itemsFound * 2 < input.baseline;
 }
 
 /**
- * Nova linha de base, com média móvel amortecida.
+ * Nova linha de base, suavizada.
  *
- * Amortecida de propósito: a linha de base tem de acompanhar o crescimento
- * real de uma agenda sem ser arrastada por uma recolha má. Um salto para
- * baixo demora várias noites a instalar-se, o que dá tempo a alguém de ver o
- * alerta.
+ * Média móvel em vez do último valor: a agenda de agosto é legitimamente mais
+ * magra do que a de outubro, e uma linha de base que copiasse a última recolha
+ * ficava presa no mês mais fraco — e deixava de dar pela mudança de layout que
+ * ela existe para apanhar.
  */
 export function nextBaseline(current: number | null, found: number): number {
-  if (current === null) return found;
-  if (found > current) return found;
-  return Math.round(current * 0.8 + found * 0.2);
+  if (current === null || current <= 0) return found;
+  return Math.max(0, Math.round(current * 0.7 + found * 0.3));
 }
 
 /**

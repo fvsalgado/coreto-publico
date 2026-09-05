@@ -412,7 +412,10 @@ cartaz para lhe ler as medidas do cabeçalho (`medidasDaImagem`, em
 `@coreto/core`). É o que permite à ficha de evento declarar `width` e `height`
 no `<img>` e o navegador reservar a caixa exacta antes de a imagem existir — o
 salto de layout que o cartaz provocava era a única métrica de desempenho desta
-casa que se **sente** em vez de se medir.
+casa que se **sentia** em vez de se medir. Hoje mede-se: o
+`scripts/check-desempenho.mjs` reprova acima de 0,02 de salto acumulado, ao
+lado dos tectos de peso e das fronteiras (sem terceiros, sem nada guardado no
+equipamento, e o essencial a funcionar sem JavaScript).
 
 **O que trava o custo é o endereço, não o evento.** Um cartaz cujo endereço não
 mudou e que já tem medidas guardadas não é pedido outra vez: numa noite em que
@@ -472,23 +475,14 @@ nome e por lista. Ver [`RGPD.md`](RGPD.md).
 
 ## O que ainda não está ligado
 
-Escrito aqui para não passar por decisão o que é trabalho por fazer.
+Nada. A secção esteve aqui com três coisas por fazer e ficou vazia a 5 de
+setembro de 2026: a recolha passou a consultar os bloqueios manuais, a
+reconciliação passou a ser invocada pelo pipeline, e as duas versões de
+`detectLayoutDrift` e `nextBaseline` passaram a ser uma só em `@coreto/core`.
 
-- **A recolha ainda não consulta os bloqueios manuais.** A moderação já os
-  escreve (`lock_event_fields`, chamado em `apps/web/src/lib/admin/actions.ts`) e
-  a base já os sabe devolver (`locked_fields`), mas o pipeline não os lê nem
-  aplica `stripLockedFields`. O que hoje protege as correções é a lista
-  `MODERATION_OWNED` e a regra de nunca substituir preenchido por vazio — que é
-  bastante, mas não é isto.
-- **A reconciliação não é chamada por ninguém.** `public.reconcile_source_events`
-  e `reconcileDecision` existem e estão testados; o pipeline ainda não os invoca.
-  Enquanto assim for, um evento retirado da fonte fica no catálogo até a data
-  passar.
-- **Há duas versões de `detectLayoutDrift` e de `nextBaseline`** — uma em
-  `packages/core/src/lifecycle.ts`, outra em `packages/ingest` — com fórmulas
-  parecidas e diferentes. A que corre é a do `ingest`. Duas implementações da
-  mesma regra são, mais cedo ou mais tarde, duas regras; quando a reconciliação
-  for ligada, convém ficar uma só.
+Fica o título, e não se apaga: é aqui que se escreve o que é trabalho por
+fazer, para não passar por decisão. Vazio é uma afirmação — e das três, duas
+estiveram escritas aqui como pendentes muito depois de terem sido feitas.
 
 ## O GitHub é um ponto único de falha, e é uma decisão
 

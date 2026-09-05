@@ -50,6 +50,11 @@ jobs:
       - name: Testes
         run: pnpm test
 
+      # Confere os números do `PROJETO.md` contra o repositório. Não precisa de
+      # segredos — é o que lhe permite estar aqui, ao lado das outras.
+      - name: Números do PROJETO.md
+        run: pnpm check:numeros
+
       - name: Compilação
         run: pnpm build
 
@@ -349,3 +354,72 @@ jobs:
           curl --silent --fail --output /dev/null "${BASE_URL}/" \
             || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
           pnpm check:a11y
+
+  desempenho:
+    name: Desempenho
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Irmão do de acessibilidade, e pela mesma razão: o README abre a dizer que
+    # o sítio é rápido, e nada o media. Aqui verificam-se as promessas que são
+    # função da compilação e não do humor do executor — o peso por rota, zero
+    # pedidos a terceiros, zero cookies, e o essencial a funcionar sem
+    # JavaScript. O TTFB e o LCP saem em `::notice::` e nunca reprovam.
+    #
+    # Trabalho próprio e não um passo do de acessibilidade: uma falha de
+    # orçamento a aparecer sob o nome «Acessibilidade» é a melhor maneira de
+    # alguém desligar o que não devia.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Instalar o Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Os orçamentos são só tectos, e é por isto: sem credenciais o catálogo
+      # está vazio e as páginas saem mais pequenas. Um mínimo faria este
+      # trabalho reprovar em qualquer fork.
+      - name: Avisar quando a medição vai correr sem dados
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -z "${SUPABASE_URL}" ]; then
+            echo "::notice::Sem credenciais de leitura: mede-se um catálogo vazio."
+          fi
+
+      # `REGIAO_DE_OMISSAO` nos dois passos, pela mesma razão do trabalho de
+      # acessibilidade: sem ela o middleware vê um IP, não reconhece região
+      # nenhuma e serve a página do produto — não havia uma página de região
+      # para medir.
+      - name: Compilar
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+        run: pnpm build
+
+      - name: Medir o sítio a correr
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+          BASE_URL: http://127.0.0.1:3000
+        run: |
+          pnpm --filter @coreto/web start --port 3000 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "${BASE_URL}/" \
+            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
+          pnpm check:desempenho
