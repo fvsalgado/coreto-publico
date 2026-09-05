@@ -46,6 +46,9 @@ packages/ingest/data/
 
 # Saída da sondagem das fontes. É obra de terceiros e sai como artefacto.
 sondagem/
+
+# Relatório do gitleaks, escrito na área de trabalho quando o varrimento corre.
+results.sarif
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
 

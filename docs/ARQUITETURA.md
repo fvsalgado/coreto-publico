@@ -490,9 +490,9 @@ Não são camadas por cima: são restrições que moldam o desenho.
 
 A conformidade **WCAG 2.1 AA** é o que o Decreto-Lei n.º 83/2018 exige a um
 serviço público. Está verificada em CI, sobre o sítio a correr, em duas larguras,
-sobre as páginas fixas e uma ficha de cada tipo (`scripts/check-a11y.mjs`). O job
-não é opcional: se falhar, a declaração publicada em `/acessibilidade` deixou de
-ser verdade.
+sobre as páginas fixas e uma ficha de cada tipo (`scripts/check-a11y.mjs`). A
+verificação não é opcional: se falhar, a declaração publicada em
+`/acessibilidade` deixou de ser verdade.
 
 Do lado da **privacidade**, a decisão estruturante está na migração `0017`: os
 contadores por evento guardam quatro números por evento e mais nada — sem linha

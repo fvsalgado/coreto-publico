@@ -26,3 +26,10 @@ instantaneos/**/*.html
 # que o Prettier recusa. As tabelas saem alinhadas pelo gerador, não pelo
 # formatador.
 docs/INVENTARIO.md
+
+# Escrito pelo gitleaks na área de trabalho quando o varrimento corre no CI.
+# Passou a cruzar-se com o `prettier --check .` no dia em que o varrimento
+# deixou de ser um trabalho à parte e passou a primeiro passo do «Qualidade»:
+# o relatório aparece antes da verificação de formatação e reprovava-a. É saída
+# de uma ferramenta, com a forma que ela lhe dá.
+results.sarif
