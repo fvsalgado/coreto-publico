@@ -193,7 +193,12 @@ Três canais, todos a desaguar no mesmo sítio.
    material fica guardado tal como chegou, tenta-se dele extrair os campos do
    evento e a submissão entra na fila. Este canal **nunca** escreve
    diretamente no catálogo.
-3. **Formulário público** em `/submeter`, com limitação de tráfego e sem conta.
+3. **Envio por programa**, em `POST /api/submissions`, com limitação de
+   tráfego e sem conta — para quem já tem os eventos noutro sistema. Houve
+   aqui um formulário público e saiu, por decisão do editor: quem programa
+   cultura já vive no email e já lá tem o cartaz, e um formulário obrigava a
+   partir essa informação por campos de que só nós precisamos. O que
+   `/submeter` é hoje está escrito lá — como enviar, e o que serve.
 
 A **moderação** vive em `/admin`: uma fila com o motivo à vista, candidatos a
 duplicado assinalados por semelhança, e um registo de auditoria de quem fez o

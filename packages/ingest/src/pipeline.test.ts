@@ -16,7 +16,6 @@ import { HttpClient } from './http.js';
 import type { CloseRunInput, OpenRunInput } from './run-logger.js';
 import {
   concelhoDoEspaco,
-  detectLayoutDrift,
   deterministicEventId,
   isCircuitOpen,
   motivoDaRevisao,
@@ -271,26 +270,6 @@ async function run(
   if (!outcome) throw new Error('sem resultado');
   return outcome;
 }
-
-describe('detectLayoutDrift', () => {
-  it('não conclui nada sem linha de base', () => {
-    expect(detectLayoutDrift({ itemsFound: 0, baseline: null, minExpected: 0 })).toBe(false);
-  });
-
-  it('ignora linhas de base pequenas de mais para dizerem alguma coisa', () => {
-    expect(detectLayoutDrift({ itemsFound: 1, baseline: 4, minExpected: 0 })).toBe(false);
-  });
-
-  it('dispara abaixo de metade da linha de base', () => {
-    expect(detectLayoutDrift({ itemsFound: 9, baseline: 20, minExpected: 0 })).toBe(true);
-    expect(detectLayoutDrift({ itemsFound: 10, baseline: 20, minExpected: 0 })).toBe(false);
-  });
-
-  it('respeita o mínimo declarado na fonte', () => {
-    expect(detectLayoutDrift({ itemsFound: 3, baseline: null, minExpected: 5 })).toBe(true);
-    expect(detectLayoutDrift({ itemsFound: 6, baseline: null, minExpected: 5 })).toBe(false);
-  });
-});
 
 describe('deterministicEventId', () => {
   it('é estável e tem forma de uuid', () => {

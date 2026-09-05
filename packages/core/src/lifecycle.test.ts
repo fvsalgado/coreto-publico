@@ -43,34 +43,34 @@ describe('reconcileDecision', () => {
 });
 
 describe('detectLayoutDrift', () => {
-  it('assinala uma queda para menos de metade da linha de base', () => {
-    expect(detectLayoutDrift(4, 20)).toBe(true);
-    expect(detectLayoutDrift(0, 20)).toBe(true);
+  it('não conclui nada sem linha de base', () => {
+    expect(detectLayoutDrift({ itemsFound: 0, baseline: null, minExpected: 0 })).toBe(false);
   });
 
-  it('não assinala uma variação normal', () => {
-    expect(detectLayoutDrift(15, 20)).toBe(false);
-    expect(detectLayoutDrift(30, 20)).toBe(false);
+  it('ignora linhas de base pequenas de mais para dizerem alguma coisa', () => {
+    expect(detectLayoutDrift({ itemsFound: 1, baseline: 4, minExpected: 0 })).toBe(false);
   });
 
-  it('não assinala nada sem linha de base fiável', () => {
-    expect(detectLayoutDrift(0, null)).toBe(false);
-    expect(detectLayoutDrift(0, 3)).toBe(false);
+  it('dispara abaixo de metade da linha de base', () => {
+    expect(detectLayoutDrift({ itemsFound: 9, baseline: 20, minExpected: 0 })).toBe(true);
+    expect(detectLayoutDrift({ itemsFound: 10, baseline: 20, minExpected: 0 })).toBe(false);
+  });
+
+  it('respeita o mínimo declarado na fonte', () => {
+    expect(detectLayoutDrift({ itemsFound: 3, baseline: null, minExpected: 5 })).toBe(true);
+    expect(detectLayoutDrift({ itemsFound: 6, baseline: null, minExpected: 5 })).toBe(false);
   });
 });
 
 describe('nextBaseline', () => {
-  it('adota de imediato um catálogo que cresceu', () => {
-    expect(nextBaseline(20, 30)).toBe(30);
+  it('a primeira recolha fixa a linha de base', () => {
+    expect(nextBaseline(null, 24)).toBe(24);
+    expect(nextBaseline(0, 24)).toBe(24);
   });
 
-  it('desce devagar, para uma recolha má não arrastar a linha de base', () => {
-    expect(nextBaseline(20, 10)).toBe(18);
-    expect(nextBaseline(18, 10)).toBe(16);
-  });
-
-  it('assume a primeira recolha como linha de base', () => {
-    expect(nextBaseline(null, 12)).toBe(12);
+  it('as seguintes puxam-na devagar, para agosto não a arrastar', () => {
+    expect(nextBaseline(20, 10)).toBe(17);
+    expect(nextBaseline(20, 30)).toBe(23);
   });
 });
 

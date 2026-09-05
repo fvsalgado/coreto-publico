@@ -473,6 +473,59 @@ export function addDays(iso: string, days: number): string {
   return next.toISOString().slice(0, 10);
 }
 
+/**
+ * Os recortes de tempo que a agenda oferece num clique.
+ *
+ * Existem porque o público que este sítio serve primeiro é «quem quer saber o
+ * que há para fazer no fim de semana», e a única forma de lá chegar era
+ * escrever duas datas à mão em dois campos de calendário.
+ *
+ * Recebem o dia de hoje em vez de o irem buscar: é o que as torna funções puras
+ * — testáveis sem relógio falso e sem servidor —, e quem chama já o tem, porque
+ * a data tem de ser a de Lisboa (`todayInLisbon`) e não a da máquina.
+ */
+export interface JanelaDeDatas {
+  from: string;
+  to: string;
+}
+
+/** Sete dias contam a semana a partir de hoje, não a semana do calendário. */
+export const DIAS_DA_SEMANA = 7;
+
+/** Só hoje. Não é a agenda por omissão, que é «de hoje em diante». */
+export function janelaDeHoje(hoje: string): JanelaDeDatas {
+  return { from: hoje, to: hoje };
+}
+
+/**
+ * De sexta a domingo — e nunca a começar no passado.
+ *
+ * **Sexta, e não sábado.** Metade da programação de um fim de semana é a noite
+ * de sexta, e quem abre o sítio sexta às seis da tarde e carrega em «este fim
+ * de semana» não pode deixar de ver o concerto dessa noite. É o pior falhanço
+ * possível para o público que a agenda serve primeiro.
+ *
+ * **E «este» continua a ser este até ele acabar.** A janela encolhe à medida
+ * que o fim de semana passa — ao domingo à tarde é só o domingo — em vez de
+ * saltar para o seguinte. Mandar alguém para daí a seis dias é responder a uma
+ * pergunta que ninguém fez; e a versão ingénua («o sábado e o domingo desta
+ * semana») devolvia ao domingo um intervalo que começava ontem, que numa agenda
+ * é pior do que não devolver nada.
+ */
+export function janelaDoFimDeSemana(hoje: string): JanelaDeDatas {
+  const dia = isoWeekday(hoje);
+  const sexta = addDays(hoje, 5 - dia);
+  const domingo = addDays(hoje, 7 - dia);
+  // Datas ISO comparam-se como texto, que é uma das razões para tudo aqui ser
+  // string e não `Date`.
+  return { from: sexta > hoje ? sexta : hoje, to: domingo };
+}
+
+/** Sete dias a partir de hoje — a mesma semana que a página de entrada mostra. */
+export function janelaDaSemana(hoje: string): JanelaDeDatas {
+  return { from: hoje, to: addDays(hoje, DIAS_DA_SEMANA) };
+}
+
 /** Lê um dia da semana escrito por extenso ou abreviado. */
 export function parseWeekday(input: string): number | null {
   const key = fold(input).replace(/\.$/, '');
