@@ -71,30 +71,30 @@ const correccaoSchema = z.object({
 const planoSchema = z.object({
   fonte: sourceRowSchema,
   lookups: z.object({
-    categoryAliases: z.record(z.string()),
-    venueAliases: z.record(z.string()),
+    categoryAliases: z.record(z.string(), z.string()),
+    venueAliases: z.record(z.string(), z.string()),
     /**
      * Concelho → (alias → espaço). Opcional para os planos que já existem.
      *
      * Os alias presos a um concelho, para o instantâneo resolver como a
      * recolha ao vivo resolve.
      */
-    venueAliasesByMunicipality: z.record(z.record(z.string())).optional(),
-    venueKinds: z.record(z.string()),
+    venueAliasesByMunicipality: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+    venueKinds: z.record(z.string(), z.string()),
     /**
      * Concelho de cada espaço. Opcional para os planos que já existem.
      *
      * Serve para o mesmo que serve na recolha ao vivo: um nome que se repete
      * na região não pode casar com o espaço do concelho errado.
      */
-    venueMunicipalities: z.record(z.string()).optional(),
+    venueMunicipalities: z.record(z.string(), z.string()).optional(),
   }),
   paginas: z.array(paginaSchema).min(1),
   /** Quem fez o levantamento. Fica em `manual_overrides.actor`. */
   actor: z.string().min(1),
   /** O instante que os eventos levam em `published_at`. */
   agora: z.string().datetime(),
-  correccoes: z.record(correccaoSchema).default({}),
+  correccoes: z.record(z.string(), correccaoSchema).default({}),
 });
 
 export type Plano = z.infer<typeof planoSchema>;
