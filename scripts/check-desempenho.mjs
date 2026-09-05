@@ -77,11 +77,16 @@ const MAPA_HOST = 'tiles.openfreemap.org';
  * precisa. Trocá-lo por um import estático rebenta este número — sem ser
  * preciso um teste frágil sobre nomes de pacotes, que em produção vêm com
  * resumo no nome.
+ *
+ * Os 165 kB do `/agenda` e do `/espacos` são baixos porque agora medem só o que
+ * a rota carrega. Enquanto isto contava também o pré-carregamento dos vizinhos,
+ * o tecto tinha de ser 340 para caber o ruído — e a essa distância já não
+ * travava nada.
  */
 const ORCAMENTOS = {
-  '/': { js: 340, css: 30, html: 250 },
-  '/agenda': { js: 340, css: 30, html: 250 },
-  '/espacos': { js: 340, css: 30, html: 250 },
+  '/': { js: 330, css: 30, html: 250 },
+  '/agenda': { js: 165, css: 30, html: 250 },
+  '/espacos': { js: 165, css: 30, html: 250 },
   /*
    * O mapa leva o MapLibre, e leva-o sozinho — mas só quando há marcas.
    *
@@ -120,8 +125,24 @@ async function medir(rota) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
 
+  /*
+   * O peso é o da rota, e não o dos vizinhos.
+   *
+   * O Next pré-carrega as rotas para que a página aponta, e essas transferências
+   * chegam como `script` iguais às outras. A contá-las, `/agenda` media 291 kB
+   * quando o que ela própria carrega são 141 — e o número passava a depender de
+   * quantas ligações a página tem, não do que ela pesa. Pior: uma melhoria real
+   * ficava invisível, que foi como este defeito se descobriu.
+   *
+   * Por isso marca-se o instante do `load` e só conta para o orçamento o que
+   * chegou antes dele. **Os pedidos de depois continuam a ser recolhidos** —
+   * são eles que provam que nenhum terceiro é contactado, e um pedido a
+   * terceiros feito tarde continua a ser um pedido a terceiros.
+   */
   const pedidos = [];
+  let momentoDoLoad = Infinity;
   page.on('requestfinished', (request) => {
+    const quando = Date.now();
     pedidos.push(
       (async () => {
         const resposta = await request.response();
@@ -131,9 +152,13 @@ async function medir(rota) {
           tipo: request.resourceType(),
           bytes: tamanhos.responseBodySize ?? 0,
           estado: resposta?.status() ?? 0,
+          daRota: quando <= momentoDoLoad,
         };
       })(),
     );
+  });
+  page.once('load', () => {
+    momentoDoLoad = Date.now();
   });
 
   // Mede o salto de layout desde a primeira pintura. Injectado antes de
@@ -201,7 +226,7 @@ for (const rota of rotas) {
   const somar = (tipos) =>
     kb(
       recolhidos
-        .filter((pedido) => tipos.includes(pedido.tipo))
+        .filter((pedido) => pedido.daRota && tipos.includes(pedido.tipo))
         .reduce((total, pedido) => total + pedido.bytes, 0),
     );
 
