@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 /**
  * O vocabulário da medição, partilhado pelo navegador e pelo servidor.
  *
@@ -8,8 +6,16 @@ import { z } from 'zod';
  * lados não dá erro nenhum: dá contagens que ficam sempre a zero e um gestor
  * a concluir que ninguém carregou no botão.
  *
- * Este ficheiro é importado pelo navegador, por isso não pode ter
- * `server-only` nem tocar em nada do servidor.
+ * **Este ficheiro vai para o navegador, e por isso não tem uma única
+ * dependência.** Teve: os schemas de validação do corpo do pedido viviam aqui
+ * ao lado, e como o `AnalyticsProvider` está no layout da região, o Zod inteiro
+ * — catorze quilobytes na rede — viajava para o navegador em **todas** as
+ * páginas do sítio, para o cliente usar quatro constantes e uma função de três
+ * linhas. Os schemas mudaram-se para `request.ts`, que só o servidor importa.
+ *
+ * A regra que isto deixa: o que é importado por um componente de cliente paga
+ * tudo o que o ficheiro importa, mesmo o que esse componente não usa. Um
+ * ficheiro partilhado pelos dois lados não pode ter dependências.
  */
 export const STAT_KINDS = ['view', 'ticket_click', 'ical_download', 'share'] as const;
 
@@ -25,23 +31,6 @@ export type StatKind = (typeof STAT_KINDS)[number];
  */
 export const STAT_KIND_ATTRIBUTE = 'data-stat-kind';
 
-export const statKindSchema = z.enum(STAT_KINDS);
-
-export const statRequestSchema = z.object({
-  eventId: z.string().uuid(),
-  kind: statKindSchema,
-});
-
-export type StatRequest = z.infer<typeof statRequestSchema>;
-
 export function isStatKind(value: string | null | undefined): value is StatKind {
   return typeof value === 'string' && STAT_KINDS.some((kind) => kind === value);
 }
-
-/** Rótulos das colunas da página de estatísticas. */
-export const STAT_KIND_LABELS: Record<StatKind, string> = {
-  view: 'Aberturas da ficha',
-  ticket_click: 'Cliques na bilhética',
-  ical_download: 'Adições ao calendário',
-  share: 'Partilhas',
-};

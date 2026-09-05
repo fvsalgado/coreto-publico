@@ -1,4 +1,4 @@
-import { statRequestSchema } from '@/src/lib/analytics/kinds';
+import { statRequestSchema } from '@/src/lib/analytics/request';
 import { recordEventStat } from '@/src/lib/analytics/record';
 import { SITE_URL } from '@/src/lib/env';
 import { checkRateLimit, tooManyRequests } from '@/src/lib/rate-limit';
