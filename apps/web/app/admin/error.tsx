@@ -13,6 +13,13 @@ import { useEffect } from 'react';
  * é desculpa para o erro em bruto — a correção certa é cada ação redirecionar
  * com o aviso, como as outras já fazem —, é a segunda linha para o que
  * escapar a essa.
+ *
+ * **E agora é também onde as leituras falhadas aterram.** Desde que
+ * `admin/queries.ts` deixou de devolver `[]` por causa de um erro, uma
+ * consulta que não corre chega aqui em vez de se disfarçar de «nada por
+ * moderar». É por isso que o texto fala de ações e de leituras: um painel que
+ * diz «não consegui ler» é um painel em que se pode acreditar quando ele diz
+ * «não há nada».
  */
 export default function ErroDoPainel({
   error,
@@ -28,10 +35,12 @@ export default function ErroDoPainel({
   return (
     <>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">A ação não foi concluída</h1>
+        <h1 className="text-2xl font-semibold">Não foi possível falar com a base de dados</h1>
         <p className="mt-2 max-w-2xl text-muted">
-          Alguma coisa falhou ao falar com a base de dados. Nada ficou pelo meio de propósito — as
-          escritas do painel são atómicas —, mas convém confirmar o estado antes de repetir.
+          Esta página não está a mostrar nada porque não conseguiu ler, e não porque não haja nada
+          para mostrar — a diferença é o motivo de ver este ecrã em vez de uma lista vazia. Se
+          estava a fazer alguma coisa, nada ficou pelo meio: as escritas do painel são atómicas.
+          Ainda assim, convém confirmar o estado antes de repetir.
         </p>
       </header>
 

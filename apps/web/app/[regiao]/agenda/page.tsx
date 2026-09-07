@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
 import { ActiveFilters, type ActiveFilter } from '@/src/components/ActiveFilters';
 import { EmptyState } from '@/src/components/EmptyState';
@@ -244,6 +245,24 @@ export default async function AgendaPage({ params, searchParams }: Props) {
   const atalhos = atalhosDeData(filter, today);
   const totalPages = Math.max(1, Math.ceil(result.total / filter.limit));
   const origem = urlDoSitio(regiao, SITE_URL);
+
+  /*
+   * **Uma página além do fim não existe, e a resposta certa é dizê-lo.**
+   *
+   * `/agenda?page=99` numa agenda com três páginas respondia 500 — o
+   * PostgREST recusava o intervalo e o erro subia até à fronteira. A camada
+   * de consultas já não o transforma em avaria (`ehPaginaAlemDoFim`, em
+   * `queries/falhas.ts`) e devolve a lista vazia com o total verdadeiro; o
+   * que sobra é o que esta página deve fazer com ela.
+   *
+   * 404 e não uma agenda vazia com «Sem resultados para estes filtros»: essa
+   * frase aconselha a alargar as datas, e alargar as datas não faz aparecer
+   * uma página 99. Um endereço que não existe responde que não existe, e o
+   * rastreador que o construiu sozinho a partir da paginação para de o
+   * pedir. A página 1 nunca é 404, mesmo a zero: uma agenda vazia é um estado
+   * legítimo e tem texto próprio.
+   */
+  if (filter.page > 1 && filter.page > totalPages) notFound();
 
   /*
    * A lista dita à máquina — e só na vista que se indexa.
