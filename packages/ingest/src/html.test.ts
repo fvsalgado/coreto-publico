@@ -178,6 +178,31 @@ describe('splitIsoDateTime', () => {
   });
 });
 
+/**
+ * O deslocamento, que este leitor descartava.
+ *
+ * O JSON-LD e o The Events Calendar escrevem instantes com fuso, e a versão
+ * antiga cortava a cadeia com uma expressão regular: `2026-07-10T20:00:00Z`
+ * publicava «20:00» quando Lisboa marcava 21:00. A regra vive agora em
+ * `@coreto/core` e tem lá o banco de casos; aqui fica o que garante que este
+ * leitor a usa, e não uma cópia sua.
+ */
+describe('splitIsoDateTime e o fuso', () => {
+  it('um instante em UTC lê-se no relógio de Lisboa', () => {
+    expect(splitIsoDateTime('2026-07-10T20:00:00Z')).toEqual({
+      date: '2026-07-10',
+      time: '21:00',
+    });
+  });
+
+  it('e uma hora sem fuso continua a ser hora de parede', () => {
+    expect(splitIsoDateTime('2026-07-10T20:00:00')).toEqual({
+      date: '2026-07-10',
+      time: '20:00',
+    });
+  });
+});
+
 describe('absoluteUrl', () => {
   it('resolve endereços relativos e recusa esquemas que não são http', () => {
     expect(absoluteUrl('https://cm-exemplo.pt/agenda', '/evento/1')).toBe(

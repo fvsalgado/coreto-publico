@@ -22,7 +22,7 @@
  * na mesma, e um campo que ninguém usa é código à espera de um defeito.
  */
 
-import { addDays, isValidIsoDate, LISBON_TIME_ZONE } from '@coreto/core';
+import { addDays, emLisboa, isValidIsoDate } from '@coreto/core';
 
 export interface IcalEvent {
   uid: string | null;
@@ -153,26 +153,16 @@ const DATA_HORA = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/;
 /** Os fusos que são o de Lisboa por outro nome. Não há nada a converter. */
 const FUSOS_DE_LISBOA = /^(?:europe\/lisbon|portugal|wet)$/i;
 
-const FORMATO_LISBOA = new Intl.DateTimeFormat('en-GB', {
-  timeZone: LISBON_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-/** Um instante absoluto, escrito como dia e hora de parede de Lisboa. */
-function paraLisboa(ms: number): { date: string; time: string } {
-  const partes = new Map(
-    FORMATO_LISBOA.formatToParts(new Date(ms)).map((parte) => [parte.type, parte.value]),
-  );
-  return {
-    date: `${partes.get('year')}-${partes.get('month')}-${partes.get('day')}`,
-    time: `${partes.get('hour')}:${partes.get('minute')}`,
-  };
-}
+/*
+ * O `paraLisboa` que aqui esteve foi para `@coreto/core` com o nome
+ * `emLisboa`, e este ficheiro passou a chamá-lo.
+ *
+ * O comentário do `instanteDeParede`, mesmo abaixo, já dizia por extenso que
+ * isto era «a mesma aproximação de `lisbonUtcOffset` em `@coreto/core`» — uma
+ * cópia declarada é na mesma uma cópia, e a que não estava aqui (a do
+ * `html.ts`) descartava o fuso em silêncio. Agora a regra é uma, e o
+ * `dates.test.ts` do core é onde ela se prova.
+ */
 
 /**
  * O desvio de um fuso em relação a UTC num dado instante, em minutos.
@@ -246,13 +236,13 @@ function lerData(prop: Propriedade | null): Instante | null {
   const dia = Number(completo[3]);
 
   if (completo[7] === 'Z') {
-    return { ...paraLisboa(Date.UTC(ano, mes - 1, dia, hora, minuto, segundos)), allDay: false };
+    return { ...emLisboa(Date.UTC(ano, mes - 1, dia, hora, minuto, segundos)), allDay: false };
   }
 
   const tzid = prop.params['TZID'];
   if (tzid && !FUSOS_DE_LISBOA.test(tzid)) {
     const instante = instanteDeParede(ano, mes, dia, hora, minuto, segundos, tzid);
-    if (instante !== null) return { ...paraLisboa(instante), allDay: false };
+    if (instante !== null) return { ...emLisboa(instante), allDay: false };
     // Um fuso que o sistema não conhece lê-se como hora de parede. Numa fonte
     // portuguesa a hora de parede é a de Lisboa muito mais vezes do que não é,
     // e a alternativa era deitar fora a hora inteira.

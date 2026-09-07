@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays,
+  lerInstanteIso,
   collapseContinuousRun,
   daysBetween,
   parseEventDates,
@@ -509,5 +510,74 @@ describe('janelas de data da agenda', () => {
     const hoje = todayInLisbon(new Date('2026-09-12T23:30:00Z'));
     expect(hoje).toBe(DOMINGO);
     expect(janelaDoFimDeSemana(hoje)).toEqual({ from: DOMINGO, to: DOMINGO });
+  });
+});
+
+/**
+ * As quatro formas de escrever um instante, e o que Lisboa marcava.
+ *
+ * O caso que fez isto existir é o primeiro: `splitIsoDateTime`, em `html.ts`,
+ * cortava a cadeia com uma expressão regular e descartava o deslocamento. Um
+ * `2026-07-10T20:00:00Z` do JSON-LD publicava «20:00» quando Lisboa marcava
+ * 21:00 — um concerto de verão anunciado uma hora mais cedo do que é.
+ *
+ * Em dezembro o mesmo valor está certo, e é a pior forma de estar errado: a
+ * metade do ano em que se testa é a metade em que funciona.
+ */
+describe('lerInstanteIso', () => {
+  it('um instante em UTC lê-se no relógio de Lisboa', () => {
+    // Verão: Lisboa é UTC+1.
+    expect(lerInstanteIso('2026-07-10T20:00:00Z')).toEqual({ date: '2026-07-10', time: '21:00' });
+    // Inverno: Lisboa é UTC+0, e o mesmo valor está certo.
+    expect(lerInstanteIso('2026-12-10T20:00:00Z')).toEqual({ date: '2026-12-10', time: '20:00' });
+  });
+
+  it('um instante que já traz o deslocamento de Lisboa fica como está', () => {
+    expect(lerInstanteIso('2026-07-10T20:00:00+01:00')).toEqual({
+      date: '2026-07-10',
+      time: '20:00',
+    });
+    expect(lerInstanteIso('2026-12-10T20:00:00+00:00')).toEqual({
+      date: '2026-12-10',
+      time: '20:00',
+    });
+  });
+
+  it('um deslocamento de outro fuso converte-se', () => {
+    // Meio-dia em Nova Iorque, num dia de julho, é 17:00 em Lisboa.
+    expect(lerInstanteIso('2026-07-10T12:00:00-04:00')).toEqual({
+      date: '2026-07-10',
+      time: '17:00',
+    });
+    // E a conversão pode mudar o dia.
+    expect(lerInstanteIso('2026-07-10T23:30:00-04:00')).toEqual({
+      date: '2026-07-11',
+      time: '04:30',
+    });
+  });
+
+  it('sem fuso é hora de parede, e não se converte', () => {
+    // A decisão que importa: numa fonte portuguesa, a hora escrita sem
+    // deslocamento é a hora a que as pessoas aparecem à porta. Tratá-la como
+    // UTC atrasava uma hora todos os eventos de verão de quase todas as
+    // câmaras — o engano simétrico, e maior.
+    expect(lerInstanteIso('2026-07-10T20:00:00')).toEqual({ date: '2026-07-10', time: '20:00' });
+    expect(lerInstanteIso('2026-07-10 20:00')).toEqual({ date: '2026-07-10', time: '20:00' });
+  });
+
+  it('uma data sem hora fica data, e a hora fica nula', () => {
+    // Converter obrigava a inventar-lhe a meia-noite — e a meia-noite de um
+    // dia de verão é, em UTC, o dia anterior.
+    expect(lerInstanteIso('2026-07-10')).toEqual({ date: '2026-07-10', time: null });
+  });
+
+  it('o que não é um instante não devolve um instante', () => {
+    expect(lerInstanteIso(null)).toEqual({ date: null, time: null });
+    expect(lerInstanteIso('')).toEqual({ date: null, time: null });
+    expect(lerInstanteIso('brevemente')).toEqual({ date: null, time: null });
+    // Uma data que o calendário não tem.
+    expect(lerInstanteIso('2026-02-30T10:00:00Z')).toEqual({ date: null, time: null });
+    // Uma hora que não existe: fica a data, sem hora inventada.
+    expect(lerInstanteIso('2026-07-10T25:00:00Z')).toEqual({ date: '2026-07-10', time: null });
   });
 });

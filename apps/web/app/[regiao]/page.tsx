@@ -64,12 +64,15 @@ const SHORTCUTS: readonly AtalhoDaEntrada[] = [
    * agenda real a levar a «Sem resultados para estes filtros». É o modo de
    * falha mais perigoso que há — passa em todos os ensaios e só está vazio
    * onde há público —, porque a acessibilidade é declarada no evento e
-   * nenhuma fonte real a declara; os espaços declaram-na, e é para lá que o
-   * filtro há-de cair.
+   * nenhuma fonte real a declara; os espaços declaram-na.
    *
-   * Por contagem e não por remoção, de propósito: no dia em que o filtro
-   * passar a olhar para o espaço, o atalho volta sozinho — sem ninguém se
-   * lembrar de o repor.
+   * **E o filtro caiu para lá.** A 0129 materializa `coalesce(evento,
+   * espaço)` numa coluna e o filtro passou a procurá-la, que é o que a ficha
+   * já mostrava desde sempre. A contagem que aqui está foi escrita a pensar
+   * neste dia: o atalho volta sozinho, sem ninguém se lembrar de o repor, e
+   * volta a esconder-se se um dia a resposta voltar a ser zero. É a razão de
+   * ser por contagem e não por remoção — a lista de atalhos não é o sítio
+   * onde se guarda o estado do catálogo.
    */
   { href: '/agenda?accessible=1', label: 'Acessível', recorte: { accessible: true } },
   // O único destes que se desliga no painel. Os outros três são recortes da
