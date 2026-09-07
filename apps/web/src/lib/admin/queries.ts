@@ -1,5 +1,5 @@
 import 'server-only';
-import { reportarErro } from '../registo';
+import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
 import { requireAdminClient } from '../supabase/server';
 
 /**
@@ -13,6 +13,29 @@ import { requireAdminClient } from '../supabase/server';
  *
  * E nada disto passa por cache — um painel de moderação em cache mostra
  * trabalho que já foi feito.
+ *
+ * **«Não há» e «não consegui saber» são duas respostas diferentes, e aqui
+ * eram a mesma.** Quinze destas leituras destruturavam só o `data` — o
+ * `error` do Supabase nem chegava a ser lido — ou registavam-no e devolviam
+ * `[]`. Com a base em baixo, o painel de entrada dizia «nenhuma fonte
+ * avariada», a fila dizia «nada por moderar», a qualidade mostrava zeros e as
+ * estatísticas mostravam uma região sem eventos. Cada uma dessas frases é
+ * falsa da forma mais cara possível: são frases tranquilizadoras, ditas
+ * exatamente no momento em que alguém foi ao painel porque desconfiava de
+ * alguma coisa.
+ *
+ * A doutrina é a mesma de `queries/falhas.ts`, e usa-se o mesmo `exigirLeitura`
+ * — o que muda é o desfecho, e muda para melhor: estas leituras **não** estão
+ * dentro de `unstable_cache`, por isso não há vazio nenhum para ficar
+ * guardado uma hora, e o erro sobe até `app/admin/error.tsx`, que já existe,
+ * mostra a mensagem (quem está aqui tem sessão) e oferece «tentar de novo».
+ * Um painel que diz «não consegui ler» é um painel em que se pode confiar
+ * quando ele diz «não há nada».
+ *
+ * Há uma exceção, uma só, e está marcada onde vive: `signedAttachmentUrl`,
+ * que não lê a base — assina um endereço no armazenamento — e cujo `null` não
+ * afirma nada, porque a página desenha o anexo na mesma, sem
+ * pré-visualização.
  */
 
 export interface SubmissionSummary {
@@ -77,21 +100,28 @@ export async function listSubmissions(options: {
 
 export async function getSubmission(id: string): Promise<SubmissionDetail | null> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('submissions')
     .select(DETAIL_FIELDS)
     .eq('id', id)
     .maybeSingle();
+  // `null` aqui é «esta submissão não existe», e a página responde 404 com
+  // isso. Uma leitura falhada devolvia o mesmo `null` — e a fila mandava
+  // quem moderava para um 404 de uma submissão que existe.
+  exigirLeitura('getSubmission', error);
   return (data as unknown as SubmissionDetail) ?? null;
 }
 
 export async function listAttachments(submissionId: string): Promise<AttachmentRow[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('submission_attachments')
     .select('id, kind, storage_path, filename, mime_type, size_bytes, ocr_text, ocr_status')
     .eq('submission_id', submissionId)
     .order('created_at');
+  // O cartaz de um email é metade do que se está a decidir: sem ele, aprova-se
+  // às cegas uma submissão que parece não ter anexo nenhum.
+  exigirLeitura('listAttachments', error);
   return (data ?? []) as unknown as AttachmentRow[];
 }
 
@@ -105,6 +135,11 @@ export async function listAttachments(submissionId: string): Promise<AttachmentR
 export async function signedAttachmentUrl(path: string): Promise<string | null> {
   const supabase = requireAdminClient();
   const { data } = await supabase.storage.from('intake').createSignedUrl(path, 900);
+  // **Exceção, e é a primeira das três.** Isto não lê a base: assina um
+  // endereço no armazenamento. O `null` não afirma nada — a página desenha o
+  // anexo sem pré-visualização, com o nome e o tipo à vista —, e deitar a
+  // ficha inteira abaixo porque uma imagem de dez não assinou seria trocar um
+  // problema pequeno por um grande.
   return data?.signedUrl ?? null;
 }
 
@@ -127,10 +162,12 @@ export async function findDuplicateCandidates(
     p_date: date,
     p_municipality_id: municipalityId,
   });
-  if (error) {
-    reportarErro('find_duplicate_candidates', error);
-    return [];
-  }
+  // **Esta lança, e é a que mais importa que lance.** É a busca de parecidos
+  // que se mostra ao lado do botão de aprovar, e a lista vazia diz «não
+  // encontrei nada parecido» — a frase que autoriza a publicação. Registar o
+  // erro e devolver `[]` fazia da avaria uma licença para publicar o
+  // duplicado que ela não conseguiu procurar.
+  exigirLeitura('find_duplicate_candidates', error);
   return (data ?? []) as DuplicateCandidate[];
 }
 
@@ -166,12 +203,16 @@ type SourceHealthRow = Omit<SourceHealth, 'breaker_open' | 'hours_since_success'
 
 export async function listSourceHealth(): Promise<SourceHealth[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('sources')
     .select(
       'id, name, municipality_id, is_enabled, last_run_at, last_success_at, last_error, consecutive_failures, circuit_open_until, baseline_item_count',
     )
     .order('name');
+  // O painel de entrada conta as fontes avariadas a partir daqui. A lista
+  // vazia de um erro escrevia «nenhuma fonte avariada» — a frase mais
+  // tranquilizadora do painel, dita quando não se consegue ler a base.
+  exigirLeitura('listSourceHealth', error);
 
   const now = Date.now();
   return ((data ?? []) as unknown as SourceHealthRow[]).map((source) => {
@@ -206,13 +247,16 @@ export interface RunRow {
 
 export async function listRecentRuns(limit = 40): Promise<RunRow[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('source_runs')
     .select(
       'id, source_id, status, started_at, finished_at, items_found, items_new, items_updated, items_rejected, http_failures, layout_drift, error',
     )
     .order('started_at', { ascending: false })
     .limit(limit);
+  // Sem execuções na lista, a página das fontes lê-se como «a recolha não
+  // corre há dias» — que é precisamente o alarme que se vai lá procurar.
+  exigirLeitura('listRecentRuns', error);
   return (data ?? []) as unknown as RunRow[];
 }
 
@@ -228,11 +272,26 @@ export interface AdminAction {
 export async function listAdminActions(page: number, perPage = 50): Promise<AdminAction[]> {
   const supabase = requireAdminClient();
   const from = (page - 1) * perPage;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('admin_actions')
     .select('id, actor, action, entity_type, entity_id, created_at')
     .order('id', { ascending: false })
     .range(from, from + perPage - 1);
+
+  /*
+   * A auditoria é o registo de quem fez o quê, e é o que se abre quando há
+   * uma dúvida sobre uma decisão. Uma página vazia por erro de leitura diz
+   * «ninguém fez nada», que é a resposta errada à única pergunta que esta
+   * página responde.
+   *
+   * A página além do fim é a exceção, e é a mesma da agenda pública: o
+   * PostgREST recusa o intervalo com `PGRST103` e isso quer dizer «não há mais
+   * nada», não «não consegui ler». Aqui não é preciso ir buscar o total —
+   * esta paginação avança enquanto vierem linhas —, e a lista vazia é a
+   * resposta certa e completa.
+   */
+  if (error && ehPaginaAlemDoFim(error)) return [];
+  exigirLeitura('listAdminActions', error);
   return (data ?? []) as unknown as AdminAction[];
 }
 
@@ -314,18 +373,23 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
     );
   }
 
-  const { data } = await query
+  const { data, error } = await query
     .order('date_start', { ascending: futuros, nullsFirst: false })
     .order('id', { ascending: futuros })
     .limit(EVENTS_PAGE_SIZE);
 
+  // É o catálogo inteiro visto por quem o edita. Vazio por erro, a página diz
+  // «não há eventos com estes filtros» e quem modera muda os filtros à procura
+  // de um evento que está lá.
+  exigirLeitura('listEvents (painel)', error);
   return (data ?? []) as unknown as AdminEventRow[];
 }
 
 /** Quantos há em cada estado, para os atalhos no topo da página. */
 export async function countEventsByStatus(): Promise<Record<string, number>> {
   const supabase = requireAdminClient();
-  const { data } = await supabase.from('events').select('status').eq('is_canonical', true);
+  const { data, error } = await supabase.from('events').select('status').eq('is_canonical', true);
+  exigirLeitura('countEventsByStatus', error);
   const counts: Record<string, number> = {};
   for (const row of (data ?? []) as Array<{ status: string }>) {
     counts[row.status] = (counts[row.status] ?? 0) + 1;
@@ -342,7 +406,7 @@ export interface UnknownTag {
 
 export async function listUnknownTags(): Promise<UnknownTag[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     // A vista tira as que já ganharam alias e as que não nomeiam género nenhum
     // — «Ar Livre», «Cultura», «Multidisciplinar». Sem ela a fila só crescia:
     // uma etiqueta mapeada deixa de ser desconhecida, mas a linha ficava lá.
@@ -350,6 +414,7 @@ export async function listUnknownTags(): Promise<UnknownTag[]> {
     .select('tag, hits, last_seen, example_url')
     .order('hits', { ascending: false })
     .limit(200);
+  exigirLeitura('listUnknownTags', error);
   return (data ?? []) as unknown as UnknownTag[];
 }
 
@@ -381,7 +446,7 @@ export interface UnresolvedVenue {
  */
 export async function listUnresolvedVenues(): Promise<UnresolvedVenue[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('unresolved_venues_pendentes')
     .select(
       'normalized, name, municipality_id, hits, last_seen, example_url, eventos_por_acontecer',
@@ -392,6 +457,9 @@ export async function listUnresolvedVenues(): Promise<UnresolvedVenue[]> {
     .order('eventos_por_acontecer', { ascending: false })
     .order('hits', { ascending: false })
     .limit(200);
+  // A fila vazia é «está tudo resolvido», e é uma das duas frases que fazem
+  // alguém fechar o painel descansado.
+  exigirLeitura('listUnresolvedVenues', error);
   return (data ?? []) as unknown as UnresolvedVenue[];
 }
 
@@ -420,10 +488,10 @@ export async function listVenuesForLinking(): Promise<LinkableVenue[]> {
     .neq('status', 'closed')
     .order('municipality_id')
     .order('name');
-  if (error) {
-    reportarErro('listVenuesForLinking', error);
-    return [];
-  }
+  // A lista de destinos do botão «ligar a este espaço». Vazia, o botão fica
+  // sem para onde ligar e a página parece dizer que o catálogo não tem
+  // espaços nenhuns.
+  exigirLeitura('listVenuesForLinking', error);
   return (data ?? []) as unknown as LinkableVenue[];
 }
 
@@ -458,12 +526,15 @@ export interface QualityRow {
  */
 export async function qualityByMunicipality(): Promise<QualityRow[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('event_quality_by_municipality')
     .select(
       'municipality_id, municipality_name, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
     )
     .order('municipality_name');
+  // Zeros por erro de leitura são a pior forma de mentir num painel de
+  // qualidade: não parecem uma falha, parecem um mês mau.
+  exigirLeitura('qualityByMunicipality', error);
 
   const rows = (data ?? []) as unknown as Array<
     Omit<QualityRow, 'id' | 'name'> & { municipality_id: string; municipality_name: string }
@@ -477,12 +548,13 @@ export async function qualityByMunicipality(): Promise<QualityRow[]> {
 
 export async function qualityBySource(): Promise<QualityRow[]> {
   const supabase = requireAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('event_quality_by_source')
     .select(
       'source_id, source_name, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
     )
     .order('source_name');
+  exigirLeitura('qualityBySource', error);
 
   const rows = (data ?? []) as unknown as Array<
     Omit<QualityRow, 'id' | 'name'> & { source_id: string; source_name: string }
@@ -507,21 +579,29 @@ export async function dashboardCounts(): Promise<DashboardCounts> {
     supabase.from('submissions').select('channel').eq('status', 'pending').limit(1000),
     listSourceHealth(),
   ]);
+  // Esta é a página de entrada do painel: as três contagens que aqui estão
+  // são a primeira coisa que alguém lê de manhã, e um zero por erro dizia «a
+  // fila está limpa».
+  exigirLeitura('dashboardCounts (fila)', pending.error);
 
   const pendingByChannel: Record<string, number> = {};
   for (const row of (pending.data ?? []) as Array<{ channel: string }>) {
     pendingByChannel[row.channel] = (pendingByChannel[row.channel] ?? 0) + 1;
   }
 
-  const { data: municipalities } = await supabase.from('municipalities').select('id');
+  const { data: municipalities, error: erroDosConcelhos } = await supabase
+    .from('municipalities')
+    .select('id');
+  exigirLeitura('dashboardCounts (concelhos)', erroDosConcelhos);
   const publishedByMunicipality: Record<string, number> = {};
   await Promise.all(
     ((municipalities ?? []) as Array<{ id: string }>).map(async ({ id }) => {
-      const { count } = await supabase
+      const { count, error: erroDaContagem } = await supabase
         .from('events')
         .select('id', { count: 'exact', head: true })
         .eq('municipality_id', id)
         .eq('status', 'published');
+      exigirLeitura(`dashboardCounts (${id})`, erroDaContagem);
       publishedByMunicipality[id] = count ?? 0;
     }),
   );
@@ -587,10 +667,9 @@ export interface RegionAdminRow {
 export async function listRegionsAdmin(): Promise<RegionAdminRow[]> {
   const supabase = requireAdminClient();
   const { data, error } = await supabase.from('regions').select('*').order('sort_order');
-  if (error) {
-    reportarErro('listRegionsAdmin', error);
-    return [];
-  }
+  // Sem regiões, o painel oferece «criar a primeira região» a quem já tem
+  // três — e o seletor de região no topo fica vazio.
+  exigirLeitura('listRegionsAdmin', error);
   return (data ?? []) as unknown as RegionAdminRow[];
 }
 
@@ -625,10 +704,9 @@ export async function listRegionLicenses(): Promise<RegionLicenseRow[]> {
     .from('region_licenses')
     .select('id, region_id, starts_on, ends_on, kind, notes, created_by, created_at')
     .order('starts_on', { ascending: false });
-  if (error) {
-    reportarErro('listRegionLicenses', error);
-    return [];
-  }
+  // O painel de entrada procura aqui os prazos a acabar. Vazio, não há
+  // prazo nenhum a acabar — e é assim que se perde uma renovação.
+  exigirLeitura('listRegionLicenses', error);
   return (data ?? []) as unknown as RegionLicenseRow[];
 }
 
@@ -641,10 +719,9 @@ export async function listSiteSections(regiao: string): Promise<SiteSectionRow[]
     .from('site_sections')
     .select('id, is_enabled, updated_at, updated_by')
     .eq('region_id', regiao);
-  if (error) {
-    reportarErro('listSiteSections', error);
-    return [];
-  }
+  // Um interruptor sem estado desenha-se como desligado, e o painel passaria
+  // a dizer que uma CIM desligou secções que estão ligadas.
+  exigirLeitura('listSiteSections', error);
   return (data ?? []) as unknown as SiteSectionRow[];
 }
 
@@ -722,10 +799,9 @@ export async function listEventsWithoutTime(regiao?: string): Promise<EventWitho
   if (regiao) query = query.eq('region_id', regiao);
 
   const { data, error } = await query;
-  if (error) {
-    reportarErro('listEventsWithoutTime', error);
-    return [];
-  }
+  // A lista de trabalho por fazer. Vazia por erro, diz «não falta hora a
+  // nenhum evento» — e o trabalho fica por fazer sem ninguém saber que existe.
+  exigirLeitura('listEventsWithoutTime', error);
   return (data ?? []) as unknown as EventWithoutTimeRow[];
 }
 
@@ -757,9 +833,8 @@ async function idsSemHora(filter: Pick<EventFilter, 'municipality' | 'status'>):
   if (filter.status && filter.status !== 'todos') query = query.eq('status', filter.status);
 
   const { data, error } = await query;
-  if (error) {
-    reportarErro('idsSemHora', error);
-    return [];
-  }
+  // Alimenta o filtro «falta a hora» do catálogo. A lista vazia faz o filtro
+  // devolver zero eventos — indistinguível de não haver nenhum por corrigir.
+  exigirLeitura('idsSemHora', error);
   return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
 }

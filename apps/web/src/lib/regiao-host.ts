@@ -71,6 +71,25 @@ export const VALIDADE_DO_MAPA_MS = 5 * 60 * 1000;
 const VALIDADE_APOS_FALHA_MS = 30 * 1000;
 
 /**
+ * Dois segundos, e depois disso o mapa velho serve.
+ *
+ * **Um pedido sem prazo aqui é um sítio inteiro sem prazo.** Isto corre no
+ * middleware, à frente de todos os pedidos públicos de todas as regiões, e
+ * não tinha tempo limite nenhum: se o `/api/regioes` respondesse devagar — a
+ * base a arrastar-se, uma função fria, um soluço de rede entre a Vercel e o
+ * Supabase — cada visita ficava parada à espera dele. Não é a agenda de uma
+ * região a ficar lenta: são todos os domínios ao mesmo tempo, e nenhuma
+ * página chega sequer a ser desenhada.
+ *
+ * Dois segundos é muito mais do que a leitura demora (uma tabela com meia
+ * dúzia de linhas, servida de cache incremental) e muito menos do que a
+ * paciência de quem espera. Esgotado o prazo, o `catch` de baixo faz o que já
+ * fazia por uma falha de rede: serve o mapa que já tinha, e volta a tentar
+ * daqui a trinta segundos.
+ */
+const PRAZO_DO_MAPA_MS = 2000;
+
+/**
  * O Host tal como chega, reduzido ao nome: sem porto, em minúsculas.
  *
  * `coreto.mediotejo.pt:443` e `Coreto.MedioTejo.PT` são o mesmo sítio; um
@@ -138,6 +157,12 @@ export function esquecerMapaDeDominios(): void {
  * Um domínio canónico entra em `dominios` (serve a sua região); um alias
  * (0111) entra em `redirecionamentos` (manda para o canónico e nunca serve —
  * dois endereços com o mesmo conteúdo era conteúdo duplicado).
+ *
+ * A leitura tem prazo (`PRAZO_DO_MAPA_MS`) e o prazo é a parte que faltava:
+ * uma resposta que nunca chega não é uma falha do ponto de vista do `fetch`,
+ * e sem `signal` ficava a segurar todos os pedidos de todos os domínios.
+ * Esgotado o prazo, o `AbortSignal.timeout` atira e cai no mesmo `catch` de
+ * sempre — que serve o mapa velho, se existir, e o vazio se não.
  */
 async function carregarMapa(
   origem: string,
@@ -147,7 +172,9 @@ async function carregarMapa(
   if (guardado && guardado.expira > agora()) return guardado;
 
   try {
-    const resposta = await buscar(`${origem}/api/regioes`);
+    const resposta = await buscar(`${origem}/api/regioes`, {
+      signal: AbortSignal.timeout(PRAZO_DO_MAPA_MS),
+    });
     if (!resposta.ok) throw new Error(`estado ${resposta.status}`);
     const linhas = (await resposta.json()) as Array<{
       id: string;

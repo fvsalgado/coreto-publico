@@ -202,6 +202,14 @@ jobs:
       # Um cron que falha em silêncio é um cron que ninguém repara que morreu.
       # Um issue novo por noite é ruído que se aprende a ignorar; por isso há
       # um só, reaberto e comentado enquanto o problema durar.
+      #
+      # **O que faz o CLI sair diferente de zero mudou, e este passo é o
+      # motivo.** Uma fonte que deriva — a câmara mudou de tema e o seletor
+      # deixou de casar — devolvia `partial` e saía a zero: este passo não
+      # corria, e a única marca do problema era uma linha «layout?» no meio de
+      # oitenta, num registo que ninguém abre de manhã. O alarme estava
+      # montado; faltava-lhe o motivo para tocar. Ver `contarProblemas` em
+      # `packages/ingest/src/cli.ts`.
       - name: Abrir ou atualizar o aviso de falha
         if: failure()
         env:
@@ -210,7 +218,7 @@ jobs:
           MANUAL: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/OPERACAO.md
         run: |
           {
-            echo "A recolha de $(date --utc --iso-8601=minutes) terminou com falhas."
+            echo "A recolha de $(date --utc --iso-8601=minutes) não terminou limpa: houve fontes com falha, ou fontes cuja contagem caiu muito abaixo do costume."
             echo
             echo "- Execução: ${EXECUCAO}"
             echo "- Disparada por: ${{ github.event_name }}"

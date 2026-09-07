@@ -61,6 +61,29 @@ const LISTING_HTML = `<ul class="lista">
   </li>
 </ul>`;
 
+/**
+ * Uma listagem com o número de eventos que se pedir, todos com data e todos
+ * distintos.
+ *
+ * Serve às regras da contagem, que são sobre quantidade e não sobre conteúdo:
+ * o que decide se uma recolha é normal, uma queda ou uma deriva é quantos
+ * itens vieram contra o que a fonte costuma dar. Escrever doze `<li>` à mão
+ * era tapar essa aritmética com sessenta linhas de HTML.
+ */
+function listaComEventos(quantos: number): string {
+  const itens = Array.from({ length: quantos }, (_, indice) => {
+    const numero = indice + 1;
+    // Dias distintos e sempre válidos: maio tem 31, e nenhum teste pede mais.
+    const dia = String((indice % 28) + 1).padStart(2, '0');
+    return `  <li class="evento">
+    <h3><a href="/agenda/evento-${numero}">Evento ${numero}</a></h3>
+    <time class="data" datetime="2026-05-${dia}">${dia} de maio de 2026</time>
+    <span class="local">Casa da Cultura</span>
+  </li>`;
+  }).join('\n');
+  return `<ul class="lista">\n${itens}\n</ul>`;
+}
+
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__');
 
 const CONFIG: Record<string, unknown> = {
@@ -595,6 +618,59 @@ describe('runPipeline', () => {
     expect(db.closedRuns[0]?.layoutDrift).toBe(true);
     // A linha de base não pode aprender com uma leitura em que não se confia.
     expect(db.health[0]?.updateBaseline).toBe(false);
+  });
+
+  /*
+   * O defeito que fazia o instrumento mentir.
+   *
+   * A deriva era detetada, a nota era escrita, e a seguir a fonte levava
+   * `succeeded: true` — e com ele `last_success_at = agora` e
+   * `consecutive_failures = 0`. A página /estado, que só olha para essa
+   * coluna, respondia «todas as fontes lidas com sucesso nas últimas 48
+   * horas» enquanto o concelho estava sem agenda nenhuma.
+   */
+  it('uma leitura que derivou não conta como leitura com sucesso', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(makeSource({ baseline_item_count: 20 }), db, stubHttp('<ul></ul>'));
+
+    expect(outcome.contagem).toBe('deriva');
+    expect(db.health[0]?.succeeded).toBe(false);
+  });
+
+  /*
+   * A faixa do meio, que não existia: acima de metade da linha de base, a
+   * contagem passava por normal e a média móvel aprendia a perda em três ou
+   * quatro noites. Doze contra vinte é 40% da agenda de um concelho.
+   */
+  it('uma queda escreve o que veio, e mesmo assim não conta como sucesso', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(
+      makeSource({ baseline_item_count: 20 }),
+      db,
+      stubHttp(listaComEventos(12)),
+    );
+
+    expect(outcome.contagem).toBe('queda');
+    expect(outcome.status).toBe('partial');
+    expect(outcome.counters.itemsFound).toBe(12);
+    // Os doze que vieram são eventos a sério, e alguém os procura hoje.
+    expect(db.events.size).toBe(12);
+    expect(db.health[0]?.succeeded).toBe(false);
+    expect(db.health[0]?.updateBaseline).toBe(false);
+    expect(outcome.error).toContain('queda na contagem');
+  });
+
+  it('uma contagem dentro do costume conta como sucesso e treina a linha de base', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(
+      makeSource({ baseline_item_count: 20 }),
+      db,
+      stubHttp(listaComEventos(18)),
+    );
+
+    expect(outcome.contagem).toBe('normal');
+    expect(db.health[0]?.succeeded).toBe(true);
+    expect(db.health[0]?.updateBaseline).toBe(true);
   });
 
   it('uma freguesia sem agenda não fica amarela todas as noites', async () => {

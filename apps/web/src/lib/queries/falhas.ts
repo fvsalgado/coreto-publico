@@ -84,6 +84,33 @@ export function exigirLeitura(leitura: string, erro: { message: string } | null 
 }
 
 /**
+ * O código com que o PostgREST recusa um intervalo que começa depois do fim.
+ *
+ * Vem de `Error.hs` do PostgREST e chega em `error.code`, com um 416 por
+ * estado. É o único erro desta casa que **não** é uma avaria: significa que a
+ * pergunta foi bem feita e a resposta é «não há nada aí».
+ */
+const ALEM_DO_FIM = 'PGRST103';
+
+/**
+ * Uma página além do fim, que é uma pergunta com resposta e não um erro.
+ *
+ * `/agenda?page=99` numa região com três páginas respondia 500 — um endereço
+ * que qualquer rastreador constrói sozinho a partir da paginação, e que ia
+ * parar ao registo de erros ao lado das avarias a sério. A resposta certa é a
+ * lista vazia com o total verdadeiro: a agenda tem 128 eventos e a página 99
+ * não tem nenhum.
+ *
+ * Distingue-se pelo código e não pela mensagem, que muda com a versão e com a
+ * língua. Quem chama decide o que fazer com o total — a lista vazia por si só
+ * não o traz, porque o supabase-js só lê a contagem do cabeçalho de uma
+ * resposta com sucesso.
+ */
+export function ehPaginaAlemDoFim(erro: { code?: string } | null | undefined): boolean {
+  return erro?.code === ALEM_DO_FIM;
+}
+
+/**
  * Degradar sem guardar a degradação.
  *
  * Envolve uma leitura **já cacheada**: o erro vem de dentro da cache — onde,

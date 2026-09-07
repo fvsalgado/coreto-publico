@@ -41,6 +41,16 @@ export interface FonteVigiada {
   name: string;
   is_enabled: boolean;
   last_success_at: string | null;
+  /**
+   * Quando foi tentada, com ou sem sucesso (concedida ao público na 0128).
+   *
+   * A saúde não se decide por aqui — decide-se pela última leitura **boa** —,
+   * mas a frase sim, e é uma diferença que importa a quem lê: uma fonte que
+   * ninguém tenta ler há cinco dias é um cron parado; uma fonte lida todas as
+   * noites que não traz nada é uma câmara que mudou de tema. As duas
+   * aparecem como «atrasada», e só esta coluna as separa.
+   */
+  last_run_at: string | null;
 }
 
 /** Dias inteiros entre dois instantes. Trunca: meio dia não é um dia. */
@@ -113,6 +123,40 @@ export function avaliarRecolha(
     paradas: das('parada'),
     porEstrear: das('por-estrear'),
   };
+}
+
+/**
+ * A frase que descreve uma fonte, escrita uma vez e usada nas duas páginas.
+ *
+ * Existe porque as duas discordavam. A `/estado` classificava pela última
+ * leitura boa; a `/fontes` escrevia «Lida com sucesso a …» a partir da mesma
+ * coluna sem a classificar, e por isso dizia a mesma coisa de uma fonte lida
+ * ontem e de uma fonte parada há três semanas — só mudava a data, que ninguém
+ * compara com o dia de hoje de cabeça. Duas páginas a ler a mesma coluna e a
+ * dizer coisas diferentes sobre ela é como se perde a confiança nas duas.
+ *
+ * O texto do erro não entra aqui, e é uma decisão. O `sources.last_error`
+ * guarda o diário da recolha — endereços, cabeçalhos, mensagens do servidor
+ * da câmara — e está fechado à chave pública desde a 0049. O que uma página
+ * pública deve dizer é o **estado**, e o estado diz-se com duas datas.
+ *
+ * Recebe a data por parâmetro (`formatarData`) para não arrastar o
+ * formatador — e com ele o `Intl` — para um módulo que é lógica pura e é
+ * testado sem ele.
+ */
+export function fraseDaFonte(fonte: FonteComSaude, formatarData: (iso: string) => string): string {
+  const lidaEm = fonte.last_run_at ? formatarData(fonte.last_run_at.slice(0, 10)) : null;
+  const boaEm = fonte.last_success_at ? formatarData(fonte.last_success_at.slice(0, 10)) : null;
+
+  if (fonte.saude === 'em-dia' && boaEm) return `Lida com sucesso a ${boaEm}.`;
+
+  // O caso que a coluna nova existe para dizer: a fonte é lida e não traz
+  // nada. Antes disto, a página escrevia «Lida com sucesso a 2 de setembro» e
+  // ficava por aí, semanas a fio, com o concelho sem agenda nenhuma.
+  if (boaEm && lidaEm) return `Lida a ${lidaEm}, mas sem eventos legíveis desde ${boaEm}.`;
+  if (boaEm) return `Sem uma leitura com sucesso desde ${boaEm}.`;
+  if (lidaEm) return `Lida a ${lidaEm}, e ainda sem eventos legíveis.`;
+  return 'Ainda não foi lida.';
 }
 
 export interface EstadoDaAgenda {
