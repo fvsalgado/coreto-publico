@@ -173,7 +173,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
 
       <p className="max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
         <strong>
-          {ligadas.length} fontes ligadas, {municipalities.length} concelhos, uma recolha por noite.
+          {ligadas.length} fontes ligadas, {municipalities.length} concelhos, uma recolha por dia.
         </strong>{' '}
         Cada evento <em>recolhido</em> guarda o endereço de onde veio e leva-o na ficha, no botão
         «Página oficial» — a agenda não se põe à frente de quem faz o trabalho. O que chega por
@@ -321,16 +321,26 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
             </div>
           ))}
         </dl>
+        {/*
+         * A cadência diz-se, a hora não se promete.
+         *
+         * Estas duas frases prometiam a madrugada e contavam em noites a pausa
+         * de uma fonte que falha. O cron do `scrape.yml` está às
+         * 03:20 UTC, mas a fila de execuções agendadas do GitHub atrasa-o
+         * horas — medido às 07:58, 08:26, 10:11 e 15:28. Esta é a página que
+         * presta contas de onde vem cada linha da agenda: uma frase falsa aqui
+         * desconta as verdadeiras que estão à volta dela.
+         */}
         <div className="mt-4 max-w-2xl space-y-3 text-muted">
           <p>
-            De madrugada, uma vez por noite, cada fonte é lida por sua vez. O que vem é normalizado
-            — datas, horas, concelho, categoria — e comparado com o que já cá está, para não haver
-            duplicados quando o mesmo evento aparece em duas fontes.
+            Uma vez por dia, cada fonte é lida por sua vez. O que vem é normalizado — datas, horas,
+            concelho, categoria — e comparado com o que já cá está, para não haver duplicados quando
+            o mesmo evento aparece em duas fontes.
           </p>
           <p>
             Uma recolha que traga muito menos do que o costume não escreve nada: é o sinal de que o
             site mudou de forma, e nesse caso é preferível manter o que se tinha ontem a esvaziar a
-            página. Uma fonte que falhe {FALHAS_ATE_PAUSA} noites seguidas fica em pausa{' '}
+            página. Uma fonte que falhe {FALHAS_ATE_PAUSA} dias seguidos fica em pausa{' '}
             {HORAS_EM_PAUSA} horas e volta a ser tentada sozinha depois disso — o erro fica
             guardado, para quem for ver saber o que aconteceu.
           </p>

@@ -299,8 +299,13 @@ export default async function MunicipalityPage({ params }: Props) {
                 </li>
               ))}
             </ul>
+            {/*
+             * Em dias e não em noites: o cron do `scrape.yml` está às 03:20
+             * UTC, mas a fila do GitHub atrasa-o horas — medido às 07:58,
+             * 08:26, 10:11 e 15:28. A cadência cumpre-se; a hora não.
+             */}
             <p className="mt-3 max-w-2xl text-sm text-muted">
-              Lida uma vez por noite. O que não estiver publicado nestas fontes só chega aqui se
+              Lida uma vez por dia. O que não estiver publicado nestas fontes só chega aqui se
               alguém o enviar
               {haFontes ? (
                 <>
@@ -316,8 +321,8 @@ export default async function MunicipalityPage({ params }: Props) {
           </>
         ) : (
           <p className="mt-3 max-w-2xl text-muted">
-            Ainda não há aqui uma agenda que possamos ler todas as noites, e por isso o que aparece
-            de {municipality.name} é o que nos enviam ou o que chega pela programação em rede da
+            Ainda não há aqui uma agenda que possamos ler todos os dias, e por isso o que aparece de{' '}
+            {municipality.name} é o que nos enviam ou o que chega pela programação em rede da
             região.
             {haFontes ? (
               <>

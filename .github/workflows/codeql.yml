@@ -35,7 +35,15 @@ jobs:
     # Assim o trabalho é saltado enquanto o repositório for privado, e começa a
     # correr sozinho no dia em que passar a público — que é o destino deste,
     # publicado sob AGPL-3.0.
-    if: github.event.repository.visibility == 'public' || github.event_name == 'schedule'
+    #
+    # Aqui esteve escrito `|| github.event_name == 'schedule'`, e era a exceção
+    # a desfazer a regra: a execução agendada passava a condição, corria, e
+    # falhava pela razão que a condição existe para evitar. Verificado nas duas
+    # execuções agendadas que houve — 2026-08-31 e 2026-09-07, as duas
+    # segundas-feiras, as duas vermelhas. Um alarme semanal que toca sempre por
+    # uma razão que não é a sua é o alarme que se aprende a ignorar, que é
+    # exatamente o que este comentário dizia para não fazer.
+    if: github.event.repository.visibility == 'public'
 
     permissions:
       contents: read

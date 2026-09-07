@@ -79,6 +79,13 @@ Texto visível, comentários, mensagens de erro e documentação em **português
 Portugal**. Não é uma preferência: é o que mantém o código legível para quem
 vem de fora e o produto legível para quem o usa.
 
+Texto visível — no sítio, num email a uma câmara, num dossiê — sai de
+[`docs/NARRATIVA.md`](docs/NARRATIVA.md): a frase de posicionamento, o tom, o
+tratamento, as palavras proibidas e os dois glossários. O glossário interno é o
+que mais importa aqui: «montra», «gaveta», «toldo» e «lambrequim» são nomes
+desta casa e já escorregaram para páginas públicas, uma delas um documento
+legal.
+
 ### TypeScript
 
 Estrito, com `noUncheckedIndexedAccess` ligado. Sem `any`, sem `as any`, sem
