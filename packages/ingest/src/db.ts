@@ -263,6 +263,17 @@ function copyField<K extends StoredKey>(target: EventRow, source: Pick<EventRow,
   target[key] = source[key];
 }
 
+/** As cinco colunas que se decidem juntas — ver `mergeEventUpdate`. */
+const PRICE_KEYS = [
+  'is_free',
+  'price_min',
+  'price_max',
+  'price_display',
+  'price_raw',
+] as const satisfies readonly StoredKey[];
+
+const ehDoPreco = (key: StoredKey): boolean => (PRICE_KEYS as readonly string[]).includes(key);
+
 /**
  * Funde o que já está guardado com o que a recolha desta noite trouxe.
  *
@@ -272,26 +283,36 @@ function copyField<K extends StoredKey>(target: EventRow, source: Pick<EventRow,
  * ver, o texto de todos os eventos do concelho. Perder informação é o único
  * erro que esta casa não sabe desfazer.
  *
- * O preço é tratado em bloco: se a recolha não trouxe preço nenhum, fica o
- * que lá estava por inteiro, incluindo o `is_free`. De outra maneira um
- * evento gratuito passava a pago (ou o contrário) por o seletor do preço ter
- * mudado de nome.
+ * **O preço é tratado em bloco, e nunca coluna a coluna.** Ou a recolha desta
+ * noite trouxe preço, e as cinco colunas são dela; ou não trouxe nada, e ficam
+ * as cinco que lá estavam, `is_free` incluído — de outra maneira um evento
+ * gratuito passava a pago (ou o contrário) por o seletor do preço ter mudado
+ * de nome.
+ *
+ * A regra do «preenchido nunca vira vazio» aplicada a cada coluna do preço por
+ * si fazia exactamente o que esta função existe para evitar: misturar duas
+ * leituras. O XXIX Grande Prémio do Museu Nacional Ferroviário ficou meses com
+ * `price_min = 2` de uma noite antiga ao lado de `price_display = '€2.00'` de
+ * uma noite recente — a coluna do número ficou porque a nova estava vazia, a
+ * do rótulo foi substituída porque a nova não estava. A ficha dizia «€2.00» e
+ * os dados estruturados da mesma página diziam 2.
  */
 export function mergeEventUpdate(existing: StoredEvent | null, incoming: EventRow): EventRow {
   if (!existing) return incoming;
 
   const merged: EventRow = { ...incoming };
-  for (const key of STORED_KEYS) keepIfEmpty(merged, existing, key);
+  for (const key of STORED_KEYS) {
+    if (!ehDoPreco(key)) keepIfEmpty(merged, existing, key);
+  }
   for (const key of MODERATION_OWNED) copyField(merged, existing, key);
 
   const lostPrice =
-    isEmpty(incoming.price_raw) && isEmpty(incoming.price_display) && incoming.price_min === null;
+    isEmpty(incoming.price_raw) &&
+    isEmpty(incoming.price_display) &&
+    incoming.price_min === null &&
+    !incoming.is_free;
   if (lostPrice) {
-    merged.is_free = existing.is_free;
-    merged.price_min = existing.price_min;
-    merged.price_max = existing.price_max;
-    merged.price_display = existing.price_display;
-    merged.price_raw = existing.price_raw;
+    for (const key of PRICE_KEYS) copyField(merged, existing, key);
   }
 
   // A confiança sobe com revisão humana e com campos resolvidos; nunca desce

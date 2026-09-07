@@ -100,6 +100,7 @@ export default async function Fila({ searchParams }: Props) {
                 {submission.municipality_id ? ` · ${submission.municipality_id}` : ''}
                 {submission.extraction_status === 'failed' ? ' · extração falhou' : ''}
                 {submission.extraction_status === 'skipped' ? ' · em bruto' : ''}
+                {submission.extraction_status === 'unverified' ? ' · por confirmar' : ''}
               </p>
               <p className="font-medium">
                 <Link

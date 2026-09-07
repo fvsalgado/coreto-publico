@@ -1,5 +1,6 @@
 import 'server-only';
 import { extractedEventSchema, type ExtractedEvent } from '@coreto/core';
+import { julgarExtracao } from './juiz';
 import { env } from '../env';
 
 /**
@@ -23,7 +24,19 @@ import { env } from '../env';
  */
 
 export type ExtractionOutcome =
-  | { status: 'ok'; event: ExtractedEvent; model: string; costMicros: number }
+  | {
+      status: 'ok';
+      event: ExtractedEvent;
+      model: string;
+      costMicros: number;
+      /**
+       * Os campos que o texto de origem não confirma — ver `juiz.ts`.
+       *
+       * Vazio quer dizer «tudo o que se podia desmentir bate certo», e não
+       * «está tudo certo»: o título e a descrição não se julgam.
+       */
+      naoVerificados: string[];
+    }
   | { status: 'skipped'; reason: string }
   | { status: 'failed'; reason: string; retryable: boolean };
 
@@ -45,6 +58,14 @@ export interface ExtractionInput {
 
 /** Tempo máximo de espera. Um webhook não pode ficar pendurado. */
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Até onde vai o corpo do email no pedido — e, por isso, no juízo.
+ *
+ * Tem um nome porque é lido em dois sítios que **têm** de concordar: o prompt
+ * e o texto contra o qual a resposta é confrontada.
+ */
+const PROMPT_TEXT_LIMIT = 12_000;
 
 /** Tentativas antes de desistir e deixar em bruto. */
 export const MAX_EXTRACTION_ATTEMPTS = 5;
@@ -95,8 +116,19 @@ function buildPrompt(input: ExtractionInput): string {
     `Assunto: ${input.subject}`,
     '',
     'Mensagem:',
-    input.text.slice(0, 12_000),
+    input.text.slice(0, PROMPT_TEXT_LIMIT),
   ].join('\n');
+}
+
+/**
+ * O texto contra o qual o juiz confronta a resposta.
+ *
+ * É o mesmo que o `buildPrompt` põe no pedido — assunto e corpo até ao mesmo
+ * corte. Julgar contra mais do que o modelo viu dava «verificado» por acidente;
+ * julgar contra menos marcava campos que ele leu bem.
+ */
+function textoJulgavel(input: ExtractionInput): string {
+  return `${input.subject}\n${input.text.slice(0, PROMPT_TEXT_LIMIT)}`;
 }
 
 /**
@@ -171,7 +203,28 @@ export async function extractEvent(input: ExtractionInput): Promise<ExtractionOu
       return { status: 'failed', reason: 'resposta sem JSON legível', retryable: false };
     }
 
-    const parsed = extractedEventSchema.safeParse(JSON.parse(json));
+    /*
+     * O `JSON.parse` tem de ter o seu próprio `catch`, e não o grande lá em
+     * baixo.
+     *
+     * Estava dentro do `try` que envolve a chamada inteira, e o `catch` desse
+     * classifica tudo o que não seja um `AbortError` como **repetível**. Uma
+     * resposta truncada — o modelo bateu no `max_tokens` a meio de uma chaveta —
+     * ou com prosa à volta do JSON produz um `SyntaxError`, e uma falha
+     * determinística ficava marcada para nova tentativa: a mesma chamada, sobre
+     * o mesmo texto, a gastar o orçamento diário para dar o mesmo erro.
+     *
+     * A mensagem «resposta sem JSON legível» também não a apanhava: essa é do
+     * ramo em que não há chavetas nenhumas, que é o caminho menos frequente.
+     */
+    let cru: unknown;
+    try {
+      cru = JSON.parse(json);
+    } catch {
+      return { status: 'failed', reason: 'resposta com JSON inválido', retryable: false };
+    }
+
+    const parsed = extractedEventSchema.safeParse(cru);
     if (!parsed.success) {
       // Saída fora do schema nunca é escrita. Repetir raramente ajuda: o
       // problema costuma estar na mensagem, não na chamada.
@@ -190,6 +243,10 @@ export async function extractEvent(input: ExtractionInput): Promise<ExtractionOu
         payload.usage?.input_tokens ?? 0,
         payload.usage?.output_tokens ?? 0,
       ),
+      // Julgado contra a **mesma fatia** que foi ao prompt, e com a mesma
+      // referência de dia. Contra o texto inteiro, uma data que existisse
+      // depois do corte contava como verificada sem o modelo a ter visto.
+      naoVerificados: julgarExtracao(parsed.data, textoJulgavel(input), input.today).naoVerificados,
     };
   } catch (error) {
     const aborted = error instanceof Error && error.name === 'AbortError';

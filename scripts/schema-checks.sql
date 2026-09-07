@@ -448,6 +448,35 @@ begin
    where not tgisinternal
      and tgname in ('events_sync_acesso_trg', 'venues_sync_acesso_trg');
   assert n = 2, format('esperavam-se os dois gatilhos do acesso resolvido, há %s', n);
+
+  -- ---- Um evento não acontece num espaço de outro concelho ----
+  --
+  -- A regra é da 0130 e tem duas peças que se apoiam: a chave estrangeira
+  -- composta, que é o que cobre também o lado dos espaços e quem escreva por
+  -- fora da aplicação, e o gatilho, que é o que a recusa diz em português.
+  -- Perder qualquer uma delas volta a abrir a porta ao que a 0129 fabrica por
+  -- cima: um evento de um concelho a declarar-se acessível porque um espaço de
+  -- outro concelho o é (medido).
+  select count(*) into n
+    from pg_constraint
+   where conname = 'events_espaco_do_mesmo_concelho'
+     and conrelid = 'public.events'::regclass
+     and contype = 'f';
+  assert n = 1, 'falta a chave que prende o evento ao concelho do seu espaço (0130)';
+
+  select count(*) into n
+    from pg_trigger
+   where not tgisinternal and tgname = 'events_espaco_do_mesmo_concelho_trg';
+  assert n = 1, 'falta o gatilho que diz em português porque é que o espaço não serve (0130)';
+
+  -- E, por medida de segurança, a própria condição: nenhuma linha viva a
+  -- violá-la. A restrição garante-o para o futuro; isto dá por uma base que
+  -- tenha sido semeada por fora dela.
+  select count(*) into n
+    from public.events e
+    join public.venues v on v.id = e.venue_id
+   where v.municipality_id <> e.municipality_id;
+  assert n = 0, format('%s eventos num espaço de outro concelho', n);
 end
 $$;
 

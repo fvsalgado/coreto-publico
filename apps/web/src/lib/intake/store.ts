@@ -77,7 +77,12 @@ export interface SubmissionPatch {
   venue_id?: string | null;
   fingerprint?: string | null;
   confidence?: number | null;
-  extraction_status?: 'pending' | 'ok' | 'failed' | 'skipped';
+  /*
+   * `unverified` é o quinto (0131): o modelo respondeu, a proposta está lá, e
+   * há campos que o texto de origem não confirma. Nem `ok` nem `failed` — ver
+   * `juiz.ts`.
+   */
+  extraction_status?: 'pending' | 'ok' | 'failed' | 'skipped' | 'unverified';
   extraction_error?: string | null;
   extraction_model?: string | null;
   extraction_cost_micros?: number;

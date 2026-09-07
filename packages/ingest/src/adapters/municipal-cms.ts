@@ -228,7 +228,11 @@ function fromMicrodata(html: string, pageUrl: string): RawEvent[] {
       sourceKey: sourceKeyFromUrl(sourceUrl) ?? title.slice(0, 300),
       sourceUrl,
       title: title.slice(0, 300),
-      description: microdataValue(scope, 'description'),
+      // O microdata traz a descrição com as entidades já desescapadas pelo
+      // leitor de atributos, e por isso um `&lt;p&gt;` no HTML da câmara chega
+      // aqui como `<p>` literal. É o mecanismo que o plano descreve — e é
+      // aqui que ele acontece de verdade, não no harmonizador.
+      description: stripTags(microdataValue(scope, 'description') ?? '') || null,
       dates: datas.sessions,
       venueName: venueName ? venueName.slice(0, 200) : null,
       imageUrl: absoluteUrl(pageUrl, microdataValue(scope, 'image')),
@@ -331,7 +335,12 @@ export function mergeDetail(
   const description =
     event.description ??
     detail?.description ??
-    metaContent(html, 'og:description') ??
+    // Pela mesma razão do microdata: o valor de um atributo `content` chega
+    // com as entidades desescapadas, e uma câmara que escreva `&lt;p&gt;` na
+    // meta-descrição publicava a etiqueta em texto.
+    (metaContent(html, 'og:description')
+      ? stripTags(metaContent(html, 'og:description') ?? '') || null
+      : null) ??
     textFrom(html, ['.descricao', '.conteudo', '.entry-content', 'article p']);
 
   const datas = datasDoDetalhe(event, detail, html);
