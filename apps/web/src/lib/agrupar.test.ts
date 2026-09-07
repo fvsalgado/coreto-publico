@@ -9,7 +9,7 @@ const evento = (date_start: string | null, date_end: string | null = null) => ({
 });
 
 describe('groupByDay', () => {
-  it('põe cada dia no seu grupo, pela ordem em que vêm', () => {
+  it('põe cada dia no seu grupo, por ordem crescente', () => {
     const grupos = groupByDay(
       [evento('2026-08-28'), evento('2026-08-29'), evento('2026-08-29')],
       HOJE,
@@ -55,9 +55,39 @@ describe('groupByDay', () => {
     expect(grupos[0]?.events.map((e) => e.date_end)).toEqual(['2026-09-27', null]);
   });
 
-  it('guarda os eventos sem data no seu próprio grupo', () => {
+  it('guarda os eventos sem data no seu próprio grupo, e no fim', () => {
     const grupos = groupByDay([evento(null), evento('2026-08-29')], HOJE);
-    expect(grupos.map((g) => g.key)).toEqual([UNDATED, '2026-08-29']);
+    expect(grupos.map((g) => g.key)).toEqual(['2026-08-29', UNDATED]);
+  });
+
+  it('ordena os dias mesmo quando a lista vem ordenada pelo fim', () => {
+    /*
+     * O caso que se via em produção. A consulta ordena por `agenda_date`, que
+     * a 0053 define como `coalesce(date_end, date_start)`: um evento de
+     * vários dias chega pelo dia em que acaba e agrupa-se pelo dia em que
+     * começa. A lista abaixo vem como a consulta a serve, e a quinta 10 de
+     * setembro chega depois do dia 11 porque só fecha a 15.
+     */
+    const hoje = '2026-09-07';
+    const grupos = groupByDay(
+      [
+        evento('2026-09-07'),
+        evento('2026-05-16', '2026-09-08'),
+        evento('2026-09-09'),
+        evento('2026-09-11'),
+        evento('2026-09-10', '2026-09-15'),
+        evento(null),
+      ],
+      hoje,
+    );
+    expect(grupos.map((g) => g.key)).toEqual([
+      ONGOING,
+      '2026-09-07',
+      '2026-09-09',
+      '2026-09-10',
+      '2026-09-11',
+      UNDATED,
+    ]);
   });
 
   it('devolve lista vazia sem eventos', () => {

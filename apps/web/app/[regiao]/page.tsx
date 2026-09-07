@@ -16,7 +16,10 @@ import {
   listEvents,
   listMunicipalities,
   listVenueNames,
+  withCardTimes,
 } from '@/src/lib/queries/events';
+import { listFeedSessions } from '@/src/lib/feeds/data';
+import { ATALHOS, DEFAULTS, buildHref } from '@/src/lib/agenda';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
@@ -73,6 +76,35 @@ const SHORTCUTS: readonly AtalhoDaEntrada[] = [
   // agenda, e a agenda não se desliga.
   { href: '/coretos', label: 'Coretos', seccao: 'coretos' },
 ];
+
+/**
+ * Os três recortes de tempo, à cabeça da fila.
+ *
+ * Os quatro atalhos que aqui estavam eram três recortes de público e uma
+ * secção, e nenhum de tempo — quando «é hoje?» e «há alguma coisa no fim de
+ * semana?» são as perguntas que fazem sair de casa. Os recortes existiam,
+ * estavam bem construídos e viviam só na agenda, a dois cliques de quem chega
+ * à entrada.
+ *
+ * O endereço sai do `buildHref` e da janela da própria agenda, e não de uma
+ * cadeia escrita à mão aqui: é o que faz o atalho da entrada e o da agenda
+ * serem o mesmo endereço byte a byte — e o mesmo canónico — em vez de por
+ * coincidência. O rótulo é o de lá pela mesma razão: uma janela com dois nomes
+ * é uma janela que parece duas.
+ */
+function atalhosDeTempo(hoje: string): AtalhoDaEntrada[] {
+  return ATALHOS.map((atalho) => {
+    const janela = atalho.janela(hoje);
+    return {
+      href: buildHref({ ...DEFAULTS, ...janela }, 1),
+      label: atalho.rotulo,
+      // Contam-se antes de se oferecerem, como o «Acessível»: numa
+      // segunda-feira sem nada marcado, «Hoje» leva a uma lista vazia — e é
+      // essa a promessa que a vaga 1 tirou da rua.
+      recorte: janela,
+    };
+  });
+}
 
 /**
  * Os atalhos que levam a algum lado.
@@ -135,8 +167,15 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
       countEventsByMunicipality(regiao.id),
       listVenueNames(regiao.id),
       seccoesDesligadas(regiao.id),
-      comResultados(regiao.id, SHORTCUTS),
+      // O tempo primeiro, e o preço e o público a seguir: é a ordem da
+      // pergunta, não a ordem por que os atalhos foram sendo escritos.
+      comResultados(regiao.id, [...atalhosDeTempo(today), ...SHORTCUTS]),
     ]);
+
+  // A hora de cada cartão da semana. A entrada chamava `listEvents` e mais
+  // nada, e `listEvents` nunca lê `event_sessions`; as regras estão em
+  // `withCardTimes`.
+  const events = await withCardTimes(week.events, today, listFeedSessions);
 
   // «Onze concelhos, um palco» — a contagem por extenso vem da região; num
   // build sem base não há contagem e a frase degrada sem números.
@@ -179,7 +218,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
       </header>
 
       <Destaques
-        events={week.events}
+        events={events}
         today={today}
         municipalityNames={municipalityNames}
         venueNames={venueNames}
@@ -204,9 +243,9 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
         </div>
 
         <div className="mt-5">
-          {week.events.length > 0 ? (
+          {events.length > 0 ? (
             <EventList
-              events={week.events}
+              events={events}
               today={today}
               municipalityNames={municipalityNames}
               venueNames={venueNames}

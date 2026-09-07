@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { todayInLisbon } from '@coreto/core';
+import { slugify, todayInLisbon } from '@coreto/core';
 import { ConcelhosMarquee } from '@/src/components/ConcelhosMarquee';
 import {
   colunasDoRodape,
@@ -92,20 +92,38 @@ export async function RodapeDoSitio({
               <p className="font-semibold text-white">{PRODUTO.nome}</p>
               <p className="mt-1">{descricaoInstitucional(regiao)}</p>
             </div>
-            {colunas.map((coluna) => (
-              <nav key={coluna.titulo} aria-labelledby={`rodape-${coluna.titulo}`}>
-                <p id={`rodape-${coluna.titulo}`} className="font-semibold text-white">
-                  {coluna.titulo}
-                </p>
-                <ul className="mt-1 sm:space-y-1">
-                  {coluna.itens.map((item) => (
-                    <li key={item.href}>
-                      <LigacaoDoRodape item={item} />
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ))}
+            {colunas.map((coluna) => {
+              /*
+               * O identificador sai do slug e não do título por escrever.
+               *
+               * `aria-labelledby` não é um identificador: é uma lista de
+               * identificadores separada por espaços. Com o título cru,
+               * «rodape-Para quem programa» era lido como quatro referências
+               * — «rodape-Para», «quem», «programa» — e nenhuma existia: as
+               * duas navegações do rodapé ficavam anónimas, e quem percorre a
+               * página por marcos ouvia «navegação» duas vezes sem saber qual
+               * era qual. Nada disto viola um critério AA, e por isso o axe do
+               * CI passou por cima durante meses.
+               *
+               * O `id` fica no elemento que dá o nome, aqui ao lado, e não
+               * pode faltar: é a mesma expressão nos dois sítios.
+               */
+              const identificador = `rodape-${slugify(coluna.titulo)}`;
+              return (
+                <nav key={coluna.titulo} aria-labelledby={identificador}>
+                  <p id={identificador} className="font-semibold text-white">
+                    {coluna.titulo}
+                  </p>
+                  <ul className="mt-1 sm:space-y-1">
+                    {coluna.itens.map((item) => (
+                      <li key={item.href}>
+                        <LigacaoDoRodape item={item} />
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              );
+            })}
           </div>
 
           {/*

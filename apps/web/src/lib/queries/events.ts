@@ -143,6 +143,103 @@ export function listEvents(regiao: string, filter: EventFilter): Promise<EventLi
   })(regiao, filter);
 }
 
+/** O que dar a hora ao cartão precisa de saber de uma sessão, e nada mais. */
+export interface SessionTime {
+  session_date: string;
+  start_time: string | null;
+  is_cancelled: boolean;
+}
+
+/**
+ * A hora com que um cartão abre — a da primeira sessão do dia que ele anuncia.
+ *
+ * Não é «a hora do evento», que para muitos eventos não existe: é a hora do
+ * dia em que o cartão está. Um evento com duas sessões no mesmo dia mostra a
+ * primeira; um evento cujas sessões são noutros dias não mostra nada.
+ *
+ * Três regras, e cada uma tem uma razão diferente:
+ *
+ * - **Um evento em cartaz (`is_ongoing`) nunca mostra hora.** É um período —
+ *   uma exposição patente, uma festa de três dias — e a hora que a sessão de
+ *   abertura traz é um horário de abertura, não a hora de uma sessão. É a
+ *   mesma regra que o `EventDetailSessions` já aplica na ficha, e são quatro
+ *   dos cinquenta eventos da primeira página do Médio Tejo: dizer «11–13 set ·
+ *   18h» de uma festa que dura três dias é inventar um começo que não há.
+ * - **Uma sessão cancelada não dá a hora.** A ficha mostra-a riscada, de
+ *   propósito; um cartão que a anunciasse como a hora do evento mandava para
+ *   a porta fechada quem já tinha bilhete.
+ * - **Sem hora não se escreve nada** — nem traço, nem «por confirmar». São 26%
+ *   das sessões da região, e numa lista de quarenta cartões a ausência de um
+ *   sinal não é um sinal.
+ */
+function cardTime(event: EventCard, sessions: readonly SessionTime[] | undefined): string | null {
+  if (event.is_ongoing || !event.date_start || !sessions) return null;
+
+  let earliest: string | null = null;
+  for (const session of sessions) {
+    if (session.session_date !== event.date_start) continue;
+    if (session.is_cancelled || !session.start_time) continue;
+    if (earliest === null || session.start_time < earliest) earliest = session.start_time;
+  }
+  return earliest;
+}
+
+/**
+ * Junta a hora aos eventos que a página vai desenhar.
+ *
+ * A hora existia em todo o lado menos onde a decisão se toma: sai na API
+ * pública, vai nos feeds, aparece na ficha — e nenhum dos 128 cartões da
+ * agenda a mostrava, porque as sessões só se carregavam em `loadFeed` e a
+ * agenda e a entrada chamam `listEvents`. Uma agenda que não diz a que horas é
+ * não é uma agenda; estava escrito na rota da API e nunca chegou às páginas.
+ *
+ * **Uma leitura à parte por identificadores, e não uma coluna a mais no
+ * cartão.** As horas vivem em `event_sessions`, uma linha por sessão, e há
+ * exposições com sessenta: não são coluna que se acrescente a
+ * `CARD_EVENT_FIELDS`.
+ *
+ * **E é a leitura que a API já faz**, `listFeedSessions`, em vez de uma nova.
+ * São as mesmas linhas, com a mesma cache e a mesma etiqueta — e na primeira
+ * página da agenda são literalmente as mesmas, por isso a mais provável é já
+ * estar quente. Uma leitura própria pouparia duas colunas (`end_time`,
+ * `location_override`) em umas dezenas de linhas — cinquenta eventos do Médio
+ * Tejo trazem cinquenta e sete sessões — e pagava-as com uma segunda entrada
+ * de cache sobre as mesmas linhas e uma segunda definição de «as sessões
+ * destes eventos» para manter a par da primeira. Lerem os dois pelo mesmo
+ * sítio é o que impede a hora do cartão e a da API de voltarem a divergir, que
+ * é o defeito de origem.
+ *
+ * **A leitura entra como argumento** porque `feeds/data.ts` importa daqui as
+ * etiquetas de cache: importá-la deste lado fechava um ciclo entre os dois
+ * módulos. Entrando por argumento, a decisão de degradar mora aqui e não
+ * copiada em cada página.
+ *
+ * **E degrada.** Se `event_sessions` não se ler, os cartões saem sem hora —
+ * como já saem os 26% que não a têm — e a agenda serve. `listFeedSessions`
+ * propaga de propósito, e a razão está escrita lá: um `.ics` sem sessões suja
+ * calendários já subscritos, com UID que não se limpam a partir daqui. Numa
+ * listagem esse risco não existe, e responder 500 na página mais importante do
+ * sítio por causa de um enfeite seria trocar a agenda inteira pela hora.
+ *
+ * A hora viaja no próprio evento e não num mapa à parte porque é dado do
+ * evento, e porque assim atravessa a lista até ao cartão sem que nada pelo
+ * caminho tenha de saber que ela existe.
+ */
+export async function withCardTimes<T extends EventCard>(
+  events: readonly T[],
+  from: string,
+  readSessions: (
+    eventIds: string[],
+    from: string,
+  ) => Promise<Readonly<Record<string, readonly SessionTime[]>>>,
+): Promise<Array<T & { start_time: string | null }>> {
+  const sessions = await degradarForaDaCache('withCardTimes', readSessions, () => ({}))(
+    events.map((event) => event.id),
+    from,
+  );
+  return events.map((event) => ({ ...event, start_time: cardTime(event, sessions[event.id]) }));
+}
+
 /**
  * Todos os eventos por acontecer, para o mapa.
  *

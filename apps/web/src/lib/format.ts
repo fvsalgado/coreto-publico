@@ -309,17 +309,36 @@ export function joinPt(items: string[]): string {
 
 export { isoWeekday };
 
+/** A largura que um cartão de espaço chega a ter: três colunas num ecrã largo, a dobrar para os ecrãs densos. */
+const LARGURA_DE_CARTAO = 800;
+
 /**
  * A mesma fotografia, em tamanho de cartão.
  *
- * As fotografias dos espaços vêm do Wikimedia Commons com `width=1600`, que
- * é o tamanho certo para a ficha. Num cartão de grelha isso são cinco vezes
- * os píxeis necessários — e a página tem oitenta cartões. O Commons redimensiona
- * pelo parâmetro, por isso basta pedir menos; qualquer outro URL fica como está.
+ * As fotografias dos espaços vêm do Wikimedia Commons em tamanho de ficha. Num
+ * cartão de grelha isso são cinco vezes os píxeis necessários — e a página tem
+ * oitenta cartões.
+ *
+ * A regra antiga trocava a cadeia `width=1600` por `width=800` e mais nada:
+ * bastava a fotografia chegar com outra largura, ou sem largura nenhuma, para
+ * ir inteira para uma miniatura de noventa e seis píxeis. O `Special:FilePath`
+ * aceita qualquer valor em `width` — pedimos o nosso, esteja lá o que estiver.
+ *
+ * O que decide é o caminho e não o anfitrião: `Special:FilePath` é uma página
+ * especial do MediaWiki, e onde ela responde o `width` é servido. Um endereço
+ * de outra casa passa intacto de propósito — um parâmetro que o servidor
+ * ignora não encolhe nada e só suja o endereço.
  */
 export function thumbUrl(imageUrl: string): string {
-  if (imageUrl.includes('/Special:FilePath/') && imageUrl.includes('width=1600')) {
-    return imageUrl.replace('width=1600', 'width=800');
+  let endereco: URL;
+  try {
+    endereco = new URL(imageUrl);
+  } catch {
+    return imageUrl;
   }
-  return imageUrl;
+
+  if (!endereco.pathname.includes('/Special:FilePath/')) return imageUrl;
+
+  endereco.searchParams.set('width', String(LARGURA_DE_CARTAO));
+  return endereco.toString();
 }

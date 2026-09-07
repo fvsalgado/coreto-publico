@@ -1,12 +1,18 @@
 import Link from 'next/link';
 import { Capa } from '@/src/components/Capa';
 import { Sinais, Sinal } from '@/src/components/Sinais';
-import { formatCategory, formatEventDates } from '@/src/lib/format';
+import { formatCategory, formatEventDates, formatTime } from '@/src/lib/format';
 import type { EventCard as EventCardData } from '@/src/lib/queries/types';
 import { sinaisDeAcessibilidade, sinalDePreco } from '@/src/lib/sinais';
 
 interface Props {
-  event: EventCardData;
+  /**
+   * A hora entra pelo próprio evento, no `start_time` que `withCardTimes`
+   * resolve — a da primeira sessão não cancelada do dia que o cartão anuncia.
+   * É opcional porque não é coluna do cartão: quem não a resolveu passa o
+   * evento tal como saiu de `listEvents` e o cartão fica como estava.
+   */
+  event: EventCardData & { start_time?: string | null };
   /** O dia de hoje em Lisboa, para saber o que já está a decorrer. */
   today: string;
   municipalityName?: string;
@@ -36,6 +42,27 @@ export function EventCard({
   const showMunicipalityLine =
     showMunicipality && Boolean(municipalityName) && municipalityName !== where;
 
+  /*
+   * A hora ao lado do dia, e não numa linha nova.
+   *
+   * O cartão já diz a data em três sítios — o numeral da capa, este `time` e
+   * o cabeçalho do dia por cima da lista —, e uma quarta linha só para a hora
+   * seria a data uma quarta vez. Vai colada ao dia com o mesmo « · » que a
+   * secção «Quando» da ficha usa entre a data e a hora de cada sessão, para
+   * as duas páginas dizerem a mesma coisa da mesma maneira.
+   *
+   * E o `dateTime` passa a ser o instante quando há hora: um `<time>` que
+   * escreve «7 set · 17h30» e declara à máquina só o dia estava a dizer duas
+   * coisas diferentes ao mesmo tempo. É o mesmo formato local que a ficha
+   * escreve, sem fuso — o valor é a hora de Lisboa, que é onde isto acontece.
+   */
+  const startTime = event.start_time ?? null;
+  const hora = formatTime(startTime);
+  const quando =
+    hora && startTime && event.date_start
+      ? `${event.date_start}T${startTime.slice(0, 5)}`
+      : (event.date_start ?? undefined);
+
   // Numa lista, o preço e a acessibilidade são o que decide se se abre o
   // evento — e «Acesso a cadeiras de rodas» ocupava metade da largura do cartão
   // para dizer o que um símbolo diz. Só o positivo: a marca de «sem acesso»
@@ -55,8 +82,9 @@ export function EventCard({
 
       <div className="min-w-0 flex-1 py-0.5">
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted">
-          <time dateTime={event.date_start ?? undefined} className="font-medium text-highlight">
+          <time dateTime={quando} className="font-medium text-highlight">
             {formatEventDates(event.date_start, event.date_end, today)}
+            {hora ? ` · ${hora}` : ''}
           </time>
           {category ? (
             <span className="flex items-center gap-1.5">

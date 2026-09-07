@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BandstandMark } from '@/src/components/BandstandMark';
+import { posterBackground } from '@/src/lib/cartaz';
 import { formatVenueKind, thumbUrl } from '@/src/lib/format';
 import type { Venue } from '@/src/lib/queries/types';
 
@@ -33,6 +34,8 @@ interface Props {
  * por cima: é a mesma informação, arrumada para o espaço que existe.
  */
 export function VenueCard({ venue, count, porConfirmar = false }: Props) {
+  const fotografia = venue.image_url ? posterBackground(thumbUrl(venue.image_url)) : undefined;
+
   // A moldura a tracejado é a mesma que a página dos coretos usa para o que
   // está por confirmar — a dúvida diz-se com o mesmo sinal em toda a casa.
   return (
@@ -42,20 +45,36 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
       }`}
     >
       {/* A fotografia é decorativa — o nome está mesmo ao lado — e sem ela o
-          coreto em filigrana segura o lugar, para a grelha não coxear. */}
+          coreto em filigrana segura o lugar, para a grelha não coxear.
+
+          O coreto está sempre desenhado, e a fotografia é uma camada por cima:
+          quando ela não chega, o que fica por baixo é o mesmo desenho que a
+          grelha já mostra para os espaços sem foto.
+
+          Em fundo e não em `<img>`, pela lição que `cartaz.ts` mediu no
+          Chromium e aplicou aos cartazes: um `<img>` que falha desenha o ícone
+          de imagem partida mesmo com `alt=""`, e um `background-image` que
+          falha não desenha nada. Aqui isso não é hipótese — cada foto do
+          Commons custa três viagens (302 para `Special:Redirect`, 301 para
+          `thumb.wikimedia.org`, e só a terceira traz bytes), as cinquenta e
+          seis fotos de `/espacos` são perto de cento e setenta pedidos numa
+          visita, e a Wikimedia responde 429 com `retry-after: 600`. Com o
+          `<img>`, esse 429 punha o ícone partido no canto de um retângulo
+          vazio.
+
+          O que se perde é o `loading="lazy"`: um fundo é pedido logo que a
+          caixa entra na árvore de pintura, esteja ou não à vista. Numa vista
+          com rolagem completa não muda nada — as fotos vinham todas na mesma —,
+          e quem não rola paga pedidos que antes não fazia. */}
       <div className="ct-grain relative aspect-square w-24 shrink-0 self-stretch overflow-hidden border-r border-border bg-accent-soft sm:aspect-[5/3] sm:w-full sm:border-r-0 sm:border-b">
-        {venue.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={thumbUrl(venue.image_url)}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="h-full w-full object-cover"
+        <BandstandMark className="absolute inset-0 m-auto size-10 text-ink opacity-[0.12] sm:size-14" />
+        {fotografia ? (
+          <div
+            aria-hidden="true"
+            style={{ backgroundImage: fotografia }}
+            className="absolute inset-0 bg-cover bg-center"
           />
-        ) : (
-          <BandstandMark className="absolute inset-0 m-auto size-10 text-ink opacity-[0.12] sm:size-14" />
-        )}
+        ) : null}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">

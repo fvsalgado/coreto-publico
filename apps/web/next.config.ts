@@ -152,6 +152,54 @@ const WIDGET_HEADERS = [
 ];
 
 /**
+ * Um ano de cache para o que não muda — e a conta que isso obriga a fazer.
+ *
+ * O cartaz de partilha, os logótipos do cofinanciamento e os ícones da
+ * aplicação saem de `public/`, e o Next serve `public/` com
+ * `public, max-age=0, must-revalidate`. Medido em produção antes disto:
+ * `/og/medio-tejo.png` (183 891 B) e `/logos/medio-tejo/cim-escuro.png`
+ * (16 002 B) obrigavam a uma revalidação condicional de cada vez que o
+ * navegador precisava deles. Um 304 é barato em bytes e caro em latência — e
+ * a latência é o que se sente num telemóvel, a meio do concelho, com a rede
+ * que houver.
+ *
+ * **O que isto obriga:** estes nomes não têm hash. Uma imagem substituída fica
+ * presa na cache de quem já cá esteve, e nem um novo lançamento a desaloja.
+ * A saída é versionar na cadeia de consulta — `/og/medio-tejo.png?v=2` — e os
+ * dois caminhos que mudam na prática (o cartaz de partilha e os logótipos da
+ * região) são campos do painel de administração, escritos à mão: quem troca o
+ * ficheiro acrescenta `?v=2` no mesmo formulário, sem tocar em código. O
+ * compromisso vale a pena porque a alternativa é cobrar uma revalidação a
+ * *todos* os visitantes, *sempre*, para o caso de um ficheiro que muda uma vez
+ * por ano.
+ *
+ * Sem `immutable` aqui, e é de propósito: sem ele, um recarregamento à mão
+ * ainda revalida, e é essa a rede de segurança de quem se esqueceu do `?v=`.
+ */
+const UM_ANO = 60 * 60 * 24 * 365;
+
+const CACHE_DE_FICHEIROS = [{ key: 'Cache-Control', value: `public, max-age=${UM_ANO}` }];
+
+/**
+ * Os ícones de metadados, esses são mesmo imutáveis.
+ *
+ * O Next escreve-lhes o hash do conteúdo na cadeia de consulta do `<link>`
+ * (`/icon.svg?icon.38mkknf43f7sy.svg`), portanto trocar o ficheiro troca o
+ * endereço sozinho. Com o nome já versionado, `immutable` não custa nada e
+ * poupa a revalidação em cada separador novo.
+ */
+const CACHE_IMUTAVEL = [{ key: 'Cache-Control', value: `public, max-age=${UM_ANO}, immutable` }];
+
+/**
+ * O que leva cache longa. **`/_next/static/` não está aqui, e não pode estar:**
+ * já vem com hash no nome e já sai `immutable` do executor — o Next ignora (e
+ * avisa) quem lhe tente escrever `Cache-Control` por cima.
+ */
+const FICHEIROS_ESTATICOS = ['/og/:caminho*', '/logos/:caminho*', '/icones/:caminho*'];
+
+const ICONES_DE_METADADOS = ['/icon.svg', '/apple-icon.png', '/favicon.ico'];
+
+/**
  * As páginas que se fundiram, e para onde foram.
  *
  * O que a casa é vive em `/informacoes`; de onde vêm os eventos e como
@@ -213,6 +261,8 @@ const nextConfig: NextConfig = {
     return [
       { source: '/widget/:path*', headers: WIDGET_HEADERS },
       { source: '/((?!widget).*)', headers: SECURITY_HEADERS },
+      ...FICHEIROS_ESTATICOS.map((source) => ({ source, headers: CACHE_DE_FICHEIROS })),
+      ...ICONES_DE_METADADOS.map((source) => ({ source, headers: CACHE_IMUTAVEL })),
     ];
   },
 };
