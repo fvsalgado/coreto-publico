@@ -1,0 +1,24 @@
+-- 0131 — Um quinto estado para a extração: «por confirmar».
+--
+-- Entre a resposta do modelo que lê os emails e a fila de moderação havia uma
+-- porta só, e essa porta é o Zod: confirma a **forma** — que uma data tem forma
+-- de data — e nunca a **proveniência**. Uma data que não está no email
+-- atravessa-a, é escrita com `extraction_status = 'ok'`, pré-preenche o
+-- formulário e sai do outro lado como o dia em que a peça se faz.
+--
+-- O juiz determinístico (`apps/web/src/lib/intake/juiz.ts`) confronta o que o
+-- modelo devolveu com o que os leitores desta casa conseguem ler do mesmo
+-- texto. Quando algo não bate, o estado passa a ser este: nem `ok`, porque não
+-- se confirmou, nem `failed`, porque a proposta está lá e serve — falta alguém
+-- olhar para os campos que a página nomeia.
+--
+-- **Um ficheiro com uma instrução só, e é de propósito.** O
+-- `scripts/aplicar-migracoes.sh` corre cada migração com `--single-transaction`,
+-- e o Postgres proíbe **usar** um valor de enum na mesma transação em que ele é
+-- acrescentado. Qualquer `update`, `check` ou seed que mencione 'unverified'
+-- tem de vir noutro ficheiro.
+--
+-- O tipo é partilhado com `submission_attachments.ocr_status` (0005). Nada
+-- escreve lá este valor; passa a ser representável, e não vale a pena um tipo
+-- novo só por isso.
+alter type public.extraction_status add value if not exists 'unverified';

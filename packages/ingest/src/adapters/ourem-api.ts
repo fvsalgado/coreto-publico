@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import type { RawEvent } from '@coreto/core';
 import type { Adapter, AdapterContext, SourceDates } from '../adapter.js';
+import { stripTags } from '../html.js';
 
 /**
  * O que a API devolve, campo a campo.
@@ -98,6 +99,25 @@ const CARTAZ_POR_OMISSAO = /\/default[_-]/i;
 function texto(valor: string | null | undefined): string | null {
   const limpo = (valor ?? '').trim();
   return limpo || null;
+}
+
+/**
+ * A sinopse da API vem em HTML, e ia inteira para a base.
+ *
+ * A API de Ourém devolve a sinopse com etiquetas **verdadeiras** — não
+ * escapadas, não duplamente escapadas: `<p>DOMINGO / 06 E 20 SET.</p>` é o que
+ * o JSON traz. Este adaptador nunca chamou `stripTags` (nem sequer o
+ * importava), e a ficha dos «Mercados Ecorurais» publicava as etiquetas em
+ * texto, à vista de quem visita.
+ *
+ * **Seis eventos publicados**, todos desta fonte, a 7 de setembro de 2026.
+ *
+ * O `stripTags` já trata `<p>` e `<br />` como blocos e devolve quebra de
+ * linha, que é o que a ficha sabe desenhar em parágrafos — não se colam
+ * palavras nem se perde a separação.
+ */
+function prosa(valor: string | null | undefined): string | null {
+  return texto(stripTags(valor ?? ''));
 }
 
 /**
@@ -190,7 +210,7 @@ export function paraRawEvent(evento: Evento): RawEvent | null {
     // ligação partida é pior do que não haver ligação.
     sourceUrl: null,
     title,
-    description: texto(evento.sinopse),
+    description: prosa(evento.sinopse),
     dates: datas.sessions,
     isOngoing: datas.isOngoing,
     venueName: local,

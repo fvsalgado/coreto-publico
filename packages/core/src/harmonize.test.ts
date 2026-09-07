@@ -266,14 +266,54 @@ describe('o harmonizador e os nomes que se repetem', () => {
     expect(event.venue_id).toBe('cine-teatro-sao-pedro-alcanena');
   });
 
-  it('um id escrito pelo adaptador ganha sempre', () => {
-    // Quem nomeia um id sabe o que está a fazer, e há programação em rede que
-    // atravessa concelhos de propósito.
+  it('um id escrito pelo adaptador ganha ao alias', () => {
+    // Quem nomeia um id já respondeu à pergunta que os alias tentam responder:
+    // não se lhe passa por cima com uma coincidência de nomes.
     const { event } = harmonizeEvent(
+      raw({ venueId: 'cine-teatro-sao-pedro-alcanena', venueName: 'Um Nome Qualquer' }),
+      emAlcanena,
+    );
+    expect(event.venue_id).toBe('cine-teatro-sao-pedro-alcanena');
+  });
+
+  /*
+   * Esta regra mudou a 7 de setembro de 2026, e vale a pena dizer porquê.
+   *
+   * O teste que aqui estava chamava-se «um id escrito pelo adaptador ganha
+   * sempre», e o comentário defendia-o: quem nomeia um id sabe o que faz.
+   * Sabe — e continua a saber tudo o que sabia sobre qual é o espaço. O que
+   * não pode é pôr um evento de Alcanena num espaço de Abrantes, porque a
+   * 0130 passou a recusá-lo na base, e porque a 0129 copia o acesso do espaço
+   * para uma coluna publicada do evento: um espaço do concelho errado faz o
+   * Coreto afirmar acessibilidade que não mediu.
+   *
+   * A recusa é do espaço e não do evento, e o nome segue para os espaços por
+   * resolver — o caminho que um nome sem alias já percorria.
+   */
+  it('mas nem um id escrito pelo adaptador atravessa o concelho', () => {
+    const { event, unresolvedVenueName } = harmonizeEvent(
       raw({ venueId: 'cine-teatro-sao-pedro-abrantes', venueName: 'Cine-Teatro São Pedro' }),
       emAlcanena,
     );
-    expect(event.venue_id).toBe('cine-teatro-sao-pedro-abrantes');
+    expect(event.venue_id).toBe(null);
+    expect(unresolvedVenueName).toBe('Cine-Teatro São Pedro');
+  });
+
+  it('nem o espaço de uma fonte de espaço só', () => {
+    const { event } = harmonizeEvent(raw({}), {
+      ...emAlcanena,
+      defaultVenueId: 'cine-teatro-sao-pedro-abrantes',
+    });
+    expect(event.venue_id).toBe(null);
+  });
+
+  it('e um espaço sem concelho conhecido continua a passar', () => {
+    // Silêncio não é contradição — é a mesma regra de `resolveVenueInMunicipality`.
+    const { event } = harmonizeEvent(raw({ venueId: 'espaco-que-o-catalogo-nao-conhece' }), {
+      ...emAlcanena,
+      defaultVenueId: null,
+    });
+    expect(event.venue_id).toBe('espaco-que-o-catalogo-nao-conhece');
   });
 });
 
@@ -380,5 +420,59 @@ describe('o harmonizador e a hora que a prosa afirma', () => {
       context,
     );
     expect(sessions.map((s) => s.end_time)).toEqual(['03:00', null]);
+  });
+});
+
+/**
+ * As quatro colunas do preço não se podem contradizer.
+ *
+ * O par a evitar é «`price_display` = 'Entrada livre'» com «`is_free` =
+ * false»: no cartão o evento aparece grátis, no filtro dos grátis não aparece,
+ * e nos dados estruturados sai `isAccessibleForFree: false`. Três respostas
+ * para a mesma pergunta, escritas na mesma linha, na mesma noite.
+ */
+describe('harmonizeEvent e a coerência do preço', () => {
+  const preco = (partial: Partial<RawEvent>) => harmonizeEvent(raw(partial), context).event;
+
+  it('quem diz «Entrada livre» no rótulo diz sempre que sim no filtro', () => {
+    for (const partial of [
+      { priceRaw: 'Entrada livre' },
+      { priceRaw: 'Gratuito' },
+      { priceRaw: '0€' },
+      { isFree: true, priceRaw: 'Bilhetes na bilheteira' },
+      { priceRaw: null, description: 'A entrada é gratuita e não carece de inscrição.' },
+    ]) {
+      const event = preco(partial);
+      expect([event.price_display, event.is_free]).toEqual(['Entrada livre', true]);
+    }
+  });
+
+  it('e quem não é grátis nunca diz que é', () => {
+    for (const partial of [
+      { priceRaw: '12€' },
+      { priceRaw: '1000€' },
+      { priceRaw: 'Consultar bilheteira' },
+      { priceRaw: 'Donativo' },
+    ]) {
+      const event = preco(partial);
+      expect(event.is_free).toBe(false);
+      expect(event.price_display).not.toBe('Entrada livre');
+    }
+  });
+
+  /*
+   * O caso do Entroncamento, medido em produção a 7 de setembro de 2026: o
+   * único rótulo de preço do catálogo em forma estrangeira, porque a palavra
+   * «Prémio» do título vetava o campo que a fonte dedicou ao preço.
+   */
+  it('a prosa deixa de vetar o campo do preço', () => {
+    const event = preco({
+      title: 'XXIX Grande Prémio Museu Nacional Ferroviário',
+      priceRaw: '€2.00',
+      description: 'A prova tem o custo de 2€ com t-shirt técnica e troféus para os 3 primeiros.',
+    });
+    expect(event.price_display).toBe('2 €');
+    expect(event.price_min).toBe(2);
+    expect(event.is_free).toBe(false);
   });
 });

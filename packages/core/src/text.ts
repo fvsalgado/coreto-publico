@@ -170,6 +170,18 @@ const MINOR_WORDS = new Set([
   'pelo',
   'pelos',
   'por',
+  /*
+   * `que` e `se` entraram por um título publicado, e é o único defeito desta
+   * função que o catálogo de hoje tem materializado.
+   *
+   * A fonte de Abrantes publica «PAI QUE SE TORNOU MÃE»
+   * (`__fixtures__/abrantes-proxy.json:23`), e a base de produção guarda
+   * **«Pai Que Se Tornou Mãe»** — medido a 7 de setembro de 2026. Sem estas
+   * duas linhas, o pronome relativo e o pronome reflexo ficam capitalizados
+   * como se fossem substantivos.
+   */
+  'que',
+  'se',
   'sem',
   'sob',
   'sobre',
@@ -191,6 +203,10 @@ const KNOWN_ACRONYMS = new Set([
   'CIMT',
   'CITA',
   'CT',
+  // O Festival Internacional de Folclore de Abrantes. A fonte escreve-o em
+  // caixa mista («FIF Abrantes») e por isso a função nem lhe toca hoje — está
+  // aqui para o dia em que o cartaz venha gritado, que é como metade vem.
+  'FIF',
   'IPT',
   'MARG',
   'MIAA',
@@ -199,6 +215,38 @@ const KNOWN_ACRONYMS = new Set([
   'SMUT',
   'TV',
 ]);
+
+/**
+ * Um numeral romano, pela forma e não por lista.
+ *
+ * Esta é a única família em que uma regra ganha à lista, e é por ser
+ * **fechada**: os numerais romanos são um sistema de escrita, não um
+ * vocabulário que cresce. «XV», «II», «XXIV» são o que qualquer cartaz de
+ * edição escreve, e enumerá-los seria enumerar os inteiros.
+ *
+ * O padrão é o estrito — a forma canónica, com as subtrações — e não
+ * `[IVXLCDM]+`, que aceitaria «IIII» e «VX». Medido: apanha XV, II, IV, VII,
+ * XVI, XIX, XXI, XXIV, XL; recusa MIL, CIVIL, DVD, CID, VIM, LIMA, CLIMA,
+ * LIVRO.
+ *
+ * **A colisão conhecida, e porque se aceita.** «MIX» é um numeral romano
+ * válido (M + IX = 1009), e por isso «MIX DE VERÃO NO CORETO» passa a dar
+ * «MIX de Verão» em vez de «Mix de Verão». O mesmo vale para CD, CM, DC, MC,
+ * LI, DI, CI, MI. Aceita-se porque o engano **cai do lado seguro**: preserva a
+ * caixa que a fonte escreveu em vez de inventar uma. A regra da casa é essa —
+ * na dúvida, não fabricar —, e afrouxar o padrão para evitar o «MIX» era
+ * trocar um título com a caixa da fonte por dezenas de numerais partidos.
+ */
+const ROMAN_NUMERAL = /^(?=[IVXLCDM]{2,}$)M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/;
+
+/**
+ * Uma sigla pontuada: «A.R.C.A.», «S.C.P.».
+ *
+ * A forma não é ambígua — letra, ponto, letra, ponto — e nenhuma palavra
+ * portuguesa se escreve assim. Hoje dá «A.r.c.a.», porque o `bare` do ramo das
+ * siglas tira os pontos e procura «ARCA» na lista, que lá não está.
+ */
+const DOTTED_ACRONYM = /^(?:\p{Lu}\.){2,}$/u;
 
 /**
  * Devolve à caixa normal um título publicado em CAIXA ALTA.
@@ -222,7 +270,19 @@ export function fixShoutyTitle(title: string): string {
       if (/^\s+$/.test(token)) return token;
 
       const bare = token.replace(/[^\p{L}\p{N}]/gu, '');
-      if (KNOWN_ACRONYMS.has(bare)) {
+
+      /*
+       * Três formas de dizer «isto não é uma palavra gritada», por ordem de
+       * certeza: a regra fechada, a regra de forma, e a lista.
+       *
+       * **Todas marcam `seenWord`.** Não é detalhe: `seenWord` é o que diz se
+       * a próxima palavra ainda é a primeira do título, e a primeira nunca
+       * fica em minúscula mesmo sendo preposição. Um ramo que devolva o token
+       * sem a marcar faz «XV DE AGOSTO» dar «XV De Agosto» — pior do que o
+       * «Xv de Agosto» de hoje, que é o modo de falha mais irritante que uma
+       * correção pode ter.
+       */
+      if (ROMAN_NUMERAL.test(bare) || DOTTED_ACRONYM.test(token) || KNOWN_ACRONYMS.has(bare)) {
         seenWord = true;
         return token;
       }
@@ -231,7 +291,24 @@ export function fixShoutyTitle(title: string): string {
       const isFirst = !seenWord;
       seenWord = true;
       if (!isFirst && MINOR_WORDS.has(lower)) return lower;
-      return lower.replace(/\p{Ll}/u, (c) => c.toUpperCase());
+
+      /*
+       * A primeira letra, e a que vem depois de um hífen ou de uma barra.
+       *
+       * Sem isto, «CINE-TEATRO PARAÍSO» dava «Cine-teatro Paraíso»: o
+       * `replace` sem `g` capitalizava só a primeira minúscula do token, e o
+       * que vinha depois do hífen ficava por levantar. «Cine-Teatro» é como o
+       * espaço se chama, e é como o catálogo o escreve.
+       *
+       * **O apóstrofo fica de fora, e é de propósito.** Alargar isto a
+       * «qualquer não-letra» era a forma natural de o escrever e dava
+       * «Km'S» — «VAMOS SOMAR KM'S EM 2026!» é um título real, e está no
+       * `text.test.ts` desde antes desta correção.
+       */
+      return lower.replace(
+        /(^|[-–—/])(\p{Ll})/gu,
+        (_, antes, letra: string) => `${antes}${letra.toUpperCase()}`,
+      );
     })
     .join('');
 }
@@ -335,6 +412,47 @@ export function numeroPorExtenso(n: number): string {
 }
 
 /**
+ * A legenda que o ofuscador de emails do Joomla deixa na prosa.
+ *
+ * O plugin `emailcloak` do Joomla substitui cada endereço de email por um
+ * bloco de JavaScript **e** por um texto de recurso para quem não o corra
+ * (`JLIB_HTML_CLOAKING`). O `stripTags` da recolha salta o `<script>` — isso
+ * está certo e é o que ele faz —, mas a legenda vive num `<span>`, num
+ * `<noscript>` ou num `<joomla-hidden-mail>`, e desses o texto passa. O que
+ * chega ao público é mobília da plataforma apresentada como programação:
+ *
+ *   «Inscrições gratuitas até 31 de agosto para Este endereço de email está
+ *   protegido contra piratas. Necessita ativar o JavaScript para o
+ *   visualizar.»
+ *
+ * **Nove eventos publicados do Médio Tejo, em cinco concelhos**, tinham-na a
+ * 7 de setembro de 2026 — Barquinha, Alcanena, Entroncamento, Mação e Tomar.
+ *
+ * **Duas frases, e é preciso aceitar as duas.** O Joomla traduz o recurso de
+ * formas diferentes conforme a versão: sete eventos dizem «Necessita **ativar**
+ * o JavaScript» e dois «Necessita **ter** o JavaScript **autorizado**». Uma
+ * regra escrita contra uma delas deixava a outra na rua. Daí a âncora ser o
+ * arranque da frase, confirmado pela palavra `javascript` — e não a frase
+ * inteira.
+ *
+ * **Presa a uma frase, de propósito.** As duas regras acima cortam
+ * `[\s\S]*$` porque são o fim da ficha; esta não é: a legenda aparece a meio
+ * da prosa, e uma regra gulosa comia o resto do texto do evento.
+ *
+ * **O que fica por arranjar, e é uma decisão.** Removida a legenda, sobra o
+ * conector: «Inscrições gratuitas até 31 de agosto para». Apará-lo é editar a
+ * prosa da fonte, e uma frase incompleta é verdadeira — a legenda é que não
+ * era. Fica.
+ *
+ * **O que isto não faz, e nunca deve fazer:** apagar endereços de email da
+ * descrição. Um email que o organizador escreveu («inscrições por
+ * geral@junta.pt») é informação verdadeira do evento; perdê-la é perder campo,
+ * que é o mesmo pecado por outro lado.
+ */
+const OFUSCADOR_DE_EMAIL =
+  /\s*(?:este endere[çc]o de e-?mail (?:est[áa]|encontra-se)[^.]*?\.(?:[^.]*?javascript[^.]*?\.)?|this e-?mail address is being protected from spambots\.?[^.]*?javascript[^.]*?(?:\.|$))/gi;
+
+/**
  * Limpa a prosa que a fonte cola à volta da descrição.
  *
  * Dois vícios concretos, vistos nas agendas municipais:
@@ -346,6 +464,10 @@ export function numeroPorExtenso(n: number): string {
  *   2. A tabela de propriedades achatada em texto no fim — «Informação do
  *      evento Data 19/01/2026 19:30 … Local Mação». As datas já vêm do campo
  *      próprio; em prosa são só ruído.
+ *   3. A legenda do ofuscador de emails do Joomla — «Este endereço de email
+ *      está protegido contra piratas. Necessita ativar o JavaScript para o
+ *      visualizar.» Nove eventos publicados do Médio Tejo tinham-na no meio da
+ *      prosa a 7 de setembro de 2026, em cinco concelhos.
  *
  * Não inventa nada: só corta o que reconhece, e devolve `null` quando não
  * sobra texto nenhum.
@@ -376,6 +498,12 @@ export function cleanEventDescription(
       /\s*data\s+\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?\s+data de fim do evento\b[\s\S]*$/i,
       '',
     )
+    .replace(OFUSCADOR_DE_EMAIL, '')
+    // O corte deixa espaço a mais onde a legenda estava. Isto é arrumação
+    // mecânica e não edição: junta espaços seguidos e não deixa três linhas
+    // em branco onde havia texto.
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   return text.length > 0 ? text : null;

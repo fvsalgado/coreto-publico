@@ -109,6 +109,44 @@ describe('ourem-api contra a resposta verdadeira', () => {
  * valor por omissão da plataforma, e ambas passariam por dados verdadeiros a
  * quem lesse o JSON sem olhar para o conjunto.
  */
+/**
+ * A sinopse vem em HTML, e ia inteira para a base.
+ *
+ * A API devolve a sinopse com etiquetas **verdadeiras** — `<p>DOMINGO / 06 E
+ * 20 SET.</p>` é o que o JSON traz, sem escape nenhum. Este adaptador nunca
+ * chamou `stripTags`, e o que se lia na ficha dos «Mercados Ecorurais» eram as
+ * etiquetas em texto. **Seis eventos publicados**, todos desta fonte, a 7 de
+ * setembro de 2026.
+ *
+ * O plano apontava a causa ao harmonizador — «correr unescapeHtml antes de
+ * stripTags» —, e a ordem lá é irrelevante: neste caminho nunca corre
+ * `stripTags` nenhum.
+ */
+describe('a sinopse chega em HTML e não pode sair assim', () => {
+  it('nenhuma descrição leva etiquetas para a base', async () => {
+    const eventos = await colher();
+    const comEtiqueta = eventos.filter((evento) =>
+      /<\/?(?:p|br|div|span|strong|em|ul|ol|li|a|h[1-6])(?:\s[^>]*)?\/?>/i.test(
+        evento.description ?? '',
+      ),
+    );
+    expect(comEtiqueta.map((evento) => evento.title)).toEqual([]);
+  });
+
+  it('e o texto sobrevive inteiro, com os parágrafos separados', async () => {
+    const eventos = await colher();
+    const mercados = eventos.find((evento) => /ecorurais/i.test(evento.title));
+    expect(mercados).toBeDefined();
+    // O que a ficha mostrava: «<p>DOMINGO / 06 E 20 SET.</p>».
+    expect(mercados?.description).toContain('DOMINGO');
+    expect(mercados?.description).toContain('PRAÇA DA REPÚBLICA');
+    expect(mercados?.description).not.toContain('<');
+    // `stripTags` trata `<p>` e `<br />` como blocos: a separação fica, e é
+    // o que a ficha sabe desenhar em parágrafos.
+    expect(mercados?.description).toMatch(/DOMINGO[^]*\n[^]*PRAÇA/);
+  });
+});
+
 describe('os valores por omissão que não são dados', () => {
   it('não põe cinco alfinetes na porta da câmara', () => {
     const noPacos = {

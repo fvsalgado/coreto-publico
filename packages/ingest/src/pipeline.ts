@@ -761,7 +761,37 @@ async function collectAndWrite(
         previous !== null &&
         previous.category_slug === merged.category_slug &&
         previous.venue_id === merged.venue_id &&
-        previous.series_id === merged.series_id;
+        previous.series_id === merged.series_id &&
+        /*
+         * O título também é leitura, e faltava aqui.
+         *
+         * O `content_hash` acima **dobra a caixa** (`normalizeForHash` faz
+         * `toLowerCase`), de propósito: é o que impede uma câmara que troque
+         * «CONCERTO» por «Concerto» de gerar uma escrita por noite. O efeito
+         * de lado é que uma correção às regras de caixa — a `fixShoutyTitle`,
+         * as palavras menores, as siglas — nunca chegava à base: o resumo
+         * coincidia, a leitura coincidia, saltava-se a escrita, e a agenda
+         * ficava com o título de antes para sempre.
+         *
+         * Foi assim que «Pai Que Se Tornou Mãe» ficou publicado com o «Que» e
+         * o «Se» capitalizados. Corrigir a função sem corrigir esta linha era
+         * dar a auditoria por fechada sem nada ter mudado no que se lê.
+         */
+        previous.title === merged.title &&
+        /*
+         * E o preço, pela mesma razão e com a mesma armadilha.
+         *
+         * O `content_hash` cobre o `priceRaw` — o que a fonte escreveu —, e não
+         * o que nós lemos dele. Uma correção ao leitor de preços coincidia no
+         * resumo, coincidia na leitura, e nunca chegava a uma linha publicada:
+         * a agenda ficava com o rótulo da primeira noite.
+         *
+         * Bastam estas duas colunas. O `price_min` e o `price_max` decidem-se
+         * na mesma passagem que o rótulo (ver `decidirPreco`, em `harmonize`),
+         * e o `price_raw` já vai no resumo.
+         */
+        previous.price_display === merged.price_display &&
+        previous.is_free === merged.is_free;
 
       /*
        * Medidas novas são razão para escrever, mesmo que nada mais mude.

@@ -89,9 +89,13 @@ export function resolveVenue(
  *    `unresolved_venues`, onde alguém lhe dá o alias certo uma vez e todas as
  *    recolhas seguintes ficam a saber.
  *
- * Nada disto se aplica ao `venueId` que um adaptador escreva à mão: quem
- * nomeia um id sabe o que está a fazer, e há programação que atravessa
- * concelhos de propósito.
+ * O `venueId` que um adaptador escreve à mão e o `defaultVenueId` de uma fonte
+ * de espaço só passam pela mesma peneira — ver `espacoDesteConcelho`. Não
+ * passavam: o comentário que aqui estava dizia que quem nomeia um id sabe o
+ * que faz. Sabe, e continua a saber; o que mudou é que a base deixou de
+ * aceitar a contradição (0130), e uma recusa nossa com o nome a ir parar aos
+ * espaços por resolver é mais útil do que uma recusa do Postgres a meio de uma
+ * recolha.
  */
 export function resolveVenueInMunicipality(
   venueName: string | null | undefined,
@@ -120,6 +124,62 @@ export function resolveVenueInMunicipality(
   return null;
 }
 
+/**
+ * Um espaço nomeado só serve se for do concelho do evento.
+ *
+ * Vale para o id que um adaptador escreve e para o espaço de uma fonte de
+ * espaço só. A recusa é do espaço e não do evento: o nome cai em
+ * `unresolved_venues`, onde alguém lhe dá o alias certo uma vez, e o evento
+ * fica com o local em texto livre — que é o mesmo caminho que um nome sem
+ * alias já percorria.
+ *
+ * O silêncio não é contradição: um espaço sem concelho conhecido passa, como
+ * passa em `resolveVenueInMunicipality`.
+ */
+function espacoDesteConcelho(
+  venueId: string | null | undefined,
+  context: Pick<HarmonizeContext, 'municipalityId' | 'venueMunicipalities'>,
+): string | null {
+  if (!venueId) return null;
+  if (context.municipalityId === null) return venueId;
+  const doEspaco = context.venueMunicipalities?.get(venueId);
+  if (doEspaco === undefined || doEspaco === context.municipalityId) return venueId;
+  return null;
+}
+
+interface PrecoDecidido {
+  is_free: boolean;
+  price_min: number | null;
+  price_max: number | null;
+  price_display: string | null;
+}
+
+/**
+ * As quatro colunas do preço saem de uma decisão só.
+ *
+ * Saíam de duas. O `is_free` vinha de `parsePrice`; o `price_display` vinha de
+ * `formatPrice`, que tinha uma regra sua para declarar gratuitidade. Dois
+ * juízes independentes sobre a mesma pergunta, a escrever na mesma linha da
+ * base — e um par «`price_display` = 'Entrada livre'» com «`is_free` = false»
+ * é um evento que aparece grátis no cartão e fora do filtro dos grátis.
+ *
+ * Aqui a gratuitidade decide-se uma vez, e o rótulo segue-a: quando é grátis
+ * diz-se «Entrada livre», quando não é o rótulo nunca o pode dizer por conta
+ * própria. Cai para a cadeia da fonte, que é o que ela escreveu.
+ */
+function decidirPreco(raw: RawEvent, description: string | null): PrecoDecidido {
+  const lido = parsePrice(raw.priceRaw, description);
+  const livre = raw.isFree ?? lido.isFree ?? false;
+  return {
+    is_free: livre,
+    price_min: lido.priceMin ?? null,
+    price_max: lido.priceMax ?? null,
+    price_display: livre
+      ? 'Entrada livre'
+      : formatPrice({ priceMin: lido.priceMin, priceMax: lido.priceMax }, raw.priceRaw ?? null),
+  };
+}
+
 export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): HarmonizedEvent {
   const now = (context.now ?? (() => new Date().toISOString()))();
   const id = context.makeId(raw);
@@ -133,9 +193,9 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
   const dateEnd = sessions.length > 0 ? sessions[sessions.length - 1]!.session_date : null;
 
   const venueId =
-    raw.venueId ??
+    espacoDesteConcelho(raw.venueId, context) ??
     resolveVenueInMunicipality(raw.venueName, context.municipalityId, context) ??
-    context.defaultVenueId ??
+    espacoDesteConcelho(context.defaultVenueId, context) ??
     null;
   const unresolvedVenueName = venueId === null ? (raw.venueName ?? null) : null;
 
@@ -147,7 +207,7 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
     venueKind: venueId ? (context.venueKinds?.get(venueId) ?? null) : null,
   });
 
-  const price = parsePrice(raw.priceRaw, description);
+  const price = decidirPreco(raw, description);
   const accessibility = extractAccessibility(title, subtitle, description, raw.accessibilityNotes);
   const audience = parseAudience(raw.audienceRaw, title, description);
 
@@ -185,10 +245,10 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
     recurrence: null,
     duration_minutes:
       raw.durationMinutes ?? parseDurationMinutes(description, raw.accessibilityNotes),
-    is_free: raw.isFree ?? price.isFree ?? false,
-    price_min: price.priceMin ?? null,
-    price_max: price.priceMax ?? null,
-    price_display: formatPrice(price, raw.priceRaw ?? null),
+    is_free: price.is_free,
+    price_min: price.price_min,
+    price_max: price.price_max,
+    price_display: price.price_display,
     price_raw: raw.priceRaw ?? null,
     ticketing_url: raw.ticketingUrl ?? null,
     wheelchair_accessible: accessibility.wheelchair_accessible ?? null,

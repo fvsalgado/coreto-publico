@@ -96,6 +96,24 @@ const CONFIG: Record<string, unknown> = {
   descriptionSelector: '.resumo',
 };
 
+/**
+ * A mesma fonte, com um campo de preço na listagem.
+ *
+ * A listagem geral não tem preço nenhum, e é bem que não tenha: a maioria das
+ * agendas municipais não o publica. Mas sem preço na origem a fusão do preço
+ * fica no ramo que preserva o que estava guardado, e não se consegue ver o
+ * ramo que interessa aqui — o da leitura nova.
+ */
+function fonteComPreco(): SourceRow {
+  return makeSource({ config: { ...CONFIG, priceSelector: '.preco' } });
+}
+
+/** A mesma listagem, com um bilhete a 12 € em cada item. */
+const LISTAGEM_COM_PRECO = LISTING_HTML.replaceAll(
+  '<span class="local">',
+  '<span class="preco">12€</span>\n    <span class="local">',
+);
+
 function makeSource(overrides: Partial<SourceRow> = {}): SourceRow {
   return {
     id: 'cm-tomar',
@@ -549,6 +567,64 @@ describe('runPipeline', () => {
     expect(second.counters.itemsUpdated).toBe(1);
     expect(second.counters.itemsUnchanged).toBe(2);
     expect(db.events.get(gravado.id)?.category_slug).not.toBe('outros');
+  });
+
+  it('um título que mudou de leitura também é reescrito', async () => {
+    /*
+     * O irmão do teste de cima, e faltava.
+     *
+     * O `content_hash` **dobra a caixa** de propósito (`normalizeForHash` faz
+     * `toLowerCase`): é o que impede uma câmara que troque «CONCERTO» por
+     * «Concerto» de gerar uma escrita por noite. O efeito de lado era que uma
+     * correção às regras de caixa — palavras menores, siglas, numerais
+     * romanos — nunca chegava ao que já estava publicado. O resumo coincidia,
+     * a leitura coincidia, saltava-se a escrita.
+     *
+     * Foi assim que «Pai Que Se Tornou Mãe» ficou publicado com o pronome
+     * relativo e o reflexo capitalizados: a `fixShoutyTitle` podia ser
+     * corrigida vinte vezes que a agenda continuava a mostrar o título da
+     * primeira noite.
+     */
+    const db = new FakeDatabase();
+    await run(makeSource(), db);
+
+    const [gravado] = [...db.events.values()];
+    expect(gravado).toBeDefined();
+    if (!gravado) return;
+
+    // A fonte não mexeu em nada: o que mudou foi a caixa que nós lhe damos —
+    // e o `content_hash` não distingue as duas, por construção.
+    gravado.title = gravado.title.toUpperCase();
+
+    const second = await run(makeSource(), db);
+
+    expect(second.counters.itemsUpdated).toBe(1);
+    expect(db.events.get(gravado.id)?.title).not.toBe(gravado.title);
+  });
+
+  it('e um preço que mudou de leitura também', async () => {
+    /*
+     * A mesma armadilha, na coluna ao lado. O `content_hash` cobre o
+     * `priceRaw` — a cadeia que a fonte escreveu —, e não o número nem o
+     * rótulo que nós tirámos dela. Uma correção ao leitor de preços coincidia
+     * no resumo e nunca chegava a uma linha publicada.
+     */
+    const db = new FakeDatabase();
+    await run(fonteComPreco(), db, stubHttp(LISTAGEM_COM_PRECO));
+
+    const [gravado] = [...db.events.values()];
+    expect(gravado).toBeDefined();
+    if (!gravado) return;
+    expect(gravado.price_display).toBe('12 €');
+
+    // A fonte não mexeu no campo do preço: o que mudou foi o que lemos dele.
+    gravado.price_display = '€2.00';
+    gravado.price_min = null;
+
+    const second = await run(fonteComPreco(), db, stubHttp(LISTAGEM_COM_PRECO));
+
+    expect(second.counters.itemsUpdated).toBe(1);
+    expect(db.events.get(gravado.id)?.price_display).toBe('12 €');
   });
 
   it('reconcilia o que a fonte deixou de mostrar', async () => {

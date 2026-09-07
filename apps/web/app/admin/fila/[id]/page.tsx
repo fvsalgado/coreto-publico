@@ -141,6 +141,12 @@ export default async function RevisaoSubmissao({ params }: Props) {
               {submission.extraction_status === 'skipped'
                 ? '. O texto está aqui em baixo; preenche à mão.'
                 : ''}
+              {/* `unverified` não é uma falha: a proposta está toda no
+                  formulário. O que falta é alguém confrontar os campos que a
+                  frase nomeia com o texto, que está logo por baixo. */}
+              {submission.extraction_status === 'unverified'
+                ? '. A proposta está preenchida; confirma esses campos contra o texto aqui em baixo.'
+                : ''}
             </p>
           ) : null}
 

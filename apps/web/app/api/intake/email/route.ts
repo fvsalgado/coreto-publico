@@ -268,8 +268,23 @@ async function ingest(supabase: SupabaseClient, context: IngestContext): Promise
       hasDate: firstDate !== null,
       hasMunicipality: resolved.municipalityId !== null,
     }),
-    extraction_status: 'ok',
-    extraction_error: null,
+    /*
+     * O que o texto de origem não confirma vai marcado, e nunca recusado.
+     *
+     * A proposta fica inteira: alguém modera à mão de qualquer maneira, e
+     * deitar fora o resto por causa de um campo suspeito trocava uma linha por
+     * confirmar por um formulário em branco — a troca que este canal existe
+     * para evitar.
+     *
+     * E não se marca nova tentativa: repetir a mesma chamada sobre o mesmo
+     * texto gasta o orçamento diário para dar exactamente o mesmo. Não é falha
+     * transitória; é uma leitura que precisa de olhos.
+     */
+    extraction_status: outcome.naoVerificados.length > 0 ? 'unverified' : 'ok',
+    extraction_error:
+      outcome.naoVerificados.length > 0
+        ? `o texto não confirma: ${outcome.naoVerificados.join(', ')}`
+        : null,
     extraction_model: outcome.model,
     extraction_cost_micros: outcome.costMicros,
     extraction_attempts: 1,
