@@ -858,18 +858,37 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   });
 }
 {
-  // O par que faz a ressalva do ensaio de restauro cair com a causa dela.
-  const usaNoPrivileges = /--no-privileges/.test(ler('.github/workflows/backup.yml'));
+  /*
+   * O par que liga o `--no-privileges` da cópia ao que compensa a ausência
+   * dele.
+   *
+   * Aqui esteve a versão fraca deste par: o flag do lado da cópia e um
+   * **parágrafo** do lado do manual. Um parágrafo é uma promessa de que
+   * alguém se lembrará; o que faz falta é que o ensaio reponha as concessões
+   * e prove que ficaram repostas. É isso que se exige agora, e o `ok`
+   * continua a ser uma equivalência para o dia em que o flag sair: nesse dia
+   * a reposição deixa de fazer sentido e sai com ele, e esta asserção falha
+   * se ficar só uma das metades.
+   */
+  const usaNoPrivileges =
+    /--no-privileges/.test(ler('.github/workflows/backup.yml')) &&
+    /--no-privileges/.test(ler('scripts/ensaiar-restauro.sh'));
+  const ensaio = ler('scripts/ensaiar-restauro.sh');
+  const ensaioRepoe = /0128_as_concessoes_de_leitura_escritas\.sql/.test(ensaio);
+  const ensaioProva =
+    /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
+    /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
   const manualRegista = /no-privileges/.test(ler('docs/OPERACAO.md'));
   afirmar({
-    afirmacao: 'o manual regista a limitação do ensaio de restauro enquanto ela existir',
+    afirmacao:
+      'enquanto a cópia sair sem concessões, o ensaio repõe-nas e prova que a base restaurada serve',
     porque:
-      'o ensaio passa a verde sobre uma base sem uma única concessão a anon e authenticated — acreditar no verde é o erro que aquele parágrafo existe para evitar. No dia em que a vaga 3 tirar o --no-privileges, é o parágrafo que sai com ele',
-    onde: 'docs/OPERACAO.md e .github/workflows/backup.yml',
-    ok: usaNoPrivileges === manualRegista,
+      'o ensaio deu verde durante meses sobre uma base onde anon não lia uma linha — o esquema, as linhas e a frescura estavam todos certos, e nenhum deles é a pergunta que o sítio faz. Sem a reposição e sem a prova, o verde volta a não querer dizer nada',
+    onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml e docs/OPERACAO.md',
+    ok: usaNoPrivileges === (ensaioRepoe && ensaioProva && manualRegista),
     esperava:
-      'o manual a registar a limitação exatamente enquanto o backup.yml usar --no-privileges',
-    encontrei: `backup.yml: ${usaNoPrivileges ? 'usa' : 'não usa'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
+      'o ensaio a aplicar a migração das concessões e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
+    encontrei: `cópia sem concessões: ${usaNoPrivileges ? 'sim' : 'não'} · ensaio repõe: ${ensaioRepoe ? 'sim' : 'não'} · ensaio prova: ${ensaioProva ? 'sim' : 'não'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
   });
 }
 

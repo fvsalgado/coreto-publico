@@ -180,5 +180,10 @@ export const PUBLIC_SOURCE_FIELDS = [
   'url',
   'is_enabled',
   'last_success_at',
+  // Quando foi tentada, e não só quando correu bem (0128). É o que separa
+  // «ninguém a leu há cinco dias» de «é lida todas as noites e não traz
+  // nada»: um cron parado e uma câmara que mudou de tema parecem iguais se só
+  // se olhar para a data da última leitura boa.
+  'last_run_at',
   'public_note',
 ].join(', ');

@@ -5,6 +5,7 @@ import { PageHeader } from '@/src/components/PageHeader';
 import {
   avaliarAgenda,
   avaliarRecolha,
+  fraseDaFonte,
   veredito,
   type EstadoDaAgenda,
   type EstadoDaRecolha,
@@ -66,15 +67,21 @@ export const revalidate = 3600;
 
 const CAMINHO = '/estado';
 
-/** Uma linha por fonte: o nome, e há quanto tempo é que ela não é lida. */
+/**
+ * Uma linha por fonte: o nome, e o que se sabe da última leitura.
+ *
+ * A frase vem de `estado.ts` e é a mesma que a `/fontes` escreve, palavra a
+ * palavra. Aqui esteve uma variante — «Última leitura boa a …» — que dizia
+ * quase a mesma coisa noutras palavras e escondia o caso que interessa: uma
+ * fonte lida todas as noites que não traz nada há duas semanas lia-se igual a
+ * uma fonte que ninguém tenta ler há duas semanas.
+ */
 function LinhaDaFonte({ fonte }: { fonte: FonteComSaude }) {
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 border-b border-border py-2 last:border-b-0">
       <span className="font-medium">{fonte.name}</span>
       <span className="text-sm text-muted">
-        {fonte.last_success_at
-          ? `Última leitura boa a ${formatLongDate(fonte.last_success_at.slice(0, 10))}`
-          : 'Nunca foi lida com sucesso'}
+        {fraseDaFonte(fonte, (iso) => formatLongDate(iso))}
       </span>
     </li>
   );
@@ -293,6 +300,15 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
             no painel é uma decisão de quem administra — o portal fechou, o município pediu —, e não
             uma avaria. Contá-la como parada era encher esta página de alarmes que ninguém vai
             arranjar.
+          </p>
+          <p>
+            <strong className="text-ink">Isto também se lê por máquina.</strong> Os mesmos números
+            estão em{' '}
+            <a href="/estado.json" className="underline underline-offset-4">
+              /estado.json
+            </a>
+            , com os nomes dos campos fixos — é o que uma sonda de vigilância consome sem depender
+            das palavras desta página. Responde 503, e não 200, quando não consegue ler a base.
           </p>
         </div>
       </section>

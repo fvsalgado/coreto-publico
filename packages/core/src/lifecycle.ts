@@ -78,24 +78,74 @@ export interface DriftInput {
 }
 
 /**
- * Alteração de layout: a recolha rendeu muito abaixo da linha de base.
+ * Abaixo desta fração da linha de base, a contagem deixa de ser normal.
  *
- * Parente próximo da trava acima, mas noutro momento — esta pergunta-se ANTES
- * de escrever seja o que for, comparando com o que a fonte costuma dar. Um
- * seletor que deixou de casar parece exatamente uma agenda vazia, e a
- * diferença entre as duas coisas é tudo: sem esta verificação, o dia em que
- * uma câmara mudasse de tema o site apagava a programação inteira do concelho
- * e ninguém dava por isso até alguém reclamar. Na dúvida, não se escreve nada
- * e a execução fica marcada para ser vista.
+ * 0,7 e não 0,5: metade era o limiar que existia, e entre os dois havia uma
+ * faixa inteira sem vigilância nenhuma — uma fonte que passasse de vinte
+ * eventos para doze não acendia nada. Perder 40% da agenda de um concelho não
+ * é uma oscilação; é meia agenda que ninguém vai ler.
+ *
+ * O número tem de deixar passar o que é sazonal, que é a razão de não ser
+ * mais apertado. Agosto é legitimamente mais magro do que outubro, e a queda
+ * de um mês para o outro anda nos 10 a 20% — dentro dos 30% que isto tolera.
+ * A prova está em `lifecycle.test.ts`: a sequência 20, 18, 17, 16 não marca
+ * nada e a sequência 20, 12, 12 marca as duas últimas.
+ */
+export const QUEDA_SUSPEITA = 0.7;
+
+/**
+ * O que se conclui de uma contagem.
+ *
+ * - `normal` — a contagem é de confiança: escreve-se e a linha de base
+ *   aprende com ela.
+ * - `queda` — rendeu bastante abaixo do costume, mas não o suficiente para se
+ *   dizer que a página mudou de forma. Escreve-se o que veio (são eventos a
+ *   sério e alguém os procura), mas a leitura **não conta como sucesso** e a
+ *   linha de base fica congelada.
+ * - `deriva` — rendeu tão abaixo que a explicação mais provável é o seletor
+ *   ter deixado de casar. Não se escreve nada.
+ */
+export type LeituraDaContagem = 'normal' | 'queda' | 'deriva';
+
+/**
+ * O que dizer de uma contagem, comparada com o que a fonte costuma dar.
+ *
+ * Pergunta-se ANTES de escrever seja o que for. Um seletor que deixou de
+ * casar parece exatamente uma agenda vazia, e a diferença entre as duas
+ * coisas é tudo: sem esta verificação, o dia em que uma câmara mudasse de
+ * tema o site apagava a programação inteira do concelho e ninguém dava por
+ * isso até alguém reclamar.
+ *
+ * **Porque há três respostas e não duas.** A versão anterior devolvia um
+ * booleano com o corte a metade da linha de base, e a faixa entre metade e o
+ * costume ficava sem vigilância — pior do que sem vigilância, porque a média
+ * móvel de `nextBaseline` aprendia a perda em três ou quatro noites: 20 → 17
+ * → 15 → 14, e ao fim de uma semana o número novo era o normal. A fonte que
+ * perdeu 40% da agenda acabava «em dia», com uma linha de base a dar-lhe
+ * razão. O grau do meio existe para isso: escreve o que veio, e não deixa a
+ * linha de base mover-se enquanto a perda durar.
  *
  * O mínimo esperado é a trava de quem sabe o que a fonte tem: uma fonte
  * configurada com `min_expected_items` maior que zero acusa a queda mesmo sem
  * história nenhuma, que é o que protege uma recolha nova.
  */
+export function avaliarContagem(input: DriftInput): LeituraDaContagem {
+  if (input.minExpected > 0 && input.itemsFound < input.minExpected) return 'deriva';
+  if (input.baseline === null || input.baseline < DRIFT_MIN_BASELINE) return 'normal';
+  if (input.itemsFound * 2 < input.baseline) return 'deriva';
+  return input.itemsFound < input.baseline * QUEDA_SUSPEITA ? 'queda' : 'normal';
+}
+
+/**
+ * Alteração de layout, em booleano.
+ *
+ * Sobrevive à `avaliarContagem` por ser a pergunta que decide se se escreve
+ * ou não — a única em que os dois graus de cima se comportam de forma
+ * diferente. Quem quiser saber se a leitura conta como sucesso pergunta pela
+ * `avaliarContagem`, porque uma queda também não conta.
+ */
 export function detectLayoutDrift(input: DriftInput): boolean {
-  if (input.minExpected > 0 && input.itemsFound < input.minExpected) return true;
-  if (input.baseline === null || input.baseline < DRIFT_MIN_BASELINE) return false;
-  return input.itemsFound * 2 < input.baseline;
+  return avaliarContagem(input) === 'deriva';
 }
 
 /**
@@ -105,6 +155,10 @@ export function detectLayoutDrift(input: DriftInput): boolean {
  * magra do que a de outubro, e uma linha de base que copiasse a última recolha
  * ficava presa no mês mais fraco — e deixava de dar pela mudança de layout que
  * ela existe para apanhar.
+ *
+ * **Quem a chama tem de ter perguntado primeiro à `avaliarContagem`.** Esta
+ * função aprende com o que lhe derem, incluindo com uma perda: é o chamador
+ * que sabe se a contagem é de confiança, e só a passa quando é.
  */
 export function nextBaseline(current: number | null, found: number): number {
   if (current === null || current <= 0) return found;

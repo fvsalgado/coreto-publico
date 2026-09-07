@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { FALHAS_ATE_PAUSA, HORAS_EM_PAUSA } from '@coreto/core';
 import { PageHeader } from '@/src/components/PageHeader';
+import { avaliarRecolha, fraseDaFonte } from '@/src/lib/estado';
 import { formatLongDate } from '@/src/lib/format';
 import {
   countEventsBySeries,
@@ -80,7 +81,28 @@ function encurtar(url: string): string {
     .replace(/\/$/, '');
 }
 
-function SourceCard({ source, where }: { source: PublicSource; where: string | null }) {
+/**
+ * A linha de estado de cada fonte, decidida onde a `/estado` a decide.
+ *
+ * **O que aqui esteve e mentia.** «Lida com sucesso a {data}» era escrito
+ * diretamente de `last_success_at`, sem classificar coisa nenhuma: a mesma
+ * frase para uma fonte lida ontem e para uma fonte parada há três semanas, só
+ * com a data a mudar — e ninguém compara uma data com o dia de hoje de
+ * cabeça enquanto lê oitenta cartões. Duas páginas a ler a mesma coluna e a
+ * dizer coisas diferentes sobre ela é como se perde a confiança nas duas.
+ *
+ * Agora quem decide é `estado.ts`, e é o mesmo módulo que a `/estado` usa.
+ */
+function SourceCard({
+  source,
+  where,
+  estado,
+}: {
+  source: PublicSource;
+  where: string | null;
+  /** A frase de `estado.ts`; `null` numa fonte desligada, que não está avariada. */
+  estado: string | null;
+}) {
   return (
     <li className="flex h-full flex-col rounded-lg border border-border bg-surface px-4 py-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -97,13 +119,7 @@ function SourceCard({ source, where }: { source: PublicSource; where: string | n
           {encurtar(source.url)} ↗
         </a>
       </p>
-      {source.is_enabled ? (
-        <p className="mt-auto pt-1.5 text-xs text-muted">
-          {source.last_success_at
-            ? `Lida com sucesso a ${formatLongDate(source.last_success_at.slice(0, 10))}.`
-            : 'Ainda não foi lida com sucesso.'}
-        </p>
-      ) : null}
+      {estado ? <p className="mt-auto pt-1.5 text-xs text-muted">{estado}</p> : null}
     </li>
   );
 }
@@ -130,6 +146,21 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
   const { ligadas, desligadas } = agrupar(sources);
+
+  /*
+   * A frase de estado de cada fonte, decidida pelo mesmo módulo que decide a
+   * página /estado — e só para as ligadas, que são as únicas de que se pode
+   * dizer que estão atrasadas. Uma fonte desligada é uma decisão de quem
+   * administra e não uma avaria; escrever-lhe «sem leitura com sucesso desde»
+   * era transformar a decisão num alarme, que é o mesmo engano que a /estado
+   * evita ao não as contar.
+   */
+  const estadoPorFonte = new Map(
+    avaliarRecolha(sources).vigiadas.map((fonte) => [
+      fonte.id,
+      fraseDaFonte(fonte, (iso) => formatLongDate(iso)),
+    ]),
+  );
 
   const regionais = ligadas.filter((source) => source.municipality_id === null);
   const locais = ligadas.filter((source) => source.municipality_id !== null);
@@ -204,6 +235,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
                 key={source.id}
                 source={source}
                 where={municipalityNames[source.municipality_id ?? ''] ?? null}
+                estado={estadoPorFonte.get(source.id) ?? null}
               />
             ))}
         </ul>
@@ -236,6 +268,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
                 key={source.id}
                 source={source}
                 where={`Os ${municipalities.length} concelhos`}
+                estado={estadoPorFonte.get(source.id) ?? null}
               />
             ))}
           </ul>
@@ -280,6 +313,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
                     ? (municipalityNames[source.municipality_id] ?? null)
                     : 'A região'
                 }
+                estado={estadoPorFonte.get(source.id) ?? null}
               />
             ))}
           </ul>

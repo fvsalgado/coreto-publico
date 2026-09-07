@@ -22,7 +22,8 @@ import {
   rawEventSchema,
   reconcileDecision,
   applyManualLocks,
-  detectLayoutDrift,
+  avaliarContagem,
+  type LeituraDaContagem,
   type EventRow,
   type RawEvent,
   type RunStatus,
@@ -138,6 +139,15 @@ export interface SourceOutcome {
   /** Fonte saltada pelo disjuntor: não é sucesso nem falha. */
   skipped: boolean;
   layoutDrift: boolean;
+  /**
+   * O que a contagem desta execução diz de si própria — ver `avaliarContagem`.
+   *
+   * Sai daqui para fora porque é o que o CLI precisa de saber para decidir o
+   * código de saída: uma execução em que uma fonte derivou não pode terminar
+   * a zero, ou o `if: failure()` do `scrape.yml` nunca abre o aviso e a
+   * deriva passa a noite inteira sem ninguém saber.
+   */
+  contagem: LeituraDaContagem;
   counters: RunCounters;
   /** Candidatos enviados para moderação em vez de irem para o catálogo. */
   submitted: number;
@@ -213,6 +223,7 @@ function outcome(
     ambito: ambitoDaFonte(source),
     skipped: false,
     layoutDrift: false,
+    contagem: 'normal',
     counters: emptyCounters(),
     submitted: 0,
     http: { responses: 0, failures: 0 },
@@ -290,9 +301,31 @@ export async function runSource(
       }),
     );
 
+    /*
+     * **Uma leitura que não trouxe o que costuma trazer não é uma leitura com
+     * sucesso.**
+     *
+     * Aqui esteve `succeeded: true` sem condição nenhuma, e era o defeito
+     * mais caro desta casa: uma câmara que mudasse de tema devolvia zero
+     * eventos, a deriva era detetada, a nota era escrita — e a seguir a fonte
+     * levava `last_success_at = agora` e `consecutive_failures = 0`. A página
+     * `/estado`, que só olha para essa coluna, respondia «todas as fontes
+     * lidas com sucesso nas últimas 48 horas» durante as semanas em que o
+     * concelho estava sem agenda nenhuma. O instrumento existia, estava
+     * verde, e o verde vinha da própria avaria.
+     *
+     * `contagem === 'normal'` e não `!layoutDrift`, para a faixa do meio
+     * entrar na mesma regra: uma queda de 40% também não é uma leitura boa.
+     * É o mesmo booleano que governa a linha de base, e é de propósito que é
+     * o mesmo — a contagem em que não se confia o suficiente para a deixar
+     * treinar a linha de base é a contagem em que não se confia o suficiente
+     * para dizer que está tudo bem.
+     */
+    const leituraBoa = result.contagem === 'normal';
+
     await ignoreFailure(log, 'atualizar o estado da fonte', async () => {
       await context.db?.updateSourceHealth(source.id, {
-        succeeded: true,
+        succeeded: leituraBoa,
         error: result.note,
         itemsFound: counters.itemsFound,
         consecutiveFailures: source.consecutive_failures,
@@ -300,13 +333,14 @@ export async function runSource(
         // Uma contagem em que não se confia não pode treinar a linha de base:
         // seria a deteção de alteração de layout a habituar-se ao problema.
         // Itens recusados não a invalidam — o que a invalida é a contagem.
-        updateBaseline: !result.layoutDrift,
+        updateBaseline: leituraBoa,
       });
     });
 
     return outcome(source, {
       status: result.status,
       layoutDrift: result.layoutDrift,
+      contagem: result.contagem,
       counters,
       submitted,
       http: httpDelta(),
@@ -346,6 +380,15 @@ export async function runSource(
 interface CollectResult {
   status: RunStatus;
   layoutDrift: boolean;
+  /**
+   * O que a contagem desta execução diz de si própria.
+   *
+   * Anda ao lado do `layoutDrift` e não em vez dele porque as duas perguntas
+   * são diferentes: o booleano decide se se escreve, esta decide se a leitura
+   * conta como sucesso e se a linha de base pode aprender com ela. Uma
+   * `queda` escreve e não conta; uma `deriva` não faz nem uma coisa nem outra.
+   */
+  contagem: LeituraDaContagem;
   submitted: number;
   /** Nota guardada em `source_runs.error` mesmo sem falha — é o que se lê primeiro. */
   note: string | null;
@@ -458,16 +501,27 @@ async function collectAndWrite(
   }
   counters.itemsFound = deduplicated.events.length;
 
-  const layoutDrift = detectLayoutDrift({
+  const contagem = avaliarContagem({
     itemsFound: counters.itemsFound,
     baseline: source.baseline_item_count,
     minExpected: source.min_expected_items,
   });
 
-  if (layoutDrift) {
+  if (contagem === 'deriva') {
     const note = `contagem suspeita: ${counters.itemsFound} itens contra uma linha de base de ${source.baseline_item_count ?? 0} (mínimo esperado ${source.min_expected_items})`;
     log.warn('possível alteração de layout — nada foi escrito', note);
-    return { status: 'partial', layoutDrift: true, submitted: 0, note };
+    return { status: 'partial', layoutDrift: true, contagem, submitted: 0, note };
+  }
+
+  // Uma queda escreve o que veio, e é de propósito: doze eventos a menos são
+  // doze eventos que deixaram de aparecer, mas os oito que vieram são a sério
+  // e alguém os procura hoje. O que a queda muda está mais abaixo — a
+  // execução não conta como sucesso e a linha de base fica onde está.
+  if (contagem === 'queda') {
+    log.warn(
+      'queda na contagem — escreve-se, mas a leitura não conta como boa',
+      `${counters.itemsFound} itens contra uma linha de base de ${source.baseline_item_count ?? 0}`,
+    );
   }
 
   const writer = context.dryRun ? null : context.db;
@@ -813,11 +867,19 @@ async function collectAndWrite(
   // Só se escreve quando há de facto alguma coisa a assinalar.
   const note = nadaOndeSeEsperavaAlgo
     ? `a fonte respondeu mas não devolveu eventos (costumava dar ${source.baseline_item_count})`
-    : counters.itemsRejected > 0
-      ? `${counters.itemsRejected} candidatos não entraram no catálogo`
-      : null;
+    : contagem === 'queda'
+      ? `queda na contagem: ${counters.itemsFound} itens contra uma linha de base de ${source.baseline_item_count ?? 0}`
+      : counters.itemsRejected > 0
+        ? `${counters.itemsRejected} candidatos não entraram no catálogo`
+        : null;
 
-  return { status, layoutDrift: false, submitted, note };
+  return {
+    status: contagem === 'queda' ? 'partial' : status,
+    layoutDrift: false,
+    contagem,
+    submitted,
+    note,
+  };
 }
 
 /**

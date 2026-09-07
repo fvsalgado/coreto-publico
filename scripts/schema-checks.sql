@@ -6,6 +6,7 @@ do $$
 declare
   n integer;
   r record;
+  tabela text;
 begin
   -- ---- Regiões e seeds ----
   --
@@ -388,8 +389,41 @@ begin
      and grantee in ('anon', 'authenticated')
      and privilege_type = 'SELECT'
      and column_name not in ('id', 'name', 'kind', 'municipality_id', 'region_id',
-                             'venue_id', 'url', 'is_enabled', 'last_success_at', 'public_note');
+                             'venue_id', 'url', 'is_enabled', 'last_success_at',
+                             'last_run_at', 'public_note');
   assert n = 0, format('%s colunas internas das fontes estão legíveis pelo público', n);
+
+  -- ---- E o público lê mesmo o que tem de ler ----
+  --
+  -- **Todas as asserções acima contam concessões a MAIS.** Uma base sem
+  -- concessão nenhuma passava em todas elas, e passava porque cada uma
+  -- pergunta «há alguma coisa aberta que não devia?». Faltava a pergunta
+  -- simétrica, e a falta tinha um custo concreto: o ensaio mensal de restauro
+  -- dava verde sobre uma cópia restaurada com `--no-privileges`, onde `anon`
+  -- não conseguia ler uma linha do sítio. Um teto sem chão não é um
+  -- intervalo.
+  --
+  -- A lista é a mesma da 0128, e é de propósito que está escrita duas vezes:
+  -- lá é o que se concede, aqui é o que tem de estar concedido, e uma
+  -- migração futura que revogue por engano tem de fazer isto falhar.
+  for tabela in select unnest(array[
+    'categories', 'coretos', 'event_sessions', 'events', 'municipalities',
+    'region_domain_aliases', 'regions', 'series', 'site_sections', 'venues'
+  ]) loop
+    select count(*) into n
+      from information_schema.role_table_grants
+     where table_schema = 'public' and table_name = tabela
+       and grantee = 'anon' and privilege_type = 'SELECT';
+    assert n = 1, format('o público não consegue ler `%s` — o sítio não servia uma linha', tabela);
+  end loop;
+
+  -- Das fontes, a tabela está fechada e as colunas abertas: contar aqui é o
+  -- que impede uma base restaurada de passar com a página /fontes vazia.
+  select count(*) into n
+    from information_schema.column_privileges
+   where table_schema = 'public' and table_name = 'sources'
+     and grantee = 'anon' and privilege_type = 'SELECT';
+  assert n = 11, format('esperavam-se 11 colunas públicas nas fontes, há %s', n);
 end
 $$;
 

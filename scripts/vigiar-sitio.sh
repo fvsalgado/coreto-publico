@@ -19,10 +19,19 @@
 #      vigilância. O que se pergunta agora é `/api/events?limit=1`, e exige-se
 #      pelo menos uma entrada. Um sítio que serve páginas e não serve agenda
 #      nenhuma está em baixo para quem o visita, mesmo que responda a tudo.
-#   4. O certificado de cada domínio ainda dura? Renova-se sozinho na Vercel —
+#   4. **A recolha de cada região está viva?** É a pergunta que as três de
+#      cima não fazem, e a que uma agenda cheia esconde: as fontes de um
+#      concelho podem estar paradas há duas semanas com a agenda ainda cheia
+#      do que se recolheu antes, e o sítio responde a tudo. A resposta vem de
+#      `/estado.json` — o mesmo veredito que a página /estado mostra, num
+#      corpo que é contrato e não redação. Um `grau` de «mau» é uma falha; o
+#      de «atenção» fica escrito no relatório e não abre issue, porque uma
+#      fonte que falhou duas rondas resolve-se sozinha na maior parte das
+#      noites.
+#   5. O certificado de cada domínio ainda dura? Renova-se sozinho na Vercel —
 #      e é por isso mesmo que ninguém repara quando deixa de renovar. Avisa a
 #      menos de `DIAS_DE_CERTIFICADO` do fim.
-#   5. Cada alias manda para o canónico? Um 308 com o `Location` certo.
+#   6. Cada alias manda para o canónico? Um 308 com o `Location` certo.
 #
 # Cada pedido tem três tentativas com pausa a crescer, para um soluço de rede
 # não abrir um issue. Sai 1 se alguma pergunta ficar sem a resposta certa; o
@@ -99,6 +108,50 @@ agenda_tem_eventos() {
   fi
 }
 
+# recolha_esta_viva <nome> <origem>
+#
+# Lê `/estado.json` e não a página: o corpo é contrato, e o texto da página é
+# redação. Vigiar por texto amarra o alarme às palavras — mudar «Em ordem»
+# para «Está tudo bem» partia isto sem partir teste nenhum, e um alarme
+# partido descobre-se no dia em que devia tocar.
+#
+# O 503 é resposta e não silêncio: a rota devolve-o de propósito quando não
+# consegue ler a base, e é aí que esta pergunta ganha o seu valor — as três de
+# cima podem passar com metade das fontes paradas.
+recolha_esta_viva() {
+  local nome=$1 origem=$2 codigo=000 grau='' resumo='' tentativa
+  for tentativa in 1 2 3; do
+    codigo=$(pedir "${origem}/estado.json")
+    if [ "${codigo}" = 200 ]; then
+      grau=$(jq --raw-output '.grau // ""' corpo.tmp 2> /dev/null || echo '')
+      resumo=$(jq --raw-output '.resumo // ""' corpo.tmp 2> /dev/null || echo '')
+      break
+    fi
+    sleep $((tentativa * 10))
+  done
+
+  if [ "${codigo}" != 200 ]; then
+    falhou "${nome} — ${origem}/estado.json respondeu ${codigo}"
+    return 0
+  fi
+
+  case "${grau}" in
+    bom)
+      echo "✓ ${nome} — a recolha está em dia"
+      ;;
+    atencao)
+      # Não abre issue: uma fonte que falhou duas rondas resolve-se sozinha na
+      # maior parte das noites, e um alarme que toca por isso é um alarme que
+      # se aprende a ignorar. Fica escrito para quem ler o relatório.
+      echo "· ${nome} — atenção: ${resumo}"
+      echo "- · ${nome} — ${resumo}" >> "${RELATORIO}"
+      ;;
+    *)
+      falhou "${nome} — ${resumo:-o estado não trouxe veredito nenhum (grau «${grau}»)}"
+      ;;
+  esac
+}
+
 # certificado_dura <domínio>
 #
 # Sem tentativas repetidas: um certificado não fica bom à terceira. Se o
@@ -144,8 +197,8 @@ alias_redireciona() {
 # 1. A plataforma.
 pagina 'plataforma' "${PLATAFORMA}/" 'Coreto'
 
-# 2-4. Cada região pelo mapa do próprio sítio: a página, a agenda e o
-# certificado. 5. Os alias de cada uma.
+# 2-5. Cada região pelo mapa do próprio sítio: a página, a agenda, a recolha e
+# o certificado. 6. Os alias de cada uma.
 codigo=$(pedir "${PLATAFORMA}/api/regioes")
 if [ "${codigo}" != 200 ] || ! jq --exit-status 'type == "array"' corpo.tmp > /dev/null 2>&1; then
   falhou "mapa das regiões — ${PLATAFORMA}/api/regioes respondeu ${codigo} ou não trouxe uma lista"
@@ -154,6 +207,7 @@ else
   while IFS=$'\t' read -r id dominio; do
     pagina "região ${id}" "https://${dominio}/" "https://${dominio}"
     agenda_tem_eventos "região ${id}" "https://${dominio}"
+    recolha_esta_viva "região ${id}" "https://${dominio}"
     certificado_dura "${dominio}"
   done < <(jq --raw-output '.[] | [.id, .domain] | @tsv' mapa.json)
   while IFS=$'\t' read -r dominio alias; do

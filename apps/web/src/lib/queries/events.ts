@@ -4,7 +4,7 @@ import { todayInLisbon, type EventFilter } from '@coreto/core';
 import type { AnelDeFronteira } from '../mapa';
 import { consultaDePesquisa } from '../pesquisa';
 import { publicClient } from '../supabase/server';
-import { degradarForaDaCache, exigirLeitura } from './falhas';
+import { degradarForaDaCache, ehPaginaAlemDoFim, exigirLeitura } from './falhas';
 import {
   CARD_EVENT_FIELDS,
   CORETO_FIELDS,
@@ -27,6 +27,9 @@ import type {
   SeriesEvent,
   Venue,
 } from './types';
+
+/** O cliente da chave pública, já sem o `null` de «sem base configurada». */
+type ClientePublico = NonNullable<ReturnType<typeof publicClient>>;
 
 /**
  * Leituras públicas.
@@ -79,14 +82,37 @@ export interface EventListResult {
   total: number;
 }
 
-async function fetchEventList(regiao: string, filter: EventFilter): Promise<EventListResult> {
-  const supabase = publicClient();
-  if (!supabase) return { events: [], total: 0 };
+/**
+ * A consulta de partida da agenda pública, com ou sem linhas.
+ *
+ * `contar: 'so'` pede o `head: true` do PostgREST: a mesma consulta sem trazer
+ * uma única linha, só a contagem. É o que responde à pergunta «quantos são ao
+ * todo» quando o intervalo pedido caiu além do fim e a resposta com linhas foi
+ * recusada.
+ */
+function consultaDeEventos(supabase: ClientePublico, contar: 'com-linhas' | 'so') {
+  return supabase.from('events').select(`${CARD_EVENT_FIELDS}, municipalities!inner()`, {
+    count: 'exact',
+    head: contar === 'so',
+  });
+}
 
-  const from = filter.from ?? todayInLisbon();
-  let query = supabase
-    .from('events')
-    .select(`${CARD_EVENT_FIELDS}, municipalities!inner()`, { count: 'exact' })
+type ConsultaDeEventos = ReturnType<typeof consultaDeEventos>;
+
+/**
+ * O recorte da agenda pública: a região, o que está publicado, e os filtros.
+ *
+ * Escrito uma vez e usado nas duas consultas — a que traz as linhas e a que
+ * só conta. Duas cópias dos catorze filtros que um dia divergem são
+ * exatamente como se põe um total a discordar da lista que ele conta.
+ */
+function filtrarEventos(
+  query: ConsultaDeEventos,
+  regiao: string,
+  filter: EventFilter,
+  from: string,
+): ConsultaDeEventos {
+  let q = query
     .eq('municipalities.region_id', regiao)
     .eq('status', 'published')
     .eq('is_canonical', true)
@@ -94,13 +120,13 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
     // exposição de dois meses não desaparece da agenda no segundo dia.
     .or(`date_end.gte.${from},date_start.gte.${from}`);
 
-  if (filter.to) query = query.lte('date_start', filter.to);
-  if (filter.municipality) query = query.eq('municipality_id', filter.municipality);
-  if (filter.category) query = query.eq('category_slug', filter.category);
-  if (filter.venue) query = query.eq('venue_id', filter.venue);
-  if (filter.series) query = query.eq('series_id', filter.series);
-  if (filter.free) query = query.eq('is_free', true);
-  if (filter.accessible) query = query.eq('wheelchair_accessible', true);
+  if (filter.to) q = q.lte('date_start', filter.to);
+  if (filter.municipality) q = q.eq('municipality_id', filter.municipality);
+  if (filter.category) q = q.eq('category_slug', filter.category);
+  if (filter.venue) q = q.eq('venue_id', filter.venue);
+  if (filter.series) q = q.eq('series_id', filter.series);
+  if (filter.free) q = q.eq('is_free', true);
+  if (filter.accessible) q = q.eq('wheelchair_accessible', true);
   if (filter.q) {
     /*
      * Texto integral em português (0116): a coluna gerada `search_vector`
@@ -110,8 +136,17 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
      * `search_path`, que inclui `public`.
      */
     const consulta = consultaDePesquisa(filter.q);
-    if (consulta) query = query.textSearch('search_vector', consulta, { config: 'portugues' });
+    if (consulta) q = q.textSearch('search_vector', consulta, { config: 'portugues' });
   }
+  return q;
+}
+
+async function fetchEventList(regiao: string, filter: EventFilter): Promise<EventListResult> {
+  const supabase = publicClient();
+  if (!supabase) return { events: [], total: 0 };
+
+  const from = filter.from ?? todayInLisbon();
+  const query = filtrarEventos(consultaDeEventos(supabase, 'com-linhas'), regiao, filter, from);
 
   const offset = (filter.page - 1) * filter.limit;
   // Ordena por `agenda_date` e não por `date_start`: é o próximo dia que
@@ -123,6 +158,35 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
     .order('agenda_date', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true })
     .range(offset, offset + filter.limit - 1);
+
+  /*
+   * **Uma página além do fim é uma pergunta com resposta, não uma avaria.**
+   *
+   * O PostgREST recusa um `Range` que comece depois da última linha com um
+   * 416 e o código `PGRST103`, e o `exigirLeitura` da linha seguinte
+   * transformava isso num erro de leitura — que sobe até à fronteira de
+   * `app/[regiao]/error.tsx` e sai como 500. `/agenda?page=99` e
+   * `/api/events?page=99` respondiam 500 em produção: um endereço que
+   * qualquer rastreador constrói sozinho, e que um dia entra no relatório de
+   * erros ao lado das avarias a sério.
+   *
+   * A resposta certa é a lista vazia com o total verdadeiro — a agenda tem
+   * 128 eventos e a página 99 não tem nenhum, que é a coisa que a paginação
+   * já sabe desenhar. O total não vem na recusa (o `count` do supabase-js só
+   * é lido de um cabeçalho de resposta com sucesso), e por isso pergunta-se
+   * outra vez, com `head: true`: uma consulta que não traz linha nenhuma.
+   * Custa um pedido a mais numa página que ninguém abre de propósito.
+   */
+  if (error && ehPaginaAlemDoFim(error)) {
+    const { count: total, error: erroDaContagem } = await filtrarEventos(
+      consultaDeEventos(supabase, 'so'),
+      regiao,
+      filter,
+      from,
+    );
+    exigirLeitura('listEvents', erroDaContagem);
+    return { events: [], total: total ?? 0 };
+  }
 
   // **Propaga.** É o assunto da agenda, da página do concelho, do widget e de
   // todos os feeds: a lista vazia de um erro faz a página dizer «Sem
@@ -814,6 +878,17 @@ async function fetchVenueEventCounts(regiao: string): Promise<VenueEventCounts> 
       .or(`date_end.gte.${from},date_start.gte.${from}`)
       .range(offset, offset + PAGE - 1);
 
+    /*
+     * **Um catálogo com exatamente mil eventos partia esta página.**
+     *
+     * A saída do ciclo é «vieram menos de mil»; com mil certos, a volta
+     * seguinte pedia as linhas 1000–1999 de uma lista com mil, o PostgREST
+     * recusava com 416 e `PGRST103`, e o `exigirLeitura` fazia disso um erro
+     * de leitura — o catálogo de espaços inteiro a 500, num número redondo que
+     * chega uma vez e depois passa. Aqui a recusa quer dizer o mesmo que a
+     * saída normal do ciclo: não há mais linhas.
+     */
+    if (error && ehPaginaAlemDoFim(error)) break;
     exigirLeitura('countEventsByVenue', error);
 
     const rows = (data ?? []) as unknown as Array<{ venue_id: string | null }>;

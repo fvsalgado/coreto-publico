@@ -199,4 +199,49 @@ describe('dominiosDasRegioes', () => {
     // responder pelo seu domínio enquanto a leitura não volta.
     expect(dominios).toEqual({ 'coreto.mediotejo.pt': 'medio-tejo' });
   });
+
+  /*
+   * O prazo, que é a diferença entre uma leitura lenta e um sítio parado.
+   *
+   * Isto corre no middleware, à frente de **todos** os pedidos de **todos**
+   * os domínios. Sem prazo, uma resposta que nunca chega não é uma falha do
+   * ponto de vista do `fetch`: fica a segurar cada visita, e não há página
+   * nenhuma a ser desenhada em região nenhuma. Não é uma agenda lenta — é o
+   * produto inteiro em baixo, por uma leitura que devia custar milissegundos.
+   *
+   * Os dois testes usam um `buscar` que respeita o `signal` e nunca resolve
+   * sozinho. Sem `AbortSignal.timeout` no código, esgotam o tempo do vitest
+   * em vez de falharem — que é o que acontecia em produção, com um visitante
+   * no lugar do vitest.
+   */
+  function nuncaResponde(): typeof fetch {
+    return ((_url: string, opcoes?: { signal?: AbortSignal }) =>
+      new Promise((_resolver, rejeitar) => {
+        opcoes?.signal?.addEventListener('abort', () => {
+          rejeitar(opcoes.signal?.reason ?? new Error('abortado'));
+        });
+      })) as unknown as typeof fetch;
+  }
+
+  it('uma leitura que nunca responde desiste, e devolve o mapa vazio', async () => {
+    const antes = Date.now();
+    const dominios = await dominiosDasRegioes('https://exemplo.pt', nuncaResponde());
+    expect(dominios).toEqual({});
+    // Bem abaixo do tempo limite do vitest, e é essa a prova.
+    expect(Date.now() - antes).toBeLessThan(4000);
+  });
+
+  it('e com um mapa já lido, é esse que serve enquanto a leitura não volta', async () => {
+    let relogio = 0;
+    const agora = () => relogio;
+    await dominiosDasRegioes(
+      'https://exemplo.pt',
+      respostaCom([{ id: 'medio-tejo', domain: 'coreto.mediotejo.pt' }]),
+      agora,
+    );
+    relogio += VALIDADE_DO_MAPA_MS + 1;
+
+    const dominios = await dominiosDasRegioes('https://exemplo.pt', nuncaResponde(), agora);
+    expect(dominios).toEqual({ 'coreto.mediotejo.pt': 'medio-tejo' });
+  });
 });

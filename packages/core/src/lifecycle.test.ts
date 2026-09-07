@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  avaliarContagem,
   detectLayoutDrift,
   nextBaseline,
   reconcileDecision,
@@ -59,6 +60,80 @@ describe('detectLayoutDrift', () => {
   it('respeita o mínimo declarado na fonte', () => {
     expect(detectLayoutDrift({ itemsFound: 3, baseline: null, minExpected: 5 })).toBe(true);
     expect(detectLayoutDrift({ itemsFound: 6, baseline: null, minExpected: 5 })).toBe(false);
+  });
+});
+
+describe('avaliarContagem', () => {
+  it('sem linha de base não há nada a concluir', () => {
+    expect(avaliarContagem({ itemsFound: 0, baseline: null, minExpected: 0 })).toBe('normal');
+    expect(avaliarContagem({ itemsFound: 1, baseline: 4, minExpected: 0 })).toBe('normal');
+  });
+
+  it('abaixo de metade é deriva, e nada se escreve', () => {
+    expect(avaliarContagem({ itemsFound: 9, baseline: 20, minExpected: 0 })).toBe('deriva');
+    expect(avaliarContagem({ itemsFound: 0, baseline: 20, minExpected: 0 })).toBe('deriva');
+  });
+
+  it('o mínimo declarado é deriva mesmo sem história', () => {
+    expect(avaliarContagem({ itemsFound: 3, baseline: null, minExpected: 5 })).toBe('deriva');
+  });
+
+  // A faixa que não existia: entre metade e 70% da linha de base, a contagem
+  // passava por normal e a média móvel aprendia a perda.
+  it('entre metade e 70% da linha de base é queda', () => {
+    expect(avaliarContagem({ itemsFound: 10, baseline: 20, minExpected: 0 })).toBe('queda');
+    expect(avaliarContagem({ itemsFound: 12, baseline: 20, minExpected: 0 })).toBe('queda');
+    expect(avaliarContagem({ itemsFound: 13, baseline: 20, minExpected: 0 })).toBe('queda');
+  });
+
+  it('a partir de 70% é normal', () => {
+    expect(avaliarContagem({ itemsFound: 14, baseline: 20, minExpected: 0 })).toBe('normal');
+    expect(avaliarContagem({ itemsFound: 25, baseline: 20, minExpected: 0 })).toBe('normal');
+  });
+});
+
+/**
+ * As duas sequências que decidem o limiar.
+ *
+ * Uma tem de acender e a outra não pode. Escritas como o mundo as dá — uma
+ * contagem por noite, com a linha de base a mover-se conforme a regra manda —
+ * porque o que interessa não é o valor de uma noite: é o que acontece à
+ * quarta, quando a média móvel já teve tempo de aprender o que não devia.
+ */
+describe('a linha de base não aprende a perda', () => {
+  function noites(inicial: number, contagens: readonly number[]) {
+    let baseline: number | null = inicial;
+    return contagens.map((itemsFound) => {
+      const leitura = avaliarContagem({ itemsFound, baseline, minExpected: 0 });
+      if (leitura === 'normal') baseline = nextBaseline(baseline, itemsFound);
+      return { itemsFound, leitura, baseline };
+    });
+  }
+
+  it('uma perda de 40% que se mantém fica marcada, e a linha de base não se mexe', () => {
+    const dias = noites(20, [12, 12, 12]);
+    expect(dias.map((dia) => dia.leitura)).toEqual(['queda', 'queda', 'queda']);
+    expect(dias.map((dia) => dia.baseline)).toEqual([20, 20, 20]);
+  });
+
+  it('uma descida sazonal não marca nada', () => {
+    const dias = noites(20, [18, 17, 16]);
+    expect(dias.map((dia) => dia.leitura)).toEqual(['normal', 'normal', 'normal']);
+    // A linha de base acompanha, que é para isso que a média móvel existe.
+    expect(dias.at(-1)?.baseline).toBe(17);
+  });
+
+  // Sem o congelamento, a terceira noite já dava «normal»: 20 → 18 → 16 → 15,
+  // e 12 contra 15 está acima dos 70%. É o teste que prova que o congelamento
+  // faz falta, e não só o limiar.
+  it('com a linha de base a aprender, a mesma perda deixava de se ver', () => {
+    let baseline: number | null = 20;
+    const leituras = [12, 12, 12].map((itemsFound) => {
+      const leitura = avaliarContagem({ itemsFound, baseline, minExpected: 0 });
+      baseline = nextBaseline(baseline, itemsFound);
+      return leitura;
+    });
+    expect(leituras).toEqual(['queda', 'queda', 'normal']);
   });
 });
 

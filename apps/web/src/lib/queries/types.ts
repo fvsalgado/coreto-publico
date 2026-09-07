@@ -195,5 +195,7 @@ export interface PublicSource {
   url: string;
   is_enabled: boolean;
   last_success_at: string | null;
+  /** Quando foi tentada, com ou sem sucesso. */
+  last_run_at: string | null;
   public_note: string | null;
 }

@@ -88,12 +88,36 @@ function label(outcome: SourceOutcome): string {
     case 'success':
       return 'sucesso';
     case 'partial':
-      return outcome.layoutDrift ? 'layout?' : 'parcial';
+      return outcome.layoutDrift ? 'layout?' : outcome.contagem === 'queda' ? 'queda' : 'parcial';
     case 'failed':
       return 'falhou';
     default:
       return outcome.status;
   }
+}
+
+/**
+ * As execuções que não podem terminar com o código zero.
+ *
+ * Uma fonte que falhou é evidente. Uma fonte que derivou não é — e era essa a
+ * armadilha: a deriva devolve `status: 'partial'`, o CLI saía a zero, o
+ * `if: failure()` do `scrape.yml` não disparava, e a única coisa que ficava
+ * escrita era uma linha «layout?» no meio de oitenta num registo que ninguém
+ * abre de manhã. O alarme existia; faltava-lhe o motivo para tocar.
+ *
+ * Uma fonte saltada pelo disjuntor não conta: a falha que o abriu já abriu o
+ * aviso, e repeti-lo todas as noites durante as 24 horas da pausa é a receita
+ * para um aviso que se aprende a ignorar.
+ */
+export function contarProblemas(outcomes: readonly SourceOutcome[]): {
+  falhadas: number;
+  contagensMas: number;
+} {
+  return {
+    falhadas: outcomes.filter((outcome) => outcome.status === 'failed').length,
+    contagensMas: outcomes.filter((outcome) => !outcome.skipped && outcome.contagem !== 'normal')
+      .length,
+  };
 }
 
 export function formatSummary(outcomes: readonly SourceOutcome[], elapsedMs: number): string {
@@ -120,10 +144,12 @@ export function formatSummary(outcomes: readonly SourceOutcome[], elapsedMs: num
     );
   }
 
-  const failed = outcomes.filter((outcome) => outcome.status === 'failed').length;
+  const { falhadas, contagensMas } = contarProblemas(outcomes);
   const seconds = Math.round(elapsedMs / 100) / 10;
   lines.push('');
-  lines.push(`${outcomes.length} fontes em ${seconds}s — ${failed} com falha.`);
+  lines.push(
+    `${outcomes.length} fontes em ${seconds}s — ${falhadas} com falha, ${contagensMas} com a contagem em baixo.`,
+  );
   return lines.join('\n');
 }
 
@@ -179,7 +205,8 @@ async function main(): Promise<void> {
   });
 
   console.log(`\n${formatSummary(outcomes, Date.now() - startedAt)}`);
-  process.exitCode = outcomes.some((outcome) => outcome.status === 'failed') ? 1 : 0;
+  const { falhadas, contagensMas } = contarProblemas(outcomes);
+  process.exitCode = falhadas + contagensMas > 0 ? 1 : 0;
 }
 
 /**

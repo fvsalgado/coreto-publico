@@ -4,10 +4,16 @@
 # «Uma cópia que nunca foi restaurada não é uma cópia de segurança: é uma
 # esperança» — docs/BACKUPS.md. Isto tira a esperança do meio. Vai buscar a
 # cópia mais recente ao balde, decifra-a, restaura-a num Postgres limpo e faz
-# as três verificações do manual: o esquema e os seeds estão inteiros (as
-# schema-checks), as tabelas que importam têm linhas, e a cópia é fresca — a
-# de hoje ou a de ontem, com eventos vistos pela recolha há poucos dias. No
-# fim escreve `relatorio.md`: a data, a cópia, quanto pesou, quanto tempo
+# as quatro verificações do manual: o esquema e os seeds estão inteiros (as
+# schema-checks), as tabelas que importam têm linhas, a cópia é fresca — a de
+# hoje ou a de ontem, com eventos vistos pela recolha há poucos dias — e a
+# base restaurada **serve-se como o sítio se serve**, ligando-se pelo papel
+# `anon` para ler eventos e ser recusada em `submissions`. Essa última faltou
+# durante meses, e era a que separava «a cópia está inteira» de «a cópia
+# funciona»: com `--no-privileges` dos dois lados, a base saía daqui sem uma
+# única concessão e o ensaio dava verde na mesma.
+#
+# No fim escreve `relatorio.md`: a data, a cópia, quanto pesou, quanto tempo
 # demorou. O tempo interessa: é a resposta a «quanto tempo estamos em baixo»
 # no dia em que a pergunta for a sério.
 #
@@ -135,7 +141,29 @@ pg_restore --dbname "$DATABASE_URL" --no-owner --no-privileges --schema=public -
 anotar "Restaurada em $((SECONDS - inicio)) s."
 
 # ---------------------------------------------------------------------------
-# 5. As três verificações do manual.
+# 4b. As concessões, que a cópia não traz e sem as quais o sítio não serve
+#     uma linha.
+#
+# O `pg_dump` da cópia corre com `--no-privileges` e este restauro também: a
+# base que sai daqui tem os dados todos e **zero** concessões a `anon`. Este
+# ensaio passava por cima disso durante meses, porque tudo o que verificava —
+# o esquema, as linhas, a frescura — estava certo. No dia do restauro a sério,
+# a agenda estava toda lá e o sítio respondia vazio a tudo.
+#
+# A migração 0128 é o que repõe as concessões, e é reaplicável de propósito.
+# Corrê-la aqui é ensaiar o restauro inteiro, e não meio: a cópia mais o passo
+# que a torna servível. Se ela desaparecer ou deixar de conceder, as duas
+# verificações a seguir reprovam.
+# ---------------------------------------------------------------------------
+CONCESSOES="$ROOT/supabase/migrations/20260907120000_0128_as_concessoes_de_leitura_escritas.sql"
+[ -f "$CONCESSOES" ] \
+  || falhar 'Falta a migração das concessões (0128). Sem ela, uma base restaurada não serve o sítio.'
+"${PSQL[@]}" -f "$CONCESSOES" >/dev/null \
+  || falhar 'A migração das concessões não aplicou sobre a base restaurada.'
+anotar 'As concessões de leitura repostas (migração 0128).'
+
+# ---------------------------------------------------------------------------
+# 5. As verificações do manual.
 # ---------------------------------------------------------------------------
 # (a) O esquema e os seeds estão inteiros: as mesmas asserções que o CI faz a
 #     uma base construída do repositório, agora sobre a que veio da cópia.
@@ -184,7 +212,35 @@ folga=$(( ( $(date --utc -d "$dia_da_copia" +%s) - $(date --utc -d "$ultimo" +%s
   || falhar "O evento visto mais recentemente é de ${ultimo}, ${folga} dias antes da cópia: a recolha tinha parado quando a cópia foi tirada."
 anotar "O evento visto mais recentemente é de ${ultimo}, ${folga} dia(s) antes da cópia."
 
+# (d) A cópia restaurada serve o sítio.
+#
+# As três de cima olham para os dados; esta liga-se como o sítio se liga. É a
+# diferença entre «a cópia está inteira» e «a cópia funciona», e era esta que
+# faltava: durante meses o ensaio deu verde sobre uma base onde o papel `anon`
+# não conseguia contar um evento.
+#
+# Duas perguntas, e as duas têm de dar a resposta certa. Ler os eventos como
+# `anon` prova que as concessões estão lá; ser recusado em `submissions` prova
+# que a reposição das concessões não abriu a fila de moderação ao público de
+# passagem — que seria a forma óbvia de fazer a primeira passar.
+"${PSQL[@]}" <<'SQL' >/dev/null || falhar 'A base restaurada não tem os papéis do Supabase (ver o prelúdio).'
+select 1 from pg_roles where rolname = 'anon';
+SQL
+
+eventos_como_anon="$("${PSQL[@]}" -tAc "
+  set local role anon;
+  select count(*) from public.events;
+")" || falhar 'Como anon, a leitura de eventos foi recusada: a cópia restaurada não serviria o sítio.'
+[ "${eventos_como_anon:-0}" -gt 0 ] \
+  || falhar "Como anon, a base restaurada devolve ${eventos_como_anon:-0} eventos. Com a RLS a valer e as concessões repostas, o sítio serviria uma agenda vazia."
+anotar "Como \`anon\`, a base restaurada devolve ${eventos_como_anon} eventos publicados."
+
+if "${PSQL[@]}" -tAc "set local role anon; select count(*) from public.submissions;" >/dev/null 2>&1; then
+  falhar 'Como anon, a fila de moderação é legível. As concessões repostas abriram o que devia continuar fechado.'
+fi
+anotar 'Como `anon`, a fila de moderação continua recusada.'
+
 duracao=$((SECONDS - inicio))
 anotar "**Restaurada e verificada em ${duracao} s.**"
 echo
-echo "✓ a cópia restaura e passa nas três verificações (${duracao} s)"
+echo "✓ a cópia restaura, serve-se como anon e passa nas quatro verificações (${duracao} s)"
