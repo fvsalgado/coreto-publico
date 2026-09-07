@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractAccessibility, parseAudience, parseDurationMinutes } from './accessibility';
+import { cleanEventDescription, fixShoutyTitle } from './text';
 
 /**
  * O banco de regressão do leitor de prosa.
@@ -197,5 +198,203 @@ const PUBLICOS: Array<{ frase: string; esperado: string | undefined; origem: str
 describe('o público que a prosa declara', () => {
   it.each(PUBLICOS)('$origem', ({ frase, esperado }) => {
     expect(parseAudience(frase).audience).toBe(esperado);
+  });
+});
+
+/**
+ * Os títulos gritados, e o que a normalização de caixa lhes fazia.
+ *
+ * **O plano estava errado sobre esta, e vale a pena registar como.** Dizia que
+ * «FIF ABRANTES» devia dar «FIF Abrantes», como se a plataforma não
+ * corrigisse. Corrige — corrige a mais: `fixShoutyTitle` existe desde sempre e
+ * a única prova de que um token é sigla é uma lista fechada de treze. Fora
+ * dela, «FIF» dava «Fif», «GNR» dava «Gnr», «XV» dava «Xv» e «A.R.C.A.» dava
+ * «A.r.c.a.». E o exemplo do plano nem existe no catálogo: a fonte de Abrantes
+ * publica «FIF Abrantes» em caixa mista, que a função nem toca.
+ *
+ * **O que o catálogo de produção tinha mesmo, medido a 7 de setembro de
+ * 2026:** um título, e um só — «Pai Que Se Tornou Mãe», da fonte de Abrantes,
+ * com o pronome relativo e o reflexo capitalizados como se fossem
+ * substantivos. Os seis numerais romanos publicados (XVIII, II, III, IX, V,
+ * XXIX) estão todos em títulos de caixa mista, que a função nunca toca.
+ *
+ * Por isso o alcance desta correção diz-se com honestidade: **uma reparação
+ * medida e o resto profilaxia.** A classe existe — a mesma fonte publica
+ * «XVIII Torneio Internacional» e publica títulos gritados —, mas só uma linha
+ * do catálogo de hoje muda.
+ */
+const TITULOS: Array<{ entrada: string; esperado: string; origem: string }> = [
+  {
+    entrada: 'PAI QUE SE TORNOU MÃE',
+    esperado: 'Pai que se Tornou Mãe',
+    origem:
+      'abrantes-proxy.json:23 — o único defeito desta função materializado no catálogo: a produção guarda «Pai Que Se Tornou Mãe»',
+  },
+  {
+    entrada: 'XVIII TORNEIO INTERNACIONAL DE INICIADOS',
+    esperado: 'XVIII Torneio Internacional de Iniciados',
+    origem: 'A mesma fonte publica «XVIII Torneio…»; gritado, o numeral dava «Xviii»',
+  },
+  {
+    entrada: 'XV DE AGOSTO EM TOMAR',
+    esperado: 'XV de Agosto em Tomar',
+    origem:
+      'O numeral seguido de preposição: o ramo novo tem de marcar `seenWord`, ou a preposição vem capitalizada e fica pior do que estava',
+  },
+  {
+    entrada: 'II ENCONTRO DE BANDAS',
+    esperado: 'II Encontro de Bandas',
+    origem: 'A forma mais comum de todas num cartaz de edição',
+  },
+  {
+    entrada: 'FIF ABRANTES',
+    esperado: 'FIF Abrantes',
+    origem: 'O caso do plano. Hipotético — a fonte escreve-o em caixa mista —, mas a classe é real',
+  },
+  {
+    entrada: 'A.R.C.A. DE TOMAR',
+    esperado: 'A.R.C.A. de Tomar',
+    origem: 'Sigla pontuada: a forma não é ambígua e nenhuma palavra portuguesa se escreve assim',
+  },
+  {
+    entrada: 'CINE-TEATRO PARAÍSO REABRE',
+    esperado: 'Cine-Teatro Paraíso Reabre',
+    origem: 'O que vem depois do hífen ficava por levantar; «Cine-Teatro» é como o espaço se chama',
+  },
+  {
+    entrada: "VAMOS SOMAR KM'S EM 2026!",
+    esperado: "Vamos Somar Km's em 2026!",
+    origem:
+      "A armadilha do apóstrofo: alargar a regra do hífen a «qualquer não-letra» dá «Km'S». Título real",
+  },
+  {
+    entrada: 'MIX DE VERÃO NO CORETO',
+    esperado: 'MIX de Verão no Coreto',
+    origem:
+      'A colisão conhecida: «MIX» é um numeral romano válido (M+IX=1009). Fica a caixa da fonte — o lado seguro',
+  },
+  {
+    entrada: 'EXPOSIÇÃO NO MIAA',
+    esperado: 'Exposição no MIAA',
+    origem: 'Não regredir: é o que a lista de siglas já acertava',
+  },
+  {
+    entrada: 'FESTA DA NOSSA SENHORA DA PIEDADE',
+    esperado: 'Festa da Nossa Senhora da Piedade',
+    origem: 'Não regredir: nome próprio composto com palavras menores',
+  },
+  {
+    entrada: 'D. MANUEL I',
+    esperado: 'D. Manuel I',
+    origem: 'Não regredir: o «I» sozinho não é numeral romano por esta regra (exige dois)',
+  },
+];
+
+describe('os títulos gritados, e as siglas que a normalização comia', () => {
+  it.each(TITULOS)('$origem', ({ entrada, esperado }) => {
+    expect(fixShoutyTitle(entrada)).toBe(esperado);
+  });
+});
+
+/**
+ * A legenda que o ofuscador do Joomla deixava na prosa publicada.
+ *
+ * **Nove eventos, cinco concelhos** — medido na base de produção a 7 de
+ * setembro de 2026. Barquinha, Alcanena, Entroncamento, Mação e Tomar. O que
+ * se lia numa ficha do Coreto era mobília da plataforma da câmara apresentada
+ * como programação:
+ *
+ *   «Inscrições gratuitas até 31 de agosto para Este endereço de email está
+ *   protegido contra piratas. Necessita ativar o JavaScript para o
+ *   visualizar.»
+ *
+ * **O plano descreveu mal a causa.** Dizia que o `stripTags` deixava passar o
+ * `<script>` do ofuscador. Não deixa — salta-o. O que passa é o texto de
+ * recurso, que vive num `<span>`, num `<noscript>` ou num
+ * `<joomla-hidden-mail>`. E a frase que os documentos citam não é a que está
+ * gravada na maioria dos casos: uma regra escrita contra a citação falhava em
+ * sete dos nove.
+ *
+ * Os dois últimos casos são controlos, e são a parte que interessa guardar: a
+ * regra não pode comer um email que o organizador escreveu, nem uma frase que
+ * comece por «Este endereço» sem ser a legenda.
+ */
+const OFUSCADOR: Array<{ entrada: string; sobra: string; origem: string }> = [
+  {
+    entrada:
+      'Entradas livres. Inscrições realizadas nos Serviços Culturais até dia 18 de setembro pelo email Este endereço de email está protegido contra piratas. Necessita ter o JavaScript autorizado para o visualizar. ou pelo telefone 249 720 400',
+    sobra: 'pelo telefone 249 720 400',
+    origem:
+      '«18ª Edição da Feirinha de Setembro», cm-entroncamento — a variante «ter … autorizado», que dois dos nove eventos usam',
+  },
+  {
+    entrada:
+      'Inscrições gratuitas até 31 de agosto para Este endereço de email está protegido contra piratas. Necessita ativar o JavaScript para o visualizar.\nVagas limitadas a 12 participantes',
+    sobra: 'Vagas limitadas a 12 participantes',
+    origem: '«Clube de Fotografia - ATL de Verão», cm-tomar — a variante «ativar», a mais comum',
+  },
+  {
+    entrada:
+      'RESERVAS – Este endereço de email está protegido contra piratas. Necessita ativar o JavaScript para o visualizar. ou através do 249 720 358',
+    sobra: '249 720 358',
+    origem: '«AL Guitar Duo», cm-vnbarquinha — a legenda a meio da frase',
+  },
+  {
+    entrada:
+      'Informações e reservas:\nEste endereço de email está protegido contra piratas. Necessita ativar o JavaScript para o visualizar.\n249 720 358 (chamada rede fixa)',
+    sobra: 'Informações e reservas:',
+    origem: '«Barquinha Jazz 2026», cm-vnbarquinha — a legenda numa linha própria',
+  },
+  {
+    entrada:
+      'requer que faça a sua inscrição pelo e-mail:\nEste endereço de email está protegido contra piratas. Necessita ativar o JavaScript para o visualizar.',
+    sobra: 'requer que faça a sua inscrição',
+    origem: '«Exposição na Paisagem do Médio Tejo», cm-macao — o «e-mail» com hífen no conector',
+  },
+  {
+    entrada:
+      'Contact This email address is being protected from spambots. You need JavaScript enabled to view it. for details.',
+    sobra: 'for details.',
+    origem: 'A forma inglesa corrente, para o dia em que uma fonte a sirva em en-GB',
+  },
+  {
+    entrada:
+      'Contacto: This e-mail address is being protected from spambots. You need JavaScript enabled to view it',
+    sobra: 'Contacto:',
+    origem: 'A forma inglesa antiga, com hífen e sem ponto final',
+  },
+];
+
+describe('a legenda do ofuscador de emails sai da prosa publicada', () => {
+  it.each(OFUSCADOR)('$origem', ({ entrada, sobra }) => {
+    const saida = cleanEventDescription(null, entrada) ?? '';
+    expect(saida).not.toMatch(/javascript/i);
+    expect(saida).not.toMatch(/spambots/i);
+    expect(saida).not.toMatch(/protegido contra piratas/i);
+    // E o que estava à volta fica: a regra está presa a uma frase, e uma regra
+    // gulosa comia o resto da descrição do evento.
+    expect(saida).toContain(sobra);
+  });
+
+  it('um email que o organizador escreveu não é legenda, e fica', () => {
+    // Apagar endereços de email da descrição seria perder informação
+    // verdadeira do evento — o mesmo pecado por outro lado.
+    const saida = cleanEventDescription(
+      null,
+      'Inscrições por geral@junta.pt até 31 de agosto. O espetáculo é para maiores de 12.',
+    );
+    expect(saida).toContain('geral@junta.pt');
+    expect(saida).toContain('maiores de 12');
+  });
+
+  it('uma frase que começa por «Este endereço» sem ser a legenda fica', () => {
+    // A âncora da regra é o arranque da frase, mas confirmado pela palavra
+    // «javascript». Sem essa confirmação, isto seria uma regra a comer prosa.
+    const saida = cleanEventDescription(
+      null,
+      'Este endereço fica na Rua Direita. Envie o comprovativo por email.',
+    );
+    expect(saida).toContain('Rua Direita');
+    expect(saida).toContain('comprovativo');
   });
 });

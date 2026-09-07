@@ -201,3 +201,67 @@ describe('mergeEventUpdate', () => {
     expect(mergeEventUpdate(existing, incoming).confidence).toBe(0.95);
   });
 });
+
+/**
+ * O preço não se funde coluna a coluna.
+ *
+ * A regra do «preenchido nunca vira vazio» é boa para a descrição e para a
+ * imagem, onde cada campo vale por si. No preço vale ao contrário: as cinco
+ * colunas são uma resposta só, e metade de uma leitura ao lado de metade de
+ * outra é uma linha que se contradiz a si própria.
+ *
+ * O caso medido em produção a 7 de setembro de 2026: o XXIX Grande Prémio do
+ * Museu Nacional Ferroviário, no Entroncamento, com `price_min = 2` de uma
+ * noite em que o leitor conseguiu ler, ao lado de `price_display = '€2.00'` de
+ * uma noite em que já não conseguia. A ficha mostrava «€2.00»; os dados
+ * estruturados da mesma página publicavam 2.
+ */
+describe('mergeEventUpdate e o preço em bloco', () => {
+  it('uma leitura nova não fica ao lado de metade da antiga', () => {
+    const existing = makeEvent({
+      is_free: false,
+      price_min: 2,
+      price_max: 2,
+      price_display: '2 €',
+      price_raw: '€2.00',
+    });
+    // A recolha desta noite trouxe o campo da fonte e não conseguiu tirar dele
+    // um número: o rótulo cai para a cadeia crua.
+    const incoming = makeEvent({
+      is_free: false,
+      price_min: null,
+      price_max: null,
+      price_display: '€2.00',
+      price_raw: '€2.00',
+    });
+
+    const merged = mergeEventUpdate(existing, incoming);
+
+    expect(merged.price_min).toBe(null);
+    expect(merged.price_display).toBe('€2.00');
+  });
+
+  it('e quando a recolha não traz preço nenhum ficam as cinco que lá estavam', () => {
+    const existing = makeEvent({
+      is_free: false,
+      price_min: 7.5,
+      price_max: 10,
+      price_display: '7,50 € – 10 €',
+      price_raw: 'Bilhetes: 10€ (desconto 7,50€)',
+    });
+    const incoming = makeEvent({
+      is_free: false,
+      price_min: null,
+      price_max: null,
+      price_display: null,
+      price_raw: null,
+    });
+
+    const merged = mergeEventUpdate(existing, incoming);
+
+    expect(merged.price_min).toBe(7.5);
+    expect(merged.price_max).toBe(10);
+    expect(merged.price_display).toBe('7,50 € – 10 €');
+    expect(merged.price_raw).toBe('Bilhetes: 10€ (desconto 7,50€)');
+  });
+});

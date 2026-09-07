@@ -14,7 +14,7 @@
  * que muda quando o site muda de tema.
  */
 
-import { lerInstanteIso, unescapeHtml } from '@coreto/core';
+import { escreverEuros, lerInstanteIso, unescapeHtml } from '@coreto/core';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -904,6 +904,12 @@ function formatOffer(offer: z.infer<typeof jsonLdOfferSchema> | null | undefined
   const low = toNumber(offer.lowPrice ?? offer.price);
   const high = toNumber(offer.highPrice);
   if (low === null) return null;
-  if (high !== null && high !== low) return `${low} ${currency} – ${high} ${currency}`;
-  return `${low} ${currency}`;
+  // A moeda estrangeira fica com a interpolação de sempre; o euro passa a ser
+  // escrito pela mesma função que escreve os rótulos do cartão. Uma oferta de
+  // 7,50 saía daqui como «7.5 €» — o número em JavaScript, à letra —, e essa
+  // cadeia é guardada em `price_raw` e mostrada quando não há mais nada.
+  const escrever = (value: number): string =>
+    currency === '€' ? escreverEuros(value) : `${value} ${currency}`;
+  if (high !== null && high !== low) return `${escrever(low)} – ${escrever(high)}`;
+  return escrever(low);
 }

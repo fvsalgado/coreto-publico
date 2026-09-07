@@ -212,3 +212,46 @@ describe('absoluteUrl', () => {
     expect(absoluteUrl('https://cm-exemplo.pt/agenda', null)).toBeNull();
   });
 });
+
+/**
+ * O dinheiro escrito à portuguesa.
+ *
+ * `formatOffer` interpolava o número tal como o JavaScript o escreve, e uma
+ * oferta de 7,50 saía daqui como «7.5 €». A cadeia não é decorativa: fica
+ * guardada em `price_raw` e é o que a ficha mostra quando não há número lido.
+ */
+describe('formatOffer e a vírgula decimal', () => {
+  const comOferta = (offer: string) => `<html><head><script type="application/ld+json">
+  { "@type": "MusicEvent", "name": "Ensaio", "startDate": "2026-05-01T21:00", "offers": ${offer} }
+  </script></head><body></body></html>`;
+
+  const priceRaw = (offer: string) => readJsonLdEvents(comOferta(offer))[0]?.priceRaw;
+
+  it('escreve os cêntimos com vírgula', () => {
+    expect(priceRaw('{ "@type": "Offer", "price": "7.50", "priceCurrency": "EUR" }')).toBe(
+      '7,50 €',
+    );
+    expect(priceRaw('{ "@type": "Offer", "price": "0.50", "priceCurrency": "EUR" }')).toBe(
+      '0,50 €',
+    );
+  });
+
+  it('e cala os cêntimos quando são zero', () => {
+    expect(priceRaw('{ "@type": "Offer", "price": "12.00", "priceCurrency": "EUR" }')).toBe('12 €');
+    expect(priceRaw('{ "@type": "Offer", "price": "10", "priceCurrency": "EUR" }')).toBe('10 €');
+  });
+
+  it('nos dois extremos de um intervalo', () => {
+    expect(
+      priceRaw(
+        '{ "@type": "AggregateOffer", "lowPrice": "7.50", "highPrice": "12.50", "priceCurrency": "EUR" }',
+      ),
+    ).toBe('7,50 € – 12,50 €');
+  });
+
+  it('e deixa em paz a moeda que não é a nossa', () => {
+    expect(priceRaw('{ "@type": "Offer", "price": "7.5", "priceCurrency": "GBP" }')).toBe(
+      '7.5 GBP',
+    );
+  });
+});
