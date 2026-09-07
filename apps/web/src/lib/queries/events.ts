@@ -126,7 +126,17 @@ function filtrarEventos(
   if (filter.venue) q = q.eq('venue_id', filter.venue);
   if (filter.series) q = q.eq('series_id', filter.series);
   if (filter.free) q = q.eq('is_free', true);
-  if (filter.accessible) q = q.eq('wheelchair_accessible', true);
+  /*
+   * A coluna resolvida (0129), e não a do evento.
+   *
+   * Com `wheelchair_accessible`, este filtro devolvia **0 de 128** no Médio
+   * Tejo: as câmaras não preenchem o campo do evento, e o leitor de prosa só
+   * o escreve quando a descrição do evento fala de acesso. A informação
+   * existia — em `venues` — e a ficha já a mostrava; o atalho da entrada é que
+   * não a encontrava. Vinte e sete eventos passam a aparecer aqui, e são os
+   * mesmos que a ficha já dizia serem acessíveis.
+   */
+  if (filter.accessible) q = q.eq('wheelchair_accessible_resolved', true);
   if (filter.q) {
     /*
      * Texto integral em português (0116): a coluna gerada `search_vector`

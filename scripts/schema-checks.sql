@@ -424,6 +424,30 @@ begin
    where table_schema = 'public' and table_name = 'sources'
      and grantee = 'anon' and privilege_type = 'SELECT';
   assert n = 11, format('esperavam-se 11 colunas públicas nas fontes, há %s', n);
+
+  -- ---- O acesso resolvido diz o que a ficha diria ----
+  --
+  -- `wheelchair_accessible_resolved` (0129) é uma desnormalização, e
+  -- desnormalizações dessincronizam-se. Os dois gatilhos são o que a mantém;
+  -- isto é o que dá por eles terem deixado de correr. Corre sobre a base do
+  -- CI depois dos seeds e da região de prova, que é onde há linhas com as
+  -- três combinações — evento que declara, evento calado com espaço que
+  -- declara, e evento sem espaço nenhum.
+  select count(*) into n
+    from public.events e
+    left join public.venues v on v.id = e.venue_id
+   where e.wheelchair_accessible_resolved
+         is distinct from coalesce(e.wheelchair_accessible, v.wheelchair_accessible);
+  assert n = 0, format('%s eventos com o acesso resolvido em desacordo com a regra', n);
+
+  -- E os dois gatilhos continuam lá. Um só deixava a coluna certa na metade
+  -- que se edita e podre na que se herda: alguém marca um espaço como
+  -- acessível no painel e os eventos de lá continuam fora do filtro.
+  select count(*) into n
+    from pg_trigger
+   where not tgisinternal
+     and tgname in ('events_sync_acesso_trg', 'venues_sync_acesso_trg');
+  assert n = 2, format('esperavam-se os dois gatilhos do acesso resolvido, há %s', n);
 end
 $$;
 

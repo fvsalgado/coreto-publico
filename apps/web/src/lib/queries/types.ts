@@ -27,6 +27,15 @@ export interface EventCard {
   price_display: string | null;
   image_url: string | null;
   image_alt: string | null;
+  /**
+   * Dá para entrar numa cadeira de rodas?
+   *
+   * Vem da coluna derivada `wheelchair_accessible_resolved` (0129) por alias
+   * — o do evento quando ele o declara, o do espaço quando ele se cala. É a
+   * mesma regra que a ficha aplicava em TypeScript, e é agora a única: cartão,
+   * filtro e ficha leem a mesma resposta. O nome não muda porque o campo é
+   * publicado (`/api/events`, documentado em `/levar`).
+   */
   wheelchair_accessible: boolean | null;
   audience: EventAudience | null;
 }

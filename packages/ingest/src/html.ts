@@ -14,7 +14,7 @@
  * que muda quando o site muda de tema.
  */
 
-import { unescapeHtml } from '@coreto/core';
+import { lerInstanteIso, unescapeHtml } from '@coreto/core';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -724,17 +724,32 @@ export interface JsonLdEvent {
   raw: Record<string, unknown>;
 }
 
-const ISO_DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?/;
-
-/** Parte uma data ISO 8601 em dia e hora, ignorando o deslocamento de fuso. */
+/**
+ * Parte uma data ISO 8601 em dia e hora **de Lisboa**.
+ *
+ * **Aqui esteve uma expressão regular que descartava o fuso**, com um
+ * comentário a dizer que o descartava — o que faz dele uma decisão escrita, e
+ * era uma decisão errada. Um `2026-07-10T20:00:00Z` do JSON-LD publicava
+ * «20:00» quando Lisboa marcava 21:00: um concerto de verão anunciado uma
+ * hora mais cedo do que é, sem nada na página a dizê-lo. Em dezembro o mesmo
+ * valor está certo, o que é a pior forma de estar errado — a metade do ano em
+ * que se testa é a metade em que funciona.
+ *
+ * A regra passou para `@coreto/core` (`lerInstanteIso`), onde já vivia a
+ * metade de saída (`lisbonUtcOffset`) e onde o `ical.ts` já dizia, por
+ * comentário, estar a repetir «a mesma aproximação». Uma hora sem
+ * deslocamento continua a ser hora de parede e não se converte: numa fonte
+ * portuguesa é a hora a que as pessoas aparecem à porta.
+ *
+ * Fica como reexportação e não como nome novo porque o nome está espalhado
+ * pelos adaptadores, e o que mudou foi o que ele faz — não o que ele
+ * responde.
+ */
 export function splitIsoDateTime(value: string | null | undefined): {
   date: string | null;
   time: string | null;
 } {
-  if (!value) return { date: null, time: null };
-  const match = ISO_DATE_TIME_RE.exec(value.trim());
-  if (!match) return { date: null, time: null };
-  return { date: match[1] ?? null, time: match[2] ?? null };
+  return lerInstanteIso(value);
 }
 
 function firstString(value: unknown): string | null {

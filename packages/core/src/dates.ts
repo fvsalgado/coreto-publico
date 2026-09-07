@@ -696,6 +696,105 @@ export function lisbonUtcOffset(date: string, time: string): string {
 }
 
 /**
+ * Um instante ISO 8601, lido como o dia e a hora que Lisboa marcava.
+ *
+ * **O sentido que faltava.** O `lisbonUtcOffset` acima resolve o caminho de
+ * saída — a hora de parede que a base guarda, escrita com o fuso para quem a
+ * lê. Isto é o caminho de entrada, e não existia: cada leitor da recolha
+ * tratava um instante à sua maneira.
+ *
+ * - O `splitIsoDateTime` do `html.ts` — que lê o JSON-LD e o The Events
+ *   Calendar — cortava a cadeia com uma expressão regular e **descartava o
+ *   deslocamento**. Um `2026-07-10T20:00:00Z` publicava «20:00» quando
+ *   Lisboa marcava 21:00: um concerto de verão anunciado **uma hora mais
+ *   cedo** do que é, e sem nada na página a dizê-lo. Em dezembro o mesmo
+ *   valor está certo, o que é a pior forma de estar errado — a metade do ano
+ *   em que se testa é a metade em que funciona.
+ * - O `ical.ts` fazia a conversão bem, com o seu próprio par de funções, e
+ *   o comentário lá dizia por extenso que era «a mesma aproximação» daqui.
+ *   Duas cópias da mesma regra, e uma delas não é aqui.
+ *
+ * As quatro formas, e o que cada uma dá:
+ *
+ * | Escrito                     | Lisboa marca | Porquê                     |
+ * | --------------------------- | ------------ | -------------------------- |
+ * | `2026-07-10T20:00:00Z`      | 21:00        | verão, Lisboa é UTC+1      |
+ * | `2026-12-10T20:00:00Z`      | 20:00        | inverno, Lisboa é UTC+0    |
+ * | `2026-07-10T20:00:00+01:00` | 20:00        | já é a hora de Lisboa      |
+ * | `2026-07-10T20:00:00`       | 20:00        | sem fuso é hora de parede  |
+ *
+ * A última é a decisão que importa e não é óbvia: uma hora sem fuso **não se
+ * converte**. Numa fonte portuguesa, a hora escrita sem deslocamento é a hora
+ * a que as pessoas aparecem à porta — tratá-la como UTC atrasava uma hora
+ * todos os eventos de verão de quase todas as câmaras, que é o engano
+ * simétrico e maior.
+ *
+ * Uma data sem hora nenhuma sai como data, e a hora fica nula: converter
+ * `2026-07-10` obrigava a inventar-lhe a meia-noite, e a meia-noite de um dia
+ * de verão é, em UTC, o dia anterior.
+ */
+export function lerInstanteIso(valor: string | null | undefined): {
+  date: string | null;
+  time: string | null;
+} {
+  if (!valor) return { date: null, time: null };
+  const texto = valor.trim();
+
+  const partes =
+    /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?(Z|[+-]\d{2}:?\d{2})?/.exec(
+      texto,
+    );
+  if (!partes) return { date: null, time: null };
+
+  const dia = partes[1] ?? null;
+  if (!dia || !isValidIsoDate(dia)) return { date: null, time: null };
+  if (partes[2] === undefined || partes[3] === undefined) return { date: dia, time: null };
+
+  const hora = Number(partes[2]);
+  const minuto = Number(partes[3]);
+  if (hora > 23 || minuto > 59) return { date: dia, time: null };
+
+  const fuso = partes[4];
+  // Sem deslocamento é hora de parede, e é para ficar como está.
+  if (!fuso) return { date: dia, time: `${partes[2]}:${partes[3]}` };
+
+  const [ano, mes, diaDoMes] = dia.split('-').map(Number) as [number, number, number];
+  const desvio = fuso === 'Z' ? 0 : minutosDoDeslocamento(fuso);
+  if (desvio === null) return { date: dia, time: `${partes[2]}:${partes[3]}` };
+
+  const instante = Date.UTC(ano, mes - 1, diaDoMes, hora, minuto) - desvio * 60_000;
+  return emLisboa(instante);
+}
+
+/** `+01:00`, `-0300` e `Z` em minutos. `null` no que não se entende. */
+function minutosDoDeslocamento(fuso: string): number | null {
+  const partes = /^([+-])(\d{2}):?(\d{2})$/.exec(fuso);
+  if (!partes) return null;
+  return (partes[1] === '-' ? -1 : 1) * (Number(partes[2]) * 60 + Number(partes[3]));
+}
+
+const RELOGIO_DE_LISBOA = new Intl.DateTimeFormat('en-GB', {
+  timeZone: LISBON_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** Um instante absoluto, escrito como o dia e a hora que Lisboa marcava. */
+export function emLisboa(ms: number): { date: string; time: string } {
+  const partes = new Map(
+    RELOGIO_DE_LISBOA.formatToParts(new Date(ms)).map((parte) => [parte.type, parte.value]),
+  );
+  return {
+    date: `${partes.get('year')}-${partes.get('month')}-${partes.get('day')}`,
+    time: `${partes.get('hour')}:${partes.get('minute')}`,
+  };
+}
+
+/**
  * `2026-05-10T21:30:00+01:00` quando há hora, `2026-05-10` quando não há.
  *
  * Uma data sem hora fica data: o schema.org aceita-a, e inventar-lhe as

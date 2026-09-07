@@ -30,7 +30,27 @@ export const CARD_EVENT_FIELDS = [
   'price_display',
   'image_url',
   'image_alt',
-  'wheelchair_accessible',
+  /*
+   * O nome fica, a coluna muda: passa a vir a resolvida da 0129.
+   *
+   * **Porquê a troca.** O cartão lia `events.wheelchair_accessible`, que está
+   * a nulo em quase todos os eventos porque as câmaras não a preenchem;
+   * enquanto isso, a ficha caía para o acesso do **espaço** quando o evento
+   * se calava. Vinte e sete eventos do Médio Tejo tinham ficha a dizer
+   * «Acessível» e cartão calado, e o filtro «Acessível» devolvia zero de 128.
+   * A coluna resolvida é essa mesma regra materializada na base —
+   * `coalesce(evento, espaço)` — e agora as três leituras dão a mesma
+   * resposta.
+   *
+   * **Porquê um alias e não o nome novo.** `wheelchair_accessible` é um campo
+   * **publicado**: sai em `/api/events`, está documentado em `/levar` com
+   * exemplo, e há quem já o leia. A pergunta que ele responde não mudou — «dá
+   * para entrar numa cadeira de rodas?» —, mudou só a forma de a responder,
+   * e uma mudança de implementação não tem de partir o contrato de ninguém.
+   * O alias é a forma de dizer isso numa linha: por dentro lê-se a coluna
+   * derivada, por fora continua a chamar-se o que sempre se chamou.
+   */
+  'wheelchair_accessible:wheelchair_accessible_resolved',
   'audience',
 ].join(', ');
 

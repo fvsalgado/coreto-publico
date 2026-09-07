@@ -71,6 +71,11 @@ export function EventCard({
   const preco = sinalDePreco(event);
   const sinais = [
     ...(preco ? [preco] : []),
+    // `wheelchair_accessible` passou a vir da coluna resolvida da 0129 (ver
+    // `queries/fields.ts`): a mesma resposta que a ficha mostra e que o
+    // filtro procura. Até aí o cartão lia a declaração do evento — quase
+    // sempre nula — e ficava calado sobre vinte e sete eventos cuja ficha
+    // dizia «Acessível».
     ...sinaisDeAcessibilidade({ wheelchair_accessible: event.wheelchair_accessible }).filter(
       (sinal) => sinal.tom !== 'apagado',
     ),

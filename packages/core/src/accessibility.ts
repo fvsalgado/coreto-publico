@@ -19,11 +19,50 @@ const SIGN_LANGUAGE = /\b(?:lingua gestual portuguesa|lingua gestual|lgp|interpr
 const AUDIO_DESCRIPTION = /\b(?:audiodescricao|audio-descricao|audio descricao)\b/;
 const SUBTITLES = /\b(?:legendad[oa]s?|legendagem|com legendas|surdos e ensurdecidos)\b/;
 const RELAXED = /\b(?:sessao relaxada|espetaculo relaxado|performance relaxada|sessao sensorial)\b/;
-const WHEELCHAIR = /\b(?:acessivel a cadeiras? de rodas|mobilidade reduzida|cadeira de rodas)\b/;
-// Uma negação explícita vale mais do que a menção: «sem acesso a cadeiras de
-// rodas» aparece tantas vezes como a afirmação.
-const NO_WHEELCHAIR =
-  /\b(?:sem acesso|nao acessivel|acesso condicionado)\b[^.]{0,40}\b(?:cadeiras? de rodas|mobilidade reduzida)\b/;
+/**
+ * A cadeira de rodas, e o que se diz **à volta** dela.
+ *
+ * **A menção nua não afirma nada, e afirmava.** A rede antiga tinha «cadeira
+ * de rodas» como alternativa solta: qualquer frase que a nomeasse marcava o
+ * evento como acessível. Pior do que isso — e é o defeito que esta correção
+ * existe para tapar — a negação escrita da forma mais comum em português
+ * escapava-lhe. O padrão de negação exigia «nao acessivel» com as duas
+ * palavras encostadas, e a frase real é «**não é** acessível a pessoas em
+ * cadeira de rodas»: o «é» pelo meio bastava para a negação não casar, a
+ * menção casar, e o Coreto publicar **acesso verdadeiro sobre uma frase que
+ * diz o contrário**. Não é uma imprecisão de catálogo: é mandar alguém em
+ * cadeira de rodas a uma porta com degraus.
+ *
+ * A leitura passa a ser em três tempos, dentro da frase onde a menção
+ * aparece: negação ganha, afirmação vem a seguir, e o silêncio fica silêncio.
+ * A frase é a unidade certa — «Espaço acessível. Não há lugares para cadeiras
+ * de rodas» são duas afirmações sobre coisas diferentes, e juntá-las numa
+ * janela de caracteres faria uma delas mentir sobre a outra.
+ */
+const CADEIRA_DE_RODAS = /\b(?:cadeiras? de rodas|mobilidade (?:reduzida|condicionada))\b/;
+
+/**
+ * As formas da negação, medidas na prosa das câmaras.
+ *
+ * O `nao` seguido de até duas palavras curtas cobre «não é acessível», «não
+ * está acessível», «não se encontra acessível» e «não acessível» com uma
+ * regra só. Sem isso, cada forma nova precisava de uma alternativa nova — e a
+ * que faltava era a mais comum de todas.
+ */
+const NEGACAO_DE_ACESSO =
+  /\b(?:sem acesso|sem acessibilidade|sem condicoes de acesso|nao(?:\s+\w{1,6}){0,2}\s+(?:acessivel|adaptad[oa]s?|preparad[oa]s?)|nao (?:dispoe|tem|possui|oferece)|inacessivel|acesso condicionado|acesso limitado)\b/;
+
+/**
+ * O que faz de uma menção uma afirmação.
+ *
+ * Uma palavra de acesso na mesma frase da cadeira de rodas: «espaço acessível
+ * a cadeiras de rodas», «entrada adaptada», «lugares reservados a pessoas com
+ * mobilidade reduzida». Sem nenhuma delas, o texto nomeou a cadeira de rodas
+ * e não disse nada sobre ela — o que acontece em «venha de carro, de autocarro
+ * ou de cadeira de rodas».
+ */
+const AFIRMACAO_DE_ACESSO =
+  /\b(?:acessivel|acessibilidade|acesso|adaptad[oa]s?|preparad[oa]s?|reservad[oa]s?|rampa|elevador)\b/;
 
 function fold(...texts: Array<string | null | undefined>): string {
   return texts
@@ -45,9 +84,30 @@ export function extractAccessibility(
     has_subtitles: SUBTITLES.test(folded),
     is_relaxed_performance: RELAXED.test(folded),
   };
-  if (NO_WHEELCHAIR.test(folded)) flags.wheelchair_accessible = false;
-  else if (WHEELCHAIR.test(folded)) flags.wheelchair_accessible = true;
+  const acesso = lerAcessoEmCadeiraDeRodas(folded);
+  if (acesso !== undefined) flags.wheelchair_accessible = acesso;
   return flags;
+}
+
+/**
+ * O que o texto diz sobre entrar em cadeira de rodas — ou nada.
+ *
+ * Percorre as frases e não o texto inteiro, e devolve à primeira frase que
+ * nomeie a cadeira de rodas **e** diga alguma coisa sobre ela. Uma negação em
+ * qualquer frase manda sobre uma afirmação noutra: entre «tem rampa» e «a
+ * sala do primeiro piso não é acessível», quem precisa da informação é quem
+ * fica na segunda.
+ */
+function lerAcessoEmCadeiraDeRodas(folded: string): boolean | undefined {
+  let afirmado: boolean | undefined;
+
+  for (const frase of folded.split(/[.;!?\n]+/)) {
+    if (!CADEIRA_DE_RODAS.test(frase)) continue;
+    if (NEGACAO_DE_ACESSO.test(frase)) return false;
+    if (AFIRMACAO_DE_ACESSO.test(frase)) afirmado = true;
+  }
+
+  return afirmado;
 }
 
 const DURATION_CEILING = 12 * 60;
@@ -55,22 +115,68 @@ const HOURS_MINUTES_RE = /\b(\d{1,2})\s*h(?:oras?)?\s*(?:e\s*)?(\d{1,2})?\s*(?:m
 const MINUTES_RE = /\b(\d{1,3})\s*(?:m|min|mins|minutos?)\b/g;
 const DURATION_CUE = /\bduracao\b|\bdura\b|\bcerca de\b|\baproximadamente\b/;
 
+/** A janela à esquerda onde a pista de duração ainda governa o número. */
+const ALCANCE_DA_PISTA = 30;
+
+/**
+ * O que vem antes de uma hora de relógio.
+ *
+ * «entre as 10h00», «das 9h», «às 21h30», «a partir das 15h», «até às 18h».
+ * Sem acentos, porque o texto já vem dobrado.
+ */
+const PREPOSICAO_DE_RELOGIO =
+  /\b(?:as|das|desde|entre|ate|pelas|para as|a partir d[oa]s?|marcad[oa] para)\s*$/;
+
+/** O que vem depois: o outro extremo de um intervalo. */
+const FECHO_DE_INTERVALO = /^\s*(?:[-–—]|as|ate as|ate|e as)\s*\d{1,2}\s*h/;
+
+/** Um número escrito com a palavra por extenso nunca é um relógio. */
+const POR_EXTENSO = /\d\s*(?:horas?|minutos?)\b/;
+
 /**
  * Duração total em minutos, quando o texto a declara.
  *
  * Devolve `null` em vez de adivinhar — uma duração errada engana quem está a
  * contar com o último autocarro.
+ *
+ * **O que aqui esteve, e o que publicou.** O ramo das horas devolvia à
+ * primeira, sem pista nenhuma: qualquer «10h00» num texto virava uma duração
+ * de dez horas. Das 128 fichas publicadas, 30 mostravam duração e **14 eram
+ * horas de relógio** — nove delas a dizer «Duração: 10h». A contradição
+ * ficava na mesma página: «A Arte do Calafate», em Constância, mostrava a
+ * sessão das 9h às 11h e, ao lado, «Duração: 9h».
+ *
+ * Duas guardas, e são diferentes porque os dois enganos são diferentes:
+ *
+ * 1. **Contexto de relógio recusa-se.** Um número precedido de «às», «das»,
+ *    «entre as» — ou seguido do outro extremo de um intervalo — é uma hora do
+ *    dia. É o que apanha «entre as 10h00 e as 13h00» sem precisar de saber
+ *    mais nada sobre a frase.
+ * 2. **Uma duração precisa de se declarar.** Ou uma pista à esquerda
+ *    («duração», «cerca de», «aproximadamente»), ou a palavra por extenso —
+ *    «1 hora e 20 minutos», que nenhum relógio escreve assim. Uma hora nua no
+ *    meio da prosa não é uma duração, e o que ela custa é maior do que o que
+ *    dava: o campo desaparece de umas fichas e deixa de mentir em catorze.
+ *
+ * As durações verdadeiras não passam por aqui: vêm de `raw.durationMinutes`,
+ * declarado pelo adaptador, e ganham sempre (ver `harmonize.ts`).
  */
 export function parseDurationMinutes(...texts: Array<string | null | undefined>): number | null {
   const folded = fold(...texts);
   if (!folded.trim()) return null;
 
   for (const match of folded.matchAll(HOURS_MINUTES_RE)) {
-    const hours = Number(match[1]);
     const minutes = match[2] ? Number(match[2]) : 0;
     if (minutes >= 60) continue;
-    const total = hours * 60 + minutes;
-    if (total > 0 && total <= DURATION_CEILING) return total;
+    const total = Number(match[1]) * 60 + minutes;
+    if (total <= 0 || total > DURATION_CEILING) continue;
+
+    const antes = folded.slice(0, match.index);
+    const depois = folded.slice(match.index + match[0].length);
+    if (PREPOSICAO_DE_RELOGIO.test(antes) || FECHO_DE_INTERVALO.test(depois)) continue;
+
+    const pista = DURATION_CUE.test(antes.slice(-ALCANCE_DA_PISTA)) || POR_EXTENSO.test(match[0]);
+    if (pista) return total;
   }
 
   const cued = DURATION_CUE.test(folded);
