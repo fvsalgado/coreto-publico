@@ -14,7 +14,9 @@ import {
   listMunicipalities,
   listSeries,
   listVenueNames,
+  withCardTimes,
 } from '@/src/lib/queries/events';
+import { listFeedSessions } from '@/src/lib/feeds/data';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
@@ -222,6 +224,11 @@ export default async function AgendaPage({ params, searchParams }: Props) {
     listSeries(regiao.id),
   ]);
 
+  // A hora de cada cartão, na mesma leitura de sessões que a API pública faz
+  // para esta mesma página. As regras — e a razão de não ser coluna do cartão
+  // — estão em `withCardTimes`.
+  const events = await withCardTimes(result.events, today, listFeedSessions);
+
   const municipalityNames: Record<string, string> = Object.fromEntries(
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
@@ -342,9 +349,9 @@ export default async function AgendaPage({ params, searchParams }: Props) {
       </p>
 
       <div className="mt-4">
-        {result.events.length > 0 ? (
+        {events.length > 0 ? (
           <EventList
-            events={result.events}
+            events={events}
             today={today}
             municipalityNames={municipalityNames}
             venueNames={venueNames}

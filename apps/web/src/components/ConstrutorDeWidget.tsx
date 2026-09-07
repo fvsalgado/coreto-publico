@@ -145,12 +145,28 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
   const nomeDoConcelho = concelhos.find((c) => c.id === concelho)?.name ?? concelho;
   const tituloIframe = `Agenda cultural de ${nomeDoConcelho}`;
 
+  /*
+   * `*:min-w-0` nas grelhas, e não é arrumação.
+   *
+   * Um filho de grelha tem `min-width: auto`, ou seja, nunca encolhe abaixo do
+   * mínimo do seu conteúdo — e o bloco de código para copiar não quebra linha.
+   * A coluna esticava até aos 393 px de `<script src="…/widget/embed.js">` e
+   * arrastava a página inteira com ela: `/levar` era a única página pública do
+   * sítio a rolar na horizontal num telemóvel (409 px de conteúdo numa janela
+   * de 360; 817 numa de 320 com o texto ampliado a 200%). Com o mínimo a zero,
+   * a coluna fica pela largura da janela e quem rola é o `overflow-x-auto` do
+   * `<pre>`, dentro da sua própria caixa — que tem `tabIndex` para chegar lá
+   * com o teclado.
+   *
+   * Vale o mesmo para as caixas de escolha: a largura mínima de um `select` é
+   * a da opção mais comprida, e há nomes de espaços que passam dos 360 px.
+   */
   return (
-    <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
+    <div className="mt-6 grid gap-8 *:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
       <div>
         <h3 className="ct-heading">Escolham</h3>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4 *:min-w-0 sm:grid-cols-2">
           <div>
             <label htmlFor="w-concelho" className={rotulo}>
               Concelho
@@ -322,7 +338,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
           ) : null}
         </fieldset>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="mt-6 grid gap-4 *:min-w-0 sm:grid-cols-2">
           <div>
             <label htmlFor="w-tema" className={rotulo}>
               Tema

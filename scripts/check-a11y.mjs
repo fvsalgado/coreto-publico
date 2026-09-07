@@ -220,10 +220,27 @@ const ESTADOS = [
     route: '/coretos',
     width: 360,
     height: 720,
+    /*
+     * O nome da barra de baixo está aqui por extenso, e isso já custou uma
+     * corrida vermelha.
+     *
+     * As duas navegações principais — a do cabeçalho e a barra ao alcance do
+     * polegar — chamavam-se ambas «Principal», e quem navega por landmarks
+     * ouvia duas iguais. Ao desempatá-las, a da barra passou a «Principal, no
+     * fundo do ecrã» e este seletor ficou a casar com a do cabeçalho, que não
+     * tem gaveta: o clique esperou trinta segundos por um `summary` que nunca
+     * ia existir.
+     *
+     * Fica o nome completo em vez de um prefixo: um seletor que casasse com
+     * as duas voltava a apanhar a errada, e é precisamente essa ambiguidade
+     * que se acabou de tirar do sítio.
+     */
     async abrir(page) {
-      await page.click('nav[aria-label="Principal"] summary');
+      const gaveta = 'nav[aria-label="Principal, no fundo do ecrã"]';
+      await page.click(`${gaveta} summary`);
       await page.waitForFunction(
-        () => document.querySelector('nav[aria-label="Principal"] details')?.open === true,
+        (seletor) => document.querySelector(`${seletor} details`)?.open === true,
+        gaveta,
         { timeout: 5_000 },
       );
     },

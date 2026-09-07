@@ -130,6 +130,108 @@ const ORCAMENTOS = {
 /** Um salto de layout acima disto sente-se. Ver `docs/ARQUITETURA.md`. */
 const CLS_MAXIMO = 0.02;
 
+/**
+ * A ficha de evento — a rota por onde entrou a regressão que este guarda não viu.
+ *
+ * As cinco rotas de cima são as que existem sempre. A ficha não é nenhuma
+ * delas, e foi por aí que entrou em produção um salto de layout de 0,20 sem
+ * reprovar nada: o `<img>` do cartaz era `w-auto` dentro de uma grelha
+ * centrada, a proporção declarada aplicava-se à caixa do texto alternativo, e
+ * a caixa reservada era metade da que a imagem viria a ocupar. O tecto de
+ * 0,02 estava escrito aqui desde o princípio e nunca chegou a olhar para a
+ * página que mais gente abre.
+ *
+ * **O endereço não se escreve à mão.** Os slugs são de uma região e mudam com
+ * o catálogo; escritos aqui, esta linha era do Médio Tejo e apodrecia na
+ * primeira recolha. Descobrem-se do mapa do sítio, como a auditoria de
+ * acessibilidade já faz em `scripts/check-a11y.mjs`.
+ *
+ * **E tem de ser uma ficha com cartaz de medidas declaradas**, que é a que o
+ * defeito atingia. Uma ficha sem cartaz não mede coisa nenhuma — passava
+ * sempre, e um portão que passa sempre é ruído. Uma ficha com cartaz sem
+ * medidas é outra história e ainda não está resolvida: aí a reserva é o
+ * `min-h` da moldura, o resto do salto é a diferença entre o reservado e o
+ * cartaz, e mede-se 0,16 hoje. Escolher essa aqui seria fazer este guarda
+ * reprovar por um defeito que ninguém está a corrigir — e um portão que acusa
+ * o que não se pode fechar é um portão que se desliga.
+ *
+ * Sem base de dados o mapa do sítio vem sem fichas: a rota salta com aviso e
+ * o resto da medição segue, que é o que o cabeçalho deste ficheiro exige de
+ * uma corrida num fork sem um único segredo. O preço está dito em voz alta:
+ * onde não há catálogo, esta rota não é medida.
+ *
+ * Os tectos de peso são os mesmos das outras rotas, e o que os justifica é
+ * uma medição: em produção a ficha traz os mesmos pacotes de JavaScript da
+ * agenda — 1% acima — e um HTML que é um quarto do da entrada. O que a traz a
+ * esta lista é o salto de layout; o peso vem de borla e fica a guardar o
+ * mesmo que guarda nas outras.
+ *
+ * O `imagensDeTerceiros` é o que torna esta rota mensurável: sem ele, uma
+ * ficha com cartaz reprovava sempre a fronteira, porque o cartaz vem do
+ * servidor de quem organiza — ver a nota junto ao filtro dos terceiros, mais
+ * abaixo. É também a razão de o salto de layout ser aqui uma medida honesta:
+ * o cartaz vem mesmo de fora e chega mesmo depois da primeira pintura, que é
+ * a situação que a reserva tem de aguentar.
+ *
+ * E o erro só cai para um lado, que é o que o cabeçalho deste ficheiro exige:
+ * uma rede depressa demais pode esconder o salto e deixar passar, mas nunca
+ * inventa um que não existe — com a caixa reservada certa mede-se zero em
+ * qualquer rede.
+ */
+const ORCAMENTO_DA_FICHA = { js: 170, css: 30, html: 250, imagensDeTerceiros: true };
+
+/**
+ * Quantas fichas se espreitam à procura de uma com cartaz medido.
+ *
+ * Vinte porque no Médio Tejo cerca de metade das fichas tem cartaz com
+ * medidas e o mapa não as ordena por isso: com vinte tentativas a
+ * probabilidade de sair de mãos a abanar é remota, e são vinte pedidos a um
+ * servidor local antes de a medição começar.
+ */
+const FICHAS_A_ESPREITAR = 20;
+
+/** O cartaz da ficha, na marcação servida: o único `<img>` com prioridade declarada. */
+const CARTAZ = /<img\b[^>]*\bfetchpriority="high"[^>]*>/i;
+
+async function fichaComCartazMedido() {
+  let xml = '';
+  try {
+    const resposta = await fetch(`${BASE_URL}/sitemap.xml`);
+    if (resposta.ok) xml = await resposta.text();
+  } catch {
+    // Sem mapa não há fichas: o aviso a seguir diz o resto.
+  }
+
+  const caminhos = [...xml.matchAll(/<loc>[^<]*(\/evento\/[^<]+)<\/loc>/g)].map(
+    ([, caminho]) => caminho,
+  );
+  if (caminhos.length === 0) {
+    console.warn('· /evento/… — saltada (o mapa do sítio não trouxe fichas)');
+    return null;
+  }
+
+  for (const caminho of caminhos.slice(0, FICHAS_A_ESPREITAR)) {
+    let html = '';
+    try {
+      const resposta = await fetch(`${BASE_URL}${caminho}`);
+      if (!resposta.ok) continue;
+      html = await resposta.text();
+    } catch {
+      continue;
+    }
+    const cartaz = html.match(CARTAZ)?.[0];
+    if (cartaz && /\bwidth="\d+"/.test(cartaz) && /\bheight="\d+"/.test(cartaz)) return caminho;
+  }
+
+  console.warn(
+    `· /evento/… — saltada (nenhuma das ${FICHAS_A_ESPREITAR} primeiras fichas traz cartaz com medidas)`,
+  );
+  return null;
+}
+
+const ficha = await fichaComCartazMedido();
+if (ficha) ORCAMENTOS[ficha] = ORCAMENTO_DA_FICHA;
+
 const rotas = Object.keys(ORCAMENTOS);
 
 let falhas = 0;
@@ -306,10 +408,32 @@ for (const rota of rotas) {
   const js = somar(['script']);
   const css = somar(['stylesheet']);
   const html = somar(['document']);
-  const terceiros = recolhidos.filter((pedido) => !permitidos.has(new URL(pedido.url).host));
+  /*
+   * O cartaz de quem organiza não é um pedido a terceiros para desenhar a
+   * página — é a decisão escrita da casa.
+   *
+   * As imagens são servidas do servidor de quem as publicou, e isso está
+   * decidido em três sítios e dito ao visitante em `/privacidade`. Sem
+   * catálogo isto nunca se nota, porque não há uma única imagem para carregar;
+   * numa corrida com dados por trás, contar o cartaz da câmara como violação
+   * seria fazer este guião reprovar a decisão do projecto em vez de uma
+   * regressão. Só se dispensam **imagens**, e só na rota que o declara: um
+   * script, uma folha de estilos ou um tipo de letra de fora continua a
+   * reprovar em qualquer rota.
+   */
+  const terceiros = recolhidos.filter(
+    (pedido) =>
+      !permitidos.has(new URL(pedido.url).host) &&
+      !(orcamento.imagensDeTerceiros && pedido.tipo === 'image'),
+  );
 
   if (CALIBRAR) {
-    calibracao.push(`  '${rota}': { js: ${js}, css: ${css}, html: ${html} },`);
+    // A ficha mede-se e imprime-se como as outras, mas não entra na tabela
+    // para colar: o seu endereço é o de um evento que existia hoje, e colado
+    // em `ORCAMENTOS` seria uma rota morta na primeira recolha.
+    if (rota !== ficha) {
+      calibracao.push(`  '${rota}': { js: ${js}, css: ${css}, html: ${html} },`);
+    }
     console.log(`· ${rota} — js ${js} kB, css ${css} kB, html ${html} kB, cls ${cls.toFixed(3)}`);
     continue;
   }
