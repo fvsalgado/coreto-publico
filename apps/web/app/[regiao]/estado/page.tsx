@@ -199,8 +199,19 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         <h2 id="recolha" className="ct-heading">
           A recolha
         </h2>
+        {/*
+         * A cadência conta-se em dias, e a diferença não é de estilo.
+         *
+         * Aqui prometia-se uma recolha noturna. O cron do `scrape.yml` está às
+         * 03:20 UTC, mas a fila de execuções agendadas do GitHub atrasa-o
+         * horas — as execuções medidas arrancaram às 07:58, 08:26, 10:11 e
+         * 15:28 UTC. Numa página cujo trabalho inteiro é dizer a verdade sobre
+         * o estado da agenda, uma frase que a produção desmente desconta todas
+         * as que estão ao lado. A cadência cumpre-se e escreve-se; a hora não
+         * se promete enquanto o disparo não for nosso (ver `docs/OPERACAO.md`).
+         */}
         <p className="mt-2 text-muted">
-          A recolha corre uma vez por noite. Uma fonte que falhe {FALHAS_ATE_PAUSA} noites seguidas
+          A recolha corre uma vez por dia. Uma fonte que falhe {FALHAS_ATE_PAUSA} dias seguidos
           entra em pausa e volta a ser tentada {HORAS_EM_PAUSA} horas depois — é o que impede um
           portal em manutenção de se tornar um portal esquecido.
         </p>
@@ -248,7 +259,7 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         </h2>
         <p className="mt-2 text-muted">
           É a outra metade da pergunta, e a que apanha o que a primeira deixa passar: uma fonte pode
-          ser lida todas as noites com sucesso e trazer zero eventos porque a página da câmara mudou
+          ser lida todos os dias com sucesso e trazer zero eventos porque a página da câmara mudou
           de forma. A recolha diz «li»; só a contagem diz «li e não veio nada».
         </p>
 

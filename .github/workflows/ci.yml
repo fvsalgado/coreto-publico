@@ -103,6 +103,17 @@ jobs:
       - name: Números do PROJETO.md
         run: pnpm check:numeros
 
+      # O irmão do anterior, e aqui pela mesma razão: confronta cada afirmação
+      # pública com o ficheiro, o campo ou a rota que a sustenta, e falha
+      # nomeando ficheiro e linha. A família que precisa de um pedido a
+      # produção — cabeçalhos servidos, totais da API, códigos de estado —
+      # salta sem `AFIRMACOES_BASE`, e salta aqui de propósito: este trabalho
+      # corre sem rede e sem um único segredo, e é isso que o deixa passar num
+      # fork. Quem quiser medir a produção corre
+      # `AFIRMACOES_BASE=producao pnpm check:afirmacoes` à mão.
+      - name: Afirmações públicas
+        run: pnpm check:afirmacoes
+
       - name: Compilação
         run: pnpm build
 

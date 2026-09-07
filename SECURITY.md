@@ -1,12 +1,31 @@
 # Política de segurança
 
+Esta é a política do **Coreto**, o software, e vale em todas as regiões que ele
+serve. Está publicada em <https://coreto.org/seguranca>, que é para onde aponta
+o campo `Policy:` do `/.well-known/security.txt` de todos os domínios: este
+ficheiro vive num repositório privado, e quem segue a RFC 9116 tem de conseguir
+ler o âmbito e os prazos sem pedir acesso a ninguém. **As duas cópias mudam ao
+mesmo tempo** — a página está em
+`apps/web/app/pagina-do-produto/seguranca/page.tsx`.
+
 ## Como reportar
 
 **Não abras um issue público** para uma falha de segurança.
 
-Escreve para **coreto@mediotejo.pt** com `[segurança]` no assunto. Se a falha
-envolver dados pessoais de alguém, diz isso na primeira linha — muda a ordem
-pela qual as coisas são tratadas e os prazos que a lei impõe.
+Escreve para **fabio@coreto.org** com `[segurança]` no assunto. É o contacto do
+produto, e é o primeiro de propósito: quem corrige o software é quem o escreve,
+e uma falha no Coreto é uma falha em todas as regiões ao mesmo tempo. Mandá-la
+primeiro para o contacto de uma região é mostrá-la, dias antes de chegar a quem
+a pode corrigir, a pessoal que não a pode corrigir.
+
+O contacto da região — o que está no `security.txt` do domínio por onde
+chegaste — fica como alternativa, para quem encontrou a falha numa agenda e não
+tem de saber que há um produto por baixo. É a mesma ordem que
+`apps/web/app/[regiao]/seguranca-txt/route.ts` já produz, e a razão está escrita
+lá.
+
+Se a falha envolver dados pessoais de alguém, diz isso na primeira linha — muda
+a ordem pela qual as coisas são tratadas e os prazos que a lei impõe.
 
 Ajuda muito incluir:
 

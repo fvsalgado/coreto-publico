@@ -2,16 +2,20 @@ name: Recolha
 
 on:
   schedule:
-    # 03:20 UTC.
+    # 03:20 UTC — marcado para a madrugada, servido a meio da manhã.
     #
     # O cron do GitHub corre sempre em UTC e não sabe da hora de verão.
     # Portugal continental está em UTC no inverno (WET) e em UTC+1 no verão
     # (WEST), por isso 03:20 UTC é 03:20 em Lisboa de novembro a março e 04:20
-    # de abril a outubro. Nos dois casos é de madrugada, que é a única
-    # exigência: os sites das câmaras estão parados, e uma recolha que corra
-    # mal tem a manhã inteira para ser vista antes de alguém precisar da
-    # agenda. Fixar a hora local exigiria dois crons e uma delas correria à
-    # hora errada meio ano — não vale o que custa.
+    # de abril a outubro. Fixar a hora local exigiria dois crons e um deles
+    # correria à hora errada meio ano — não vale o que custa.
+    #
+    # **A madrugada é a intenção, não a promessa.** A fila de execuções
+    # agendadas do GitHub atrasa isto horas: as execuções medidas arrancaram às
+    # 07:58, 08:03, 08:26, 10:11 e 15:28 UTC. O que se cumpre é a cadência — uma
+    # recolha por dia —, e é só isso que as páginas públicas afirmam. Enquanto
+    # não houver um disparador externo (ver `docs/OPERACAO.md`), nenhuma frase
+    # servida pode prometer a hora.
     - cron: '20 3 * * *'
 
   workflow_dispatch:
@@ -40,8 +44,14 @@ jobs:
 
     permissions:
       contents: read
-      # Para abrir ou comentar o aviso de falha.
+      # Para abrir, comentar e fechar o aviso de falha.
       issues: write
+
+    env:
+      # No trabalho e não no passo, porque são dois os passos que precisam do
+      # mesmo título: o que abre o aviso e o que o fecha. Duas cópias desta
+      # string é um aviso que nunca mais fecha, e a falha seria silenciosa.
+      TITULO: 'A recolha noturna falhou'
 
     steps:
       - uses: actions/checkout@v7
@@ -196,7 +206,6 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-          TITULO: 'A recolha noturna falhou'
           EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MANUAL: ${{ github.server_url }}/${{ github.repository }}/blob/main/docs/OPERACAO.md
         run: |
@@ -233,3 +242,23 @@ jobs:
           NTFY_URL: ${{ secrets.NTFY_URL }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
         run: ./scripts/avisar.sh 'Coreto — a recolha noturna falhou' default aviso.md
+
+      # O aviso abria e não fechava, e faltava-lhe a outra metade do mesmo
+      # argumento: um issue que fica aberto depois de a recolha voltar mente
+      # sobre o estado de hoje, e um aviso que mente é o que se aprende a
+      # ignorar. O issue #125 ficou aberto desde 2026-09-05 com duas execuções
+      # boas pelo meio. É a mesma mecânica da vigilância e dos prazos:
+      # `if: success()` é o inverso exato do `if: failure()` que o abre, e o
+      # aviso fica aberto se e só se a última execução falhou.
+      - name: Fechar o aviso quando a recolha voltar
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NUMERO=$(gh issue list --state open --limit 50 --json number,title \
+            --jq "[.[] | select(.title == \"${TITULO}\")] | .[0].number // empty")
+
+          if [ -n "${NUMERO}" ]; then
+            gh issue comment "${NUMERO}" --body "A recolha de $(date --utc --iso-8601=minutes) correu bem."
+            gh issue close "${NUMERO}" --reason completed
+          fi
