@@ -38,6 +38,16 @@ export function EventDetailAccessibility({
   venueWheelchairAccessible,
   venueAccessibilityNotes,
 }: Props) {
+  /*
+   * O `??` fica, e passou a ser cinto sobre suspensórios.
+   *
+   * Desde a 0129, `event.wheelchair_accessible` já vem resolvido da base —
+   * o do evento quando ele o declara, o do espaço quando ele se cala — e é a
+   * mesma resposta que o cartão mostra e que o filtro procura. Esta linha
+   * era, até aí, o único sítio onde a regra existia; agora é a rede para o
+   * caso de o evento vir de uma cache mais velha do que a última alteração
+   * ao espaço, que é o que se lê do lado direito.
+   */
   const sinais = sinaisDeAcessibilidade({
     ...event,
     wheelchair_accessible: event.wheelchair_accessible ?? venueWheelchairAccessible,

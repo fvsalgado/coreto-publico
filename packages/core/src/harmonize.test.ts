@@ -299,6 +299,27 @@ describe('o harmonizador e a hora que a prosa afirma', () => {
     expect(sessions[0]!.end_time).toBe('13:00');
   });
 
+  /*
+   * A mesma frase, e o campo que este teste não olhava.
+   *
+   * Verificava a hora — que estava certa — e passava a verde com a duração
+   * fabricada mesmo ao lado: «entre as 10h00 e as 13h00» dava dez horas de
+   * duração, porque o leitor devolvia à primeira hora que encontrasse. Nove
+   * das 128 fichas publicadas diziam «Duração: 10h» por causa disto, e o
+   * teste que usava a frase culpada nunca teve de o notar.
+   */
+  it('e a mesma frase não fabrica duração nenhuma', () => {
+    const { event } = harmonizeEvent(
+      raw({
+        dates: [{ date: '2026-09-12' }],
+        description:
+          'No dia 12 de setembro, sábado, entre as 10h00 e as 13h00, a Rua Luís Falcão de Sommer recebe a Feira para Todos.',
+      }),
+      context,
+    );
+    expect(event.duration_minutes).toBeNull();
+  });
+
   it('duas horas no texto são uma ambiguidade, e ficam por resolver', () => {
     const { sessions } = harmonizeEvent(
       raw({
