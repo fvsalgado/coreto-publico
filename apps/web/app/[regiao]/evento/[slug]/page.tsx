@@ -215,9 +215,17 @@ export default async function EventPage({ params }: Props) {
    * declarar. A base deixa as duas colunas nulas independentemente uma da
    * outra, e é aqui que essa possibilidade se fecha, uma vez, em vez de ficar
    * a ser verificada no meio do JSX.
+   *
+   * O `> 0` é novo e guarda o tecto de largura calculado mais abaixo: uma
+   * altura zero — que a base aceita e nenhuma imagem tem — daria uma divisão
+   * por zero, e um `max-width` inválido é um `max-width` que o navegador
+   * deita fora, ficando o cartaz a ser ampliado até à moldura.
    */
   const medidasDoCartaz =
-    event.image_width !== null && event.image_height !== null
+    event.image_width !== null &&
+    event.image_height !== null &&
+    event.image_width > 0 &&
+    event.image_height > 0
       ? { width: event.image_width, height: event.image_height }
       : null;
 
@@ -319,7 +327,24 @@ export default async function EventPage({ params }: Props) {
               reservado e o cartaz, não o cartaz inteiro. Mantê-lo quando as
               medidas existem era reservar duas vezes — a moldura ficava com a
               altura mínima mesmo para um cartaz baixo, com uma tira de fundo
-              desfocado por baixo dele. */}
+              desfocado por baixo dele.
+
+              **E a promessa dos dois parágrafos de cima — «o salto
+              desaparece» — foi falsa desde o dia em que foi escrita**
+              (947dd9e, 3 de setembro de 2026). As medidas iam declaradas e não
+              reservavam nada: o `<img>` era `w-auto` dentro desta grelha
+              `place-items-center`, a largura era `fit-content`, e um `<img>`
+              sem imagem ainda não ocupa largura nenhuma. Medido em produção
+              com o cartaz retido, a 1280 px: caixa reservada **0×0** e a
+              moldura com 992×50 — só o `p-6`. Uma proporção não tem a que se
+              aplicar quando a largura é zero, e o que saltava era a altura
+              inteira do cartaz. Como o `min-h` tinha sido tirado por haver
+              medidas, as fichas **com** medidas passaram a saltar mais do que
+              as sem: o commit que quis corrigir a métrica piorou-a. Quatro
+              fichas de produção, 0,15 a 0,20 na secretária e 0,15 a 0,37 no
+              telemóvel. Tirar a reserva de baixo só se podia fazer depois de a
+              de cima funcionar mesmo — e não funcionava. A correção está no
+              `w-full` e no `maxWidth` do cartaz, aqui em baixo. */}
           <div
             className={`relative isolate grid place-items-center overflow-hidden rounded-lg border border-border bg-accent-soft p-4 sm:p-6 ${
               medidasDoCartaz ? '' : 'min-h-72 sm:min-h-[26rem]'
@@ -353,14 +378,50 @@ export default async function EventPage({ params }: Props) {
                * As medidas, quando se sabem.
                *
                * Não são o tamanho a que o cartaz é desenhado — o CSS aqui ao
-               * lado manda nisso, com `max-h` e `w-auto`. São a **proporção**:
-               * é dela que o navegador tira a altura da caixa a partir da
-               * largura disponível, antes de ter um único byte da imagem.
-               * Declarar uma e não a outra não serve de nada; ou vão as duas
-               * ou não vai nenhuma.
+               * lado manda nisso. São a **proporção**: é dela que o navegador
+               * tira a altura da caixa a partir da largura disponível, antes
+               * de ter um único byte da imagem. Declarar uma e não a outra não
+               * serve de nada; ou vão as duas ou não vai nenhuma.
                */
               {...(medidasDoCartaz ?? {})}
-              className="relative z-10 max-h-[34rem] w-auto max-w-full rounded shadow-lg"
+              /*
+               * O tecto de largura, que é o que faz a proporção valer alguma
+               * coisa.
+               *
+               * Com `w-full` a largura deixa de ser zero e passa a ser a da
+               * moldura, que o navegador já sabe antes de pedir a imagem: com
+               * a proporção declarada, reserva a altura certa à primeira. A
+               * mesma medição de cima, com o cartaz retido, passa de 0×0 a
+               * 701×544 — a caixa exacta que o cartaz vai ocupar. Nas quatro
+               * fichas, 0,0000 de salto nas duas larguras.
+               *
+               * O tecto tem dois termos e os dois fazem falta. A largura em
+               * píxeis não amplia um cartaz pequeno para além do seu tamanho,
+               * que é o que `w-auto` fazia de graça. O termo em `rem` é o
+               * mesmo `max-h-[34rem]` da classe, traduzido para largura pela
+               * proporção: sem ele, um cartaz largo era esticado — a altura
+               * batia no `max-h`, a largura ficava na da moldura, e um
+               * 1000×776 saía desenhado a 942×544. Medido, não deduzido: é a
+               * diferença entre a correção como estava escrita no plano e a
+               * que aqui está.
+               *
+               * Se algum dia o `max-h` da classe mudar, este 34 muda com ele.
+               * Não se lê de lá porque o Tailwind precisa da classe escrita
+               * por extenso para a gerar.
+               */
+              style={
+                medidasDoCartaz
+                  ? {
+                      maxWidth: `min(${medidasDoCartaz.width}px, ${(
+                        (34 * medidasDoCartaz.width) /
+                        medidasDoCartaz.height
+                      ).toFixed(2)}rem)`,
+                    }
+                  : undefined
+              }
+              className={`relative z-10 max-h-[34rem] rounded shadow-lg ${
+                medidasDoCartaz ? 'w-full' : 'w-auto max-w-full'
+              }`}
             />
           </div>
           {event.image_credit ? (

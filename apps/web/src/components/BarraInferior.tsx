@@ -217,7 +217,19 @@ export function BarraInferior({
 
   return (
     <nav
-      aria-label="Principal"
+      /*
+       * O nome diz onde está, e não só o que é.
+       *
+       * Esta barra e a navegação do toldo (`app/[regiao]/layout.tsx`) são o
+       * mesmo mapa em dois sítios, e chamavam-se ambas «Principal»: quem
+       * percorre a página por marcos ouvia duas navegações com o mesmo nome
+       * e tinha de entrar em cada uma para descobrir a diferença. As duas
+       * coexistem no documento — o toldo leva o botão de enviar e o tema, que
+       * também no telemóvel se veem —, por isso não basta uma esconder-se por
+       * CSS. Acrescentar onde está é o que as distingue sem mentir sobre o
+       * que são: continua a ser a navegação principal, a do fundo do ecrã.
+       */
+      aria-label="Principal, no fundo do ecrã"
       /*
        * `pb-[env(safe-area-inset-bottom)]`: no iPhone a faixa do indicador de
        * início fica por baixo da barra, e sem esta almofada os rótulos ficam
