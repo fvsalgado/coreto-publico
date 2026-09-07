@@ -218,6 +218,36 @@ jobs:
           DATABASE_URL: postgres://postgres@localhost:5432/postgres
         run: ./scripts/conciliar-registo.test.sh
 
+      # A pergunta que nenhum dos outros portões pode fazer.
+      #
+      # Tudo o que está acima corre contra uma base **limpa**, e uma base
+      # limpa está sempre em dia por construção: o verde deste trabalho nunca
+      # disse nada sobre a base real. A 7 de setembro de 2026 isso custou duas
+      # vagas seguidas — o `main` levava a 0128 e a 0129, produção estava no
+      # 0127, e o `next build` da Vercel rebentava a pré-gerar as páginas com
+      # «column events.wheelchair_accessible_resolved does not exist». O sítio
+      # nunca esteve em baixo (a Vercel mantém o último build bom), e é isso
+      # que faz deste modo de falha um dos piores: tudo responde e nada é
+      # publicado, durante o tempo que ninguém levar a olhar para a consola.
+      #
+      # Nem o build de pré-visualização o via — o anfitrião de pré-visualização
+      # não é de região nenhuma e serve a montra, que não pede a agenda — nem a
+      # sonda externa, que pergunta se o sítio responde e ele responde, com o
+      # build de antes.
+      #
+      # Salta com aviso sem o segredo, como as outras verificações que precisam
+      # de produção: um fork não tem a base, e um trabalho que reprova por falta
+      # de credenciais é um trabalho que se aprende a ignorar.
+      - name: A base de produção tem o que este código vai pedir
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::warning::Sem BACKUP_DATABASE_URL — não dá para saber se produção está em dia com as migrações deste commit. Ver docs/INFRAESTRUTURA.md."
+            exit 0
+          fi
+          ./scripts/migracoes-por-aplicar.sh
+
   regioes:
     name: Regiões
     runs-on: ubuntu-latest
