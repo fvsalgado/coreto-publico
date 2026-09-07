@@ -57,20 +57,33 @@ const PARA_QUEM: ReadonlyArray<{ escala: string; titulo: string; texto: string }
   },
 ];
 
-/** Os três passos, pela ordem em que acontecem — daí serem numerados. */
+/**
+ * Os três passos, pela ordem em que acontecem — daí serem numerados.
+ *
+ * **Não há caixa para preencher no sítio, e não se anuncia nenhuma.** Estas
+ * linhas anunciaram-na durante meses, e ela tinha sido removida de propósito
+ * — `app/[regiao]/submeter/page.tsx` diz porquê: quem programa cultura já
+ * vive no email, e partir o que já lá tem por campos que só a nós fazem falta
+ * é trabalho que se pede sem dar nada em troca. O que existe ao lado do email
+ * é `POST /api/submissions`, que é envio por programa; a rota recusa corpos
+ * de `x-www-form-urlencoded` por decisão de segurança contra CSRF, e anunciar
+ * aqui o contrário convida a reabrir essa porta. Ela não se reabre.
+ */
 const COMO_FUNCIONA: ReadonlyArray<{ titulo: string; texto: string }> = [
   {
     titulo: 'As fontes',
     texto:
       'O Coreto lê o que já está publicado: o sítio da câmara, a agenda do teatro, a página da ' +
-      'biblioteca, o portal da junta. Quem não tem sítio envia por email ou por formulário, e a ' +
-      'ficha faz-se sozinha.',
+      'biblioteca, o portal da junta. Quem não tem sítio envia por email e a ficha faz-se ' +
+      'sozinha; quem já tem os eventos noutro sistema envia-os por programa.',
   },
   {
     titulo: 'A recolha',
     texto:
-      'Todas as noites, fonte a fonte. Os duplicados fundem-se, as categorias normalizam-se, o ' +
-      'que foi corrigido à mão fica protegido — e uma fonte avariada não derruba as outras.',
+      'Uma vez por dia, fonte a fonte. As repetições da mesma fonte fundem-se com prova dela; ' +
+      'os quase-duplicados entre fontes são assinalados e esperam por uma pessoa. As categorias ' +
+      'normalizam-se, o que foi corrigido à mão fica protegido — e uma fonte avariada não ' +
+      'derruba as outras.',
   },
   {
     titulo: 'A publicação',
@@ -84,6 +97,11 @@ const COMO_FUNCIONA: ReadonlyArray<{ titulo: string; texto: string }> = [
  * A ficha propriamente dita: o que se responde a quem pergunta «o que é isto,
  * exactamente?». Pares de campo e valor, e nenhum adjectivo — o que não for
  * verificável no repositório não entra aqui.
+ *
+ * **A frequência diz o dia e não a hora.** Dizia que a recolha era noturna e
+ * diária; o cron do `scrape.yml` está às 03:20 UTC, mas a fila que o executa
+ * atrasa-o horas — as execuções medidas foram às 08:2x, às 10:11 e às 15:28.
+ * A cadência cumpre-se, a hora não: escreve-se a que se cumpre.
  */
 const FICHA: ReadonlyArray<{ campo: string; valor: string }> = [
   {
@@ -94,17 +112,22 @@ const FICHA: ReadonlyArray<{ campo: string; valor: string }> = [
   },
   {
     campo: 'Versão',
-    valor: `${PRODUTO.versao} — a do produto, e muda quando o produto muda de capacidade.`,
+    valor:
+      `${PRODUTO.versao} — a do produto, e muda quando o produto muda de capacidade. Não há ` +
+      'notas de versão publicadas: o que esta faz é o que esta ficha descreve.',
   },
   {
     campo: 'Entrada de dados',
     valor:
       'Recolha automática das agendas publicadas, fonte a fonte, com disjuntor por fonte; ' +
-      'submissão por email e por formulário, com extração automática e fila de moderação.',
+      'submissão por email, com extração automática e fila de moderação; e envio por programa ' +
+      'em POST /api/submissions, para quem tem os eventos noutro sistema.',
   },
   {
     campo: 'Frequência',
-    valor: 'Recolha nocturna, todas as noites. O que a câmara publicou ontem está na agenda hoje.',
+    valor:
+      'Uma recolha por dia. A hora não se promete: o disparo está marcado para a madrugada e a ' +
+      'fila que o executa atrasa-o horas. O que a câmara publicou ontem está na agenda hoje.',
   },
   {
     campo: 'Saídas',
@@ -273,7 +296,7 @@ const FUNCIONALIDADES: ReadonlyArray<{ titulo: string; itens: readonly string[] 
     titulo: 'Para quem edita',
     itens: [
       'Recolha automática das agendas publicadas, fonte a fonte, com disjuntor',
-      'Entrada por email e formulário, com extração automática e fila de moderação',
+      'Entrada por email e por envio de programa, com extração automática e fila de moderação',
       'Deteção de duplicados e bloqueio dos campos corrigidos à mão',
       'Painel com qualidade por concelho, saúde das fontes e auditoria de cada gesto',
     ],
@@ -323,7 +346,7 @@ export function PaginaDaMontra() {
           </h1>
         </div>
         <p className="ct-enter mt-6 max-w-2xl text-lg text-pretty" style={vez(1)}>
-          O {PRODUTO.nome} lê, todas as noites, o que as câmaras, os teatros, as bibliotecas e as
+          O {PRODUTO.nome} lê, uma vez por dia, o que as câmaras, os teatros, as bibliotecas e as
           coletividades já publicam; arruma tudo numa agenda só e leva-a a quem a procura — no
           sítio, no telemóvel, no calendário e nas páginas que a embebem. Serve um município, uma
           comunidade intermunicipal ou uma associação: cada um no seu endereço, com a sua
@@ -423,7 +446,7 @@ export function PaginaDaMontra() {
       <section aria-labelledby="como-funciona" className="ct-reveal mt-16">
         <p className="ct-eyebrow">Como funciona</p>
         <h2 id="como-funciona" className="ct-heading mt-2.5">
-          Da fonte à agenda, todas as noites.
+          Da fonte à agenda, uma vez por dia.
         </h2>
         <ol className="mt-6 grid gap-x-8 gap-y-7 sm:grid-cols-3">
           {COMO_FUNCIONA.map((passo, i) => (
@@ -441,7 +464,11 @@ export function PaginaDaMontra() {
       </section>
 
       <section aria-labelledby="funcionalidades" className="ct-reveal mt-16 scroll-mt-6">
-        <p className="ct-eyebrow">{`O que a versão ${PRODUTO.versao} faz`}</p>
+        {/* Dizia «O que a versão 2.1 faz», e não há para onde mandar quem
+            perguntar o que a 2.1 trouxe: um cabeçalho com número de versão
+            promete notas de versão que não existem. A lista é do que está a
+            correr agora, e é isso que a sobrancelha passa a dizer. */}
+        <p className="ct-eyebrow">O que faz hoje</p>
         <h2 id="funcionalidades" className="ct-heading mt-2.5">
           As funcionalidades
         </h2>

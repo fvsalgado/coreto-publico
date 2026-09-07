@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { EventFilter } from '@coreto/core';
 import { BandstandMark } from './BandstandMark';
 
 interface Props {
@@ -6,6 +7,42 @@ interface Props {
   /** Só quando há mesmo alguma coisa a acrescentar ao título. */
   description?: string;
   action?: { href: string; label: string };
+}
+
+/**
+ * O que se diz a quem filtrou a agenda e ficou sem nada.
+ *
+ * A frase era uma só — «Alargue o intervalo de datas ou limpe alguns
+ * filtros» — e há um caso em que ela aconselha o que não pode resultar. O
+ * acesso a cadeiras de rodas é uma declaração do próprio evento, e uma fonte
+ * que nunca a escreve deixa o recorte vazio por mais anos de agenda que se
+ * peçam: a 7 de setembro de 2026, `?accessible=1` devolvia 0 dos 128 eventos
+ * do Médio Tejo. Mandar alargar as datas culpa quem lê por uma lacuna que é
+ * do catálogo.
+ *
+ * O que a segunda frase **não** diz é quantos são: seria uma contagem que
+ * esta função não tem e que muda de região para região. Diz o que o filtro
+ * faz e onde está o que se sabe, que é verdade em todas.
+ *
+ * Vive ao lado do componente e não na página porque é a mesma doutrina do
+ * comentário abaixo — o vazio explica-se —, e assim tem-se num teste sem
+ * montar React.
+ */
+export function vazioDaAgenda(filter: Pick<EventFilter, 'accessible'>): {
+  title: string;
+  description: string;
+} {
+  if (filter.accessible === true) {
+    return {
+      title: 'Sem resultados para estes filtros.',
+      description:
+        'Este recorte mostra só os eventos onde o acesso a cadeiras de rodas está declarado: sem essa declaração, o evento fica de fora mesmo que o espaço seja acessível. Alargar o intervalo de datas não muda isso — o acesso ao espaço, quando se sabe, está na ficha de cada evento.',
+    };
+  }
+  return {
+    title: 'Sem resultados para estes filtros.',
+    description: 'Alargue o intervalo de datas ou limpe alguns filtros.',
+  };
 }
 
 /**

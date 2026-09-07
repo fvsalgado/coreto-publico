@@ -70,9 +70,15 @@ ${concelhos.map((concelho) => `- ${concelho.name} (\`${concelho.id}\`) — ${ori
 
 ## O que a agenda não cobre, e convém não inventar
 
-- **Só o que está por acontecer.** Um evento que já passou sai da agenda, dos
-  feeds, do mapa e da API. Não há exportação do histórico.${
-    haCiclos ? ' O que sobrevive são\n  as edições passadas dos ciclos, em `/ciclo/<id>`.' : ''
+- **As páginas mostram só o que está por acontecer.** Um evento sai da agenda,
+  dos feeds e do mapa no dia seguinte ao fim; o que já começou e ainda não
+  acabou continua em todos eles.
+- **A API é a exceção, e convém não a confundir com um arquivo.** Com \`from\`
+  numa data passada devolve o que ainda está na base — na prática, o que
+  acabou há menos de 90 dias, porque é a essa idade que a recolha de cada
+  noite o arquiva. A partir daí deixa de sair em qualquer endereço, e não há
+  exportação do histórico.${
+    haCiclos ? ' O que sobrevive são as edições passadas\n  dos ciclos, em `/ciclo/<id>`.' : ''
   }
 - **Nem toda a região está lida.** Há espaços e coletividades sem sítio próprio
   ou sem forma de leitura automática, e por isso sub-representados.${

@@ -161,7 +161,19 @@ export default async function Estatisticas({ searchParams }: Props) {
           </li>
           <li>
             Um evento sem contagens não aparece nas duas primeiras tabelas; na tabela por concelho
-            aparecem sempre os onze.
+            aparecem sempre todos os concelhos, incluindo os que estão a zero.
+          </li>
+          {/*
+            Esteve aqui «aparecem sempre os onze», que eram os do Médio Tejo. A
+            consulta não recorta por região — `event_stats_by_municipality()`
+            devolve os concelhos todos da base —, e por isso a frase contava um
+            número que a tabela não mostra. Enquanto o recorte não existir, o
+            painel diz o que faz; quando existir, é esta nota que sai.
+          */}
+          <li>
+            <strong>Nada aqui está recortado por região.</strong> As consultas juntam os concelhos
+            de todas as regiões que a base tiver, e a última linha soma tudo o que aparece acima. O
+            recorte por região está por fazer; até lá, estes números não são os de uma região só.
           </li>
         </ul>
       </section>
@@ -241,7 +253,7 @@ export default async function Estatisticas({ searchParams }: Props) {
           Por concelho
         </h2>
         <StatTable
-          caption="Totais de aberturas e cliques por concelho, com o total da região na última linha."
+          caption="Totais de aberturas e cliques por concelho, com a soma de todos na última linha."
           columns={MUNICIPALITY_COLUMNS}
           rows={byMunicipality}
           rowKey={(row) => row.municipalityId}

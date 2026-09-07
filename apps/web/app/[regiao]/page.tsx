@@ -1,6 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { janelaDaSemana, listMunicipalityNames, todayInLisbon } from '@coreto/core';
+import {
+  janelaDaSemana,
+  listMunicipalityNames,
+  todayInLisbon,
+  type EventFilter,
+} from '@coreto/core';
 import { Destaques } from '@/src/components/Destaques';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
@@ -36,14 +41,64 @@ export async function generateMetadata({
 /** Quantos eventos cabem na montra antes de valer mais a pena ir à agenda. */
 const WEEK_LIMIT = 40;
 
-const SHORTCUTS: readonly Ancora[] = [
+/** Um atalho da entrada, e o que é preciso saber antes de o oferecer. */
+interface AtalhoDaEntrada extends Ancora {
+  /**
+   * O recorte da agenda a que o atalho leva, quando é preciso contá-lo antes
+   * de o oferecer. Sem isto, o atalho está sempre à vista.
+   */
+  recorte?: Partial<EventFilter>;
+}
+
+const SHORTCUTS: readonly AtalhoDaEntrada[] = [
   { href: '/agenda?free=1', label: 'Entrada livre' },
   { href: '/agenda?category=infantil', label: 'Para a família' },
-  { href: '/agenda?accessible=1', label: 'Acessível' },
+  /*
+   * Este conta-se antes de se oferecer, e a cicatriz é medida.
+   *
+   * A 7 de setembro de 2026, `?accessible=1` devolvia 0 dos 128 eventos do
+   * Médio Tejo e 24 dos 30 da demonstração: o atalho estava na entrada da
+   * agenda real a levar a «Sem resultados para estes filtros». É o modo de
+   * falha mais perigoso que há — passa em todos os ensaios e só está vazio
+   * onde há público —, porque a acessibilidade é declarada no evento e
+   * nenhuma fonte real a declara; os espaços declaram-na, e é para lá que o
+   * filtro há-de cair.
+   *
+   * Por contagem e não por remoção, de propósito: no dia em que o filtro
+   * passar a olhar para o espaço, o atalho volta sozinho — sem ninguém se
+   * lembrar de o repor.
+   */
+  { href: '/agenda?accessible=1', label: 'Acessível', recorte: { accessible: true } },
   // O único destes que se desliga no painel. Os outros três são recortes da
   // agenda, e a agenda não se desliga.
   { href: '/coretos', label: 'Coretos', seccao: 'coretos' },
 ];
+
+/**
+ * Os atalhos que levam a algum lado.
+ *
+ * `semAsDesligadas` tira os que o painel desligou; isto tira os que a base
+ * ainda não sabe responder — um atalho que promete uma lista e entrega um
+ * vazio gasta a confiança de tudo o que está à volta dele. Conta uma linha
+ * por atalho (`limit: 1`, que só o total interessa), e as consultas ficam em
+ * cache uma hora como as outras da página.
+ *
+ * Num build sem base, a contagem é zero e o atalho não aparece: numa página
+ * sem eventos nenhuns é exatamente o que se quer.
+ */
+async function comResultados(
+  regiao: string,
+  atalhos: readonly AtalhoDaEntrada[],
+): Promise<AtalhoDaEntrada[]> {
+  const contados = await Promise.all(
+    atalhos.map(async (atalho) => {
+      if (!atalho.recorte) return atalho;
+      const { total } = await listEvents(regiao, { ...atalho.recorte, page: 1, limit: 1 });
+      return total > 0 ? atalho : null;
+    }),
+  );
+  return contados.filter((atalho): atalho is AtalhoDaEntrada => atalho !== null);
+}
 
 export default async function Home({ params }: { params: Promise<{ regiao: string }> }) {
   const { regiao: regiaoId } = await params;
@@ -66,26 +121,30 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
    */
   const today = todayInLisbon();
 
-  const [week, municipalities, counts, venueNames, desligadas] = await Promise.all([
-    // A mesma semana que o atalho «Esta semana» da agenda mostra — a definição
-    // vive em `@coreto/core` para as duas vistas serem os mesmos sete dias por
-    // construção, e não por coincidência.
-    listEvents(regiao.id, {
-      ...janelaDaSemana(today),
-      page: 1,
-      limit: WEEK_LIMIT,
-    }),
-    listMunicipalities(regiao.id),
-    countEventsByMunicipality(regiao.id),
-    listVenueNames(regiao.id),
-    seccoesDesligadas(regiao.id),
-  ]);
+  const [week, municipalities, counts, venueNames, desligadas, atalhosComEventos] =
+    await Promise.all([
+      // A mesma semana que o atalho «Esta semana» da agenda mostra — a definição
+      // vive em `@coreto/core` para as duas vistas serem os mesmos sete dias por
+      // construção, e não por coincidência.
+      listEvents(regiao.id, {
+        ...janelaDaSemana(today),
+        page: 1,
+        limit: WEEK_LIMIT,
+      }),
+      listMunicipalities(regiao.id),
+      countEventsByMunicipality(regiao.id),
+      listVenueNames(regiao.id),
+      seccoesDesligadas(regiao.id),
+      comResultados(regiao.id, SHORTCUTS),
+    ]);
 
   // «Onze concelhos, um palco» — a contagem por extenso vem da região; num
   // build sem base não há contagem e a frase degrada sem números.
   const temContagem = regiao.concelhosDeclarados > 0;
 
-  const atalhos = semAsDesligadas(SHORTCUTS, desligadas);
+  // As duas peneiras pela ordem que faz sentido: primeiro o que a base tem
+  // para dar, depois o que o painel deixa mostrar.
+  const atalhos = semAsDesligadas(atalhosComEventos, desligadas);
 
   const municipalityNames: Record<string, string> = Object.fromEntries(
     municipalities.map((municipality) => [municipality.id, municipality.name]),

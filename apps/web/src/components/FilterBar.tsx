@@ -164,11 +164,25 @@ export function FilterBar({ filter, municipalities, categories, action, activeCo
                   name="accessible"
                   value="1"
                   defaultChecked={filter.accessible === true}
+                  aria-describedby="filtro-acessivel-nota"
                   className="size-5 accent-accent"
                 />
                 Acesso a cadeiras de rodas
               </label>
             </div>
+            {/* A caixa dizia o que filtra e não o que isso deixa de fora, e a
+                diferença não é académica: o acesso é uma declaração do evento,
+                e a 7 de setembro de 2026 nenhum dos 128 eventos do Médio Tejo
+                a trazia — a caixa mostrava uma agenda vazia sem dizer porquê.
+                A nota não afirma quantos são, que é contagem que muda de
+                região para região; diz o que o filtro faz, que é igual em
+                todas. Por `aria-describedby` para quem ouve a caixa ouvir
+                também a ressalva. */}
+            <p id="filtro-acessivel-nota" className="mt-2 text-sm text-muted">
+              «Acesso a cadeiras de rodas» mostra só os eventos que o declaram: sem declaração, o
+              evento fica de fora mesmo que o espaço seja acessível. O que se sabe do espaço está na
+              ficha de cada evento.
+            </p>
           </fieldset>
         </div>
 

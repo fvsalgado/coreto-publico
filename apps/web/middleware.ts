@@ -57,6 +57,34 @@ const FICHEIROS_DE_RAIZ = ['/favicon.ico', '/icon.svg', '/apple-icon.png'] as co
 const PAGINA_DO_PRODUTO = '/pagina-do-produto';
 
 /**
+ * O que a montra serve, e o caminho interno de cada coisa.
+ *
+ * **Lista fechada, e é o que impede este anfitrião de servir a agenda de
+ * alguém.** Um Host fora do mapa não tem região; o que aqui não estiver leva
+ * o 404 de qualquer página inexistente, que é a regra que já valia para a
+ * raiz e agora vale para quatro endereços em vez de um.
+ *
+ * Os dois de máquina entraram porque faltavam onde mais falta faziam:
+ * `curl -o /dev/null -w '%{http_code}' https://coreto.org/.well-known/security.txt`
+ * dava 404, contra 200 nas duas origens de região — o domínio do produto era o
+ * único sem `security.txt`, e é o primeiro onde um investigador procura. O
+ * mesmo para o `sitemap.xml`. A causa era esta: as duas rotas vivem em
+ * `app/[regiao]/`, e este anfitrião não chega a ter segmento nenhum.
+ *
+ * Os caminhos internos ficam debaixo do da página do produto de propósito.
+ * Herdam dele a propriedade que interessa: `/pagina-do-produto/…` pedido por
+ * fora não é endereço nenhum — num anfitrião de região reescreve-se para
+ * `/<regiao>/pagina-do-produto/…`, que não existe; aqui não está nesta lista,
+ * e cai no mesmo 404. Um endereço, um conteúdo.
+ */
+const CAMINHOS_DA_MONTRA = new Map<string, string>([
+  ['/', PAGINA_DO_PRODUTO],
+  ['/seguranca', `${PAGINA_DO_PRODUTO}/seguranca`],
+  ['/.well-known/security.txt', `${PAGINA_DO_PRODUTO}/seguranca-txt`],
+  ['/sitemap.xml', `${PAGINA_DO_PRODUTO}/sitemap-xml`],
+]);
+
+/**
  * Os endereços cujo caminho público não é o interno, e o segmento onde vivem.
  *
  * Três, e por duas razões. O `sitemap.xml` porque um segmento com esse nome é
@@ -227,13 +255,20 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 /**
- * O anfitrião não é de ninguém: serve-se o produto, e só na raiz.
+ * O anfitrião não é de ninguém: serve-se o produto, e só o que ele tem.
  *
- * Um Host fora do mapa não tem agenda, feeds, sitemap nem manifesto — tem uma
- * página, e é esta. Por isso a raiz vai para o caminho interno e tudo o resto
- * vai para um caminho que não existe, que leva o 404 de qualquer página
- * inexistente: é a mesma manobra do `/sitemap-xml` acima, e é o que impede
- * que este domínio responda 200 a endereços que aqui não significam nada.
+ * Um Host fora do mapa não tem agenda, feeds nem manifesto — tem a ficha
+ * técnica, a política de segurança e os dois ficheiros de máquina que as
+ * anunciam, e é a lista de `CAMINHOS_DA_MONTRA`. Tudo o resto vai para um
+ * caminho que não existe, que leva o 404 de qualquer página inexistente: é a
+ * mesma manobra do `/sitemap-xml` acima, e é o que impede que este domínio
+ * responda 200 a endereços que aqui não significam nada.
+ *
+ * O sitemap e o `security.txt` da montra falam sempre da mesma origem — a do
+ * canónico que a ficha técnica já declara —, e por isso servem-se a
+ * **qualquer** anfitrião desconhecido sem dizer nada de falso: é a mesma
+ * decisão do canónico fixo, que manda para o original em vez de se esconder.
+ * Quem lê a linha `Canonical:` sabe onde é a casa.
  *
  * **O `X-Robots-Tag` ficou só para o 404, e a razão vale a pena.** Ia nas duas
  * respostas, a acompanhar o `noindex` que a página declarava — o mesmo
@@ -247,11 +282,11 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
  * No 404 fica, porque aí não há nada a indexar em endereço nenhum.
  */
 function paginaDoProduto(request: NextRequest): NextResponse {
-  const raiz = request.nextUrl.pathname === '/';
+  const interno = CAMINHOS_DA_MONTRA.get(request.nextUrl.pathname);
   const destino = request.nextUrl.clone();
-  destino.pathname = raiz ? PAGINA_DO_PRODUTO : `${PAGINA_DO_PRODUTO}/nao-e-endereco`;
+  destino.pathname = interno ?? `${PAGINA_DO_PRODUTO}/nao-e-endereco`;
   const resposta = NextResponse.rewrite(destino);
-  if (!raiz) resposta.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  if (!interno) resposta.headers.set('X-Robots-Tag', 'noindex, nofollow');
   return resposta;
 }
 

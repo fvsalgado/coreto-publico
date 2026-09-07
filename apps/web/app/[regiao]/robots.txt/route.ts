@@ -21,6 +21,20 @@ import { urlDoSitio } from '@/src/lib/regiao';
 
 export const revalidate = 3600;
 
+/**
+ * O charset declarado, e não deixado ao acaso.
+ *
+ * Saía `text/plain` seco — confirmado em produção:
+ * `curl -sI https://mediotejo.coreto.org/robots.txt` devolvia
+ * `content-type: text/plain`, sem charset. E este ficheiro tem acentos no
+ * corpo («Os agentes de resposta são bem-vindos»), porque é escrito em
+ * português como o resto da casa. Sem charset, quem lê fica autorizado a
+ * adivinhar — e a norma antiga do `text/plain` manda adivinhar Latin-1, que
+ * transforma cada acento em dois carateres. O `security.txt` e o `llms.txt`,
+ * ao lado, já o declaravam; era este que ia sozinho.
+ */
+const TIPO_DE_CONTEUDO = 'text/plain; charset=utf-8';
+
 export async function GET(
   _request: Request,
   routeContext: { params: Promise<{ regiao: string }> },
@@ -59,7 +73,7 @@ export async function GET(
       ].join('\n'),
       {
         headers: {
-          'Content-Type': 'text/plain',
+          'Content-Type': TIPO_DE_CONTEUDO,
           'Cache-Control': 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
         },
       },
@@ -106,7 +120,7 @@ export async function GET(
 
   return new Response(texto, {
     headers: {
-      'Content-Type': 'text/plain',
+      'Content-Type': TIPO_DE_CONTEUDO,
       'Cache-Control': 'public, max-age=0, s-maxage=3600, stale-while-revalidate=86400',
     },
   });

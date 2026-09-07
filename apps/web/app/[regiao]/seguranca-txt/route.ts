@@ -2,6 +2,10 @@ import { SITE_URL } from '@/src/lib/env';
 import { PRODUTO } from '@/src/lib/produto';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { urlDoSitio } from '@/src/lib/regiao';
+import {
+  URL_DA_POLITICA,
+  validadeDoSecurityTxt,
+} from '@/app/pagina-do-produto/politica-de-seguranca';
 
 /**
  * Onde escrever quando se encontra uma falha — no sítio onde se procura.
@@ -25,19 +29,6 @@ import { urlDoSitio } from '@/src/lib/regiao';
  */
 
 export const revalidate = 3600;
-
-/**
- * A validade, ancorada no primeiro dia de um mês seis meses à frente.
- *
- * Ancorada e não «agora mais seis meses» porque uma data que muda a cada
- * pedido faz o ficheiro diferir entre duas leituras da mesma hora, e um
- * `security.txt` que nunca é byte a byte igual a si próprio é um ficheiro que
- * nenhuma cache e nenhum varredor conseguem comparar.
- */
-function validoAte(agora: Date): string {
-  const mes = Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + 6, 1, 0, 0, 0);
-  return new Date(mes).toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
 
 export async function GET(
   _request: Request,
@@ -63,10 +54,23 @@ export async function GET(
 
   const texto = [
     ...contactos.map((email) => `Contact: mailto:${email}`),
-    `Expires: ${validoAte(new Date())}`,
+    `Expires: ${validadeDoSecurityTxt(new Date())}`,
     'Preferred-Languages: pt, en',
+    /*
+     * A política de segurança primeiro, e num domínio nosso.
+     *
+     * Apontava para `github.com/fvsalgado/coreto/blob/main/SECURITY.md`, e o
+     * repositório é privado: o campo que existe para dar o âmbito e os prazos
+     * dava um 404 a quem seguisse a RFC 9116. Passou a ser servida no próprio
+     * domínio, no endereço que `pagina-do-produto/politica-de-seguranca.ts`
+     * declara — e é lá que está escrito porque é do produto e não da região.
+     *
+     * A de privacidade fica em segundo por ser a outra política que interessa
+     * a quem chega aqui — a que diz o que se faz com os dados que uma falha
+     * possa ter exposto —, e essa é da região, na origem dela.
+     */
+    `Policy: ${URL_DA_POLITICA}`,
     `Policy: ${origem}/privacidade`,
-    'Policy: https://github.com/fvsalgado/coreto/blob/main/SECURITY.md',
     `Canonical: ${origem}/.well-known/security.txt`,
     '',
     '# O âmbito, os prazos e o que já está feito estão na política acima.',

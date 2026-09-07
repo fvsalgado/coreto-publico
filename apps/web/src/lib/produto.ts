@@ -18,6 +18,11 @@ export const PRODUTO = {
   nome: 'Coreto',
   // A versão do produto, não a de um pacote: é a que a montra anuncia e a
   // que muda quando o produto muda de capacidade, decidida pelo dono.
+  //
+  // Não há notas de versão publicadas, e enquanto não houver o número não
+  // pode servir de cabeçalho: a ficha chegou a anunciar «O que a versão 2.1
+  // faz» sem ter para onde mandar quem quisesse ir ver o que ela fez. Quem
+  // publicar notas de versão tira a ressalva de `PaginaDaMontra.tsx`.
   versao: '2.1',
   /*
    * O endereço de quem responde pelo produto — o mesmo que a região montra

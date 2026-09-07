@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { capturePageView } from '@/src/lib/analytics/posthog';
+import { ehCaixaEmbebida } from '@/src/lib/analytics/caixa-embebida';
 
 /**
  * Arranque do PostHog e envio das vistas de página.
@@ -33,12 +33,24 @@ import { capturePageView } from '@/src/lib/analytics/posthog';
  * medição não vale o custo de tornar o sítio inteiro dinâmico; o que se perde
  * é a distinção entre dois filtros da mesma página, que não é o que faz
  * falta.
+ *
+ * **O `posthog.ts` entra por importação dinâmica, e a caixa embebida decide-se
+ * antes dela.** Este componente é de cliente e está no layout da região; o
+ * widget serve-se por baixo desse layout. Com a importação estática que aqui
+ * esteve, o pacote com a chave e a biblioteca era descarregado dentro do
+ * `iframe` de cada câmara — para a guarda o mandar embora sem correr. Não era
+ * uma fuga (mediu-se: não saía um único pedido de lá), era peso morto na casa
+ * de um cliente, e a única forma de o tirar é a pergunta vir de um módulo que
+ * não arrasta nada: `caixa-embebida.ts`.
  */
 export function AnalyticsProvider({ regiao }: { regiao: string }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    void capturePageView(pathname, regiao);
+    if (ehCaixaEmbebida(pathname)) return;
+    void import('@/src/lib/analytics/posthog').then(({ capturePageView }) =>
+      capturePageView(pathname, regiao),
+    );
   }, [pathname, regiao]);
 
   return null;

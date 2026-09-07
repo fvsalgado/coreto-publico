@@ -1,3 +1,5 @@
+import { ehCaixaEmbebida } from './caixa-embebida';
+
 /**
  * PostHog, em modo sem cookies e sem armazenamento no equipamento.
  *
@@ -173,10 +175,15 @@ export function propriedadesDaVista(path: string, regiao: string): Record<string
  * O caminho aqui é o público, o que está na barra do navegador dentro do
  * `iframe` (`/widget/tomar`) — o mesmo que a barra de navegação lê para não
  * se acender lá dentro, ver `lib/navegacao.ts`.
+ *
+ * **A função mudou de casa e continua a ser chamada aqui.** Vive agora em
+ * `caixa-embebida.ts`, sozinha e sem dependências, para o `AnalyticsProvider`
+ * a poder perguntar sem importar este ficheiro — que traz a chave e a
+ * biblioteca atrás dele, e ia parar ao `iframe` de cada câmara. A guarda fica
+ * aqui na mesma, e é de propósito: quem chamar `capturePageView` por outro
+ * caminho continua protegido por ela.
  */
-export function ehCaixaEmbebida(path: string): boolean {
-  return path.startsWith('/widget/');
-}
+export { ehCaixaEmbebida } from './caixa-embebida';
 
 /** Uma vista de página. Não faz nada quando o PostHog não está configurado. */
 export async function capturePageView(path: string, regiao: string): Promise<void> {

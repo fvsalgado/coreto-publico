@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
+import type { Regiao } from '@/src/lib/regiao';
 
 interface Props {
   params: Promise<{ regiao: string }>;
@@ -129,6 +130,21 @@ const FORMAS: readonly { Icone: Icone; titulo: string; texto: string; nota: stri
   },
 ];
 
+/**
+ * Onde é que «tem lugar aqui» é — composto da região, nunca escrito à mão.
+ *
+ * Esteve aqui a contagem do Médio Tejo escrita por extenso, o que é verdade
+ * lá e mentira em todas as outras agendas: esta página serve-se em todas, e a
+ * demonstração tem dois concelhos. Abaixo de dois a contagem não faz frase —
+ * e a região de recurso declara zero —, por isso aí nomeia-se o território em
+ * vez de o contar.
+ */
+function ondeHaLugar(regiao: Regiao): string {
+  return regiao.concelhosDeclarados >= 2
+    ? `num dos ${regiao.concelhosPorExtenso} concelhos`
+    : regiao.noNome;
+}
+
 const AJUDA: readonly [string, string][] = [
   ['O nome do evento', 'como aparece no cartaz.'],
   ['A data e a hora', 'e as datas todas, se repetir.'],
@@ -253,7 +269,7 @@ export default async function SubmitPage({ params }: Props) {
                 ) : (
                   'o email da agenda'
                 )}
-                . E se a vossa agenda já vive num sítio que se possa ler todas as noites,{' '}
+                . E se a vossa agenda já vive num sítio que se possa ler todos os dias,{' '}
                 {haFontes ? (
                   <Link href="/fontes" className="underline underline-offset-4">
                     ligamo-la de vez
@@ -290,8 +306,8 @@ export default async function SubmitPage({ params }: Props) {
       <div className="mt-8 max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
         <p>
           Esta agenda é feita para caber a programação toda — a do teatro municipal e a do concerto
-          da filarmónica no coreto. Quem organiza alguma coisa aberta ao público num dos onze
-          concelhos tem lugar aqui.
+          da filarmónica no coreto. Quem organiza alguma coisa aberta ao público{' '}
+          {ondeHaLugar(regiao)} tem lugar aqui.
         </p>
       </div>
 

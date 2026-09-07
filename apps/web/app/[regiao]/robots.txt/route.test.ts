@@ -71,7 +71,9 @@ describe('GET /robots.txt', () => {
   it('deixa tudo aberto menos a moderação, e manda ao mapa do próprio domínio', async () => {
     const resposta = await GET(PEDIDO, contexto('travessia'));
 
-    expect(resposta.headers.get('Content-Type')).toBe('text/plain');
+    // Com charset, e não `text/plain` seco: o corpo tem acentos, e a norma
+    // antiga do `text/plain` manda adivinhar Latin-1.
+    expect(resposta.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
     expect((await resposta.text()).split('\n')).toEqual([
       'User-Agent: *',
       'Allow: /',

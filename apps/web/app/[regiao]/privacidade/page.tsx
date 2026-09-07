@@ -4,11 +4,22 @@ import { PageHeader } from '@/src/components/PageHeader';
 import { Pontos } from '@/src/components/informacoes/Pontos';
 import { PorExtenso } from '@/src/components/informacoes/PorExtenso';
 import { PRIVACIDADE, SUBCONTRATANTES } from '@/src/components/informacoes/privacidade';
-import { hasAnalytics } from '@/src/lib/env';
+import { postHogScriptUrl } from '@/src/lib/analytics/posthog';
+import { env, hasAnalytics } from '@/src/lib/env';
 import { formatLongDate } from '@/src/lib/format';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import { REVISAO_PRIVACIDADE } from '@/src/lib/revisao';
+
+/*
+ * Os dois nomes que a página escreve são derivados da mesma variável de onde
+ * a CSP tira os dela (ver `next.config.ts`). Escritos à mão, uma mudança de
+ * região da ferramenta — `eu` para `us` — deixava a política a nomear
+ * servidores que já ninguém contacta, e uma política que nomeia o servidor
+ * errado é pior do que uma que não nomeia nenhum.
+ */
+const ANFITRIAO_DA_MEDICAO = new URL(env.NEXT_PUBLIC_POSTHOG_HOST).host;
+const ANFITRIAO_DO_SCRIPT = new URL(postHogScriptUrl(env.NEXT_PUBLIC_POSTHOG_HOST)).host;
 
 export const metadata: Metadata = {
   title: 'Privacidade',
@@ -129,17 +140,45 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           tempo. Não permite reconstruir o endereço nem identificar ninguém, e é apagado ao fim de
           dois dias.
         </p>
+        {/*
+          Esta frase disse «nada» durante o tempo em que o PostHog já corria em
+          produção — e uma frase falsa numa política desconta as verdadeiras que
+          estão ao lado dela. Agora segue a configuração: sem chave não sai
+          daqui um evento e «nada» volta a ser verdade.
+        */}
         <p>
-          <strong>De quem só visita:</strong> nada. O fornecedor de alojamento mantém, como qualquer
-          alojamento, registos técnicos de acesso para segurança e diagnóstico; esses registos não
-          são usados por nós para analisar comportamentos.
+          <strong>De quem só visita:</strong>{' '}
+          {hasAnalytics ? (
+            <>
+              um evento por cada página aberta, sem identificação de quem a abriu. Leva o caminho da
+              página, o identificador da região e o que a ferramenta de medição junta a qualquer
+              evento — o endereço da página, o navegador e o sistema, e a página de onde se veio.
+              Leva também um identificador que existe só na memória do separador e desaparece quando
+              ele fecha: liga as páginas de uma mesma visita e nunca duas visitas diferentes. Não
+              leva nome, conta nem endereço de email, e o que fica de fora está mais abaixo, em
+              «Como é medida a utilização».
+            </>
+          ) : (
+            'nada.'
+          )}{' '}
+          O fornecedor de alojamento mantém, como qualquer alojamento, registos técnicos de acesso
+          para segurança e diagnóstico; esses registos não são usados por nós para analisar
+          comportamentos.
         </p>
 
         <h2 className="pt-2 font-semibold">O que sai daqui para fora</h2>
+        {/*
+          O número é contado pela configuração e não à mão. À mão dizia «três»
+          com quatro na página: o PostHog entrou e a contagem ficou para trás,
+          que é o engano que uma frase presa à configuração não deixa repetir.
+        */}
         <p>
-          <strong>Três coisas, e vale a pena dizer quais e onde.</strong> Nenhuma delas leva cookies
-          nem identificadores nossos; todas elas revelam o seu endereço IP ao servidor a que o
-          navegador vai buscar a imagem, como acontece com qualquer imagem servida por terceiros.
+          <strong>
+            {hasAnalytics ? 'Quatro coisas' : 'Três coisas'}, e vale a pena dizer quais e onde.
+          </strong>{' '}
+          Nenhuma delas leva cookies nem identificadores nossos; todas elas revelam o seu endereço
+          IP ao servidor a que o navegador se liga, como acontece com qualquer conteúdo servido por
+          terceiros.
         </p>
         <p>
           <strong>Os pedaços do mapa</strong>, e só em <Link href="/mapa">/mapa</Link>. O mapa da
@@ -202,6 +241,17 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           quem o fez, e ligá-lo é mais honesto do que copiá-lo. Aparece onde o evento aparecer: na
           agenda, na página inicial, no mapa e na ficha.
         </p>
+        {hasAnalytics ? (
+          <p>
+            <strong>A medição de utilização</strong>, em todas as páginas menos na caixa que uma
+            câmara embebe no sítio dela. É a única desta lista que não é uma imagem e a única que
+            existe para nos dizer alguma coisa a nós: em cada página aberta, o navegador vai buscar
+            o programa da ferramenta a <code>{ANFITRIAO_DO_SCRIPT}</code> e envia-lhe o evento da
+            página para <code>{ANFITRIAO_DA_MEDICAO}</code>. De dentro da caixa embebida não sai um
+            único pedido para lá, porque o que ali se passa é trânsito do sítio da câmara e não
+            deste. O que vai no evento está já a seguir.
+          </p>
+        ) : null}
 
         <h2 className="pt-2 font-semibold">Como é medida a utilização</h2>
         <p>
@@ -218,7 +268,11 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
             sem cookies e sem <i lang="en">localStorage</i> — o identificador que a ferramenta gera
             fica só em memória e desaparece quando o separador fecha —, sem gravação de sessão, sem
             captura automática de cliques, sem inquéritos e sem criação de perfis. Os dados ficam em
-            servidores na União Europeia, com a opção que descarta o endereço IP ativada.
+            servidores na União Europeia. O endereço IP chega ao PostHog com o pedido, como chega a
+            qualquer servidor, e é lá descartado pela opção «descartar dados de IP do cliente». Essa
+            opção é uma definição do projeto no painel do PostHog, ligada por quem instala esta
+            agenda, e não uma linha deste código: é a única afirmação desta página que não se pode
+            confirmar a partir do repositório.
           </p>
         ) : (
           <p>
