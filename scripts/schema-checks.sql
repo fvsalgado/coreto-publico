@@ -1050,6 +1050,51 @@ end
 $$;
 rollback;
 
+-- ---- Nada de `security definer` ao alcance de quem não é a chave de serviço ----
+--
+-- A regra está escrita desde a 0007 e nunca esteve verificada: lá, oito funções
+-- foram revogadas uma a uma, à mão. Uma regra que se cumpre à mão cumpre-se até
+-- ao dia em que alguém escreve a nona — e escreveram-se três, nas 0129 e 0130,
+-- todas com o `execute` que o Postgres dá a PUBLIC por omissão. Quem as apanhou
+-- foi o linter da Supabase, que existe, funciona, e ninguém lia.
+--
+-- Isto não tem lista de exceções de propósito. Se um dia uma função
+-- `security definer` tiver mesmo de ser pública, a exceção escreve-se aqui com
+-- a razão ao lado — que é o momento em que alguém tem de a justificar.
+do
+$$
+declare
+  v_ao_alcance text;
+begin
+  select string_agg(p.proname || '() → ' || pg_get_function_result(p.oid), ', ' order by p.proname)
+    into v_ao_alcance
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.prosecdef
+     and (has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute'));
+
+  assert v_ao_alcance is null,
+    format('funções security definer ao alcance do anon ou do authenticated: %s', v_ao_alcance);
+end
+$$;
+
+-- A tabela dos resumos das migrações vive no esquema que o PostgREST serve, e
+-- é a única que nasceu fora de uma migração — por isso escapou à regra das
+-- outras treze tabelas de serviço até à 0134.
+do
+$$
+begin
+  assert (select relrowsecurity from pg_class where oid = 'public.migration_checksums'::regclass),
+    'migration_checksums está no esquema exposto sem RLS';
+  assert not has_table_privilege('anon', 'public.migration_checksums', 'select'),
+    'o anon lê a lista de migrações aplicadas';
+  assert not has_table_privilege('authenticated', 'public.migration_checksums', 'select'),
+    'quem tem sessão lê a lista de migrações aplicadas';
+end
+$$;
+
 -- ---- Prazos de conservação (0133) ----
 --
 -- A política publicada promete apagar; isto verifica que o código apaga o que
