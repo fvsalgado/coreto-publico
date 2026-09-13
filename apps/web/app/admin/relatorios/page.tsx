@@ -364,6 +364,41 @@ export default async function Relatorios({ searchParams }: Props) {
             </Seccao>
 
             <Seccao
+              id="territorio"
+              titulo="Território"
+              legenda="Quanto do território publica agenda própria. As juntas ligadas são o numerador; as freguesias da região, o denominador. A fração fica por fazer de propósito: uma percentagem é uma leitura, e quem escreve o relatório anual faz a sua."
+            >
+              <StatTable
+                caption="Concelhos, freguesias e fontes institucionais ligadas."
+                columns={CONTAGENS}
+                rows={[
+                  {
+                    chave: 'concelhos',
+                    rotulo: 'Concelhos',
+                    valor: relatorio.territory.municipalities,
+                  },
+                  {
+                    chave: 'camaras',
+                    rotulo: 'Câmaras com agenda lida',
+                    valor: relatorio.territory.municipal_sources_enabled,
+                  },
+                  {
+                    chave: 'juntas',
+                    rotulo: 'Juntas de freguesia com agenda lida',
+                    valor: relatorio.territory.parish_sources_enabled,
+                  },
+                ]}
+                rowKey={(c) => c.chave}
+                emptyMessage="A região não tem concelhos."
+              />
+              <p className="mt-3 text-sm text-muted">
+                {relatorio.territory.parishes === null
+                  ? 'Falta contar as freguesias de pelo menos um concelho desta região, por isso o denominador não aparece: «26 em 72» e «26 em 84» leem-se de maneiras diferentes, e publicar o primeiro por o segundo estar incompleto seria dizer mais do que se sabe.'
+                  : `A região tem ${contar(relatorio.territory.parishes)} freguesias.`}
+              </p>
+            </Seccao>
+
+            <Seccao
               id="submissoes"
               titulo="Submissões"
               legenda="O que entrou na fila de moderação no mês, por canal, e o que foi revisto no mês, pelo desfecho. «Outras» são as fundidas com um evento que já existia, as marcadas como duplicado e as que ficaram à espera de informação."

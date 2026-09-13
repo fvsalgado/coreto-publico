@@ -33,6 +33,12 @@ const RELATORIO: RelatorioMensal = {
     totals: { published_in_month: 0, happening_in_month: 0, published_now: 0 },
   },
   sources: [],
+  territory: {
+    municipalities: 2,
+    parishes: 8,
+    municipal_sources_enabled: 2,
+    parish_sources_enabled: 1,
+  },
   submissions: {
     received_by_channel: { scraper: 0, email: 0, form: 0 },
     received: 0,

@@ -1,0 +1,24 @@
+-- 0135 — `parish_site`: uma junta de freguesia não é uma sala.
+--
+-- Sozinha e num ficheiro só porque `alter type … add value` não pode correr na
+-- mesma transação que **usa** o valor novo, e o `aplicar-migracoes.sh` corre
+-- cada ficheiro com `--single-transaction`. A 0136 é que o usa.
+--
+-- O `source_kind` nasceu na 0001 com cinco valores, e três deles descrevem o
+-- transporte (`feed`, `pdf_agenda`) ou o nada (`manual`); só dois descrevem
+-- quem publica. As 26 juntas ligadas entraram como `venue_site` (0057) por não
+-- haver outro sítio onde as pôr, e ficaram misturadas com o Teatro Virgínia e o
+-- Museu Nacional Ferroviário. Medido hoje: 27 fontes com id de junta, **zero**
+-- com `venue_id` — uma junta não é um espaço, e a tabela dizia que era.
+--
+-- **Não se acrescenta `association_site`, e a razão é a regra da casa.** O
+-- plano pedia os dois. Mas quem é coletividade já está escrito, e está escrito
+-- no sítio certo: `venues.is_association`. Medido: das 13 fontes `venue_site`
+-- que não são juntas, 11 têm espaço, e três desses espaços são associações — o
+-- Cineclube de Torres Novas, os Espalhafitas e a Filarmónica da Ponte. Um
+-- segundo sítio para o mesmo facto são dois factos no dia em que um deles
+-- mudar. As duas únicas fontes sem espaço (`fatima-eventos` e
+-- `visitbarquinha-eventos`, ambas desligadas) ficam como estão: classificá-las
+-- pelo nome era eu a decidir o que ninguém mediu.
+
+alter type public.source_kind add value if not exists 'parish_site';

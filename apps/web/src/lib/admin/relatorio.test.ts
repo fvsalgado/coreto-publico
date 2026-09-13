@@ -67,6 +67,12 @@ const RELATORIO: RelatorioMensal = {
       items_new_in_month: 0,
     },
   ],
+  territory: {
+    municipalities: 2,
+    parishes: 8,
+    municipal_sources_enabled: 2,
+    parish_sources_enabled: 1,
+  },
   submissions: {
     received_by_channel: { scraper: 40, email: 3, form: 0 },
     received: 43,
@@ -211,6 +217,7 @@ describe('paraCsv', () => {
       'seccao;concelho_id;concelho;eventos',
       'seccao;chave;valor',
       'seccao;fonte_id;fonte;concelho_id;ligada;execucoes;falhas;ultimo_sucesso;itens_novos_no_mes',
+      'seccao;chave;valor',
       'seccao;canal;recebidas',
       'seccao;desfecho;revistas',
       'seccao;concelho_id;concelho;publicados;por_publicar;no_catalogo;com_hora;com_espaco;com_imagem;com_descricao;com_preco;com_coordenadas',
@@ -219,6 +226,26 @@ describe('paraCsv', () => {
     ]);
     // Uma linha vazia entre blocos, e nunca duas.
     expect(csv).not.toContain('\r\n\r\n\r\n');
+  });
+
+  it('leva o numerador e o denominador do território, e não a percentagem', () => {
+    expect(linhas).toContain('territorio;concelhos;2');
+    expect(linhas).toContain('territorio;freguesias;8');
+    expect(linhas).toContain('territorio;camaras_ligadas;2');
+    expect(linhas).toContain('territorio;juntas_ligadas;1');
+    // A fração é de quem lê. Se um dia aparecer aqui uma percentagem, é porque
+    // alguém achou que a fazia melhor do que a técnica que recebe o ficheiro.
+    expect(csv).not.toMatch(/territorio;[^;]+;[\d.,]+%/);
+  });
+
+  it('deixa as freguesias em branco quando falta contar um concelho', () => {
+    // Nulo é «não consegui saber», e não zero: um zero num denominador é uma
+    // divisão por zero à espera, na folha de cálculo de quem abrir isto.
+    const semDenominador = paraCsv({
+      ...RELATORIO,
+      territory: { ...RELATORIO.territory, parishes: null },
+    });
+    expect(semDenominador.split('\r\n')).toContain('territorio;freguesias;');
   });
 
   it('escreve cada linha com o nome da secção à cabeça', () => {
