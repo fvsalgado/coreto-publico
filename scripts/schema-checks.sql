@@ -1050,6 +1050,142 @@ end
 $$;
 rollback;
 
+-- ---- Prazos de conservação (0133) ----
+--
+-- A política publicada promete apagar; isto verifica que o código apaga o que
+-- ela promete e **só** isso. As fixtures são uma por FORMATO de payload e não
+-- uma por canal: o que uma primeira versão da âncora não sabia ler era o
+-- formato do email (`dates[]`), e uma asserção escrita por canal passava na
+-- mesma porque a fixture do email trazia um `date_start` que a rota nunca
+-- escreve.
+begin;
+
+insert into public.submissions (id, channel, status, municipality_id, payload,
+                                sender_email, ip_hash, raw_text, created_at)
+values
+  -- caducada: email de um evento que aconteceu há 30 meses
+  ('e0000000-0000-4000-8000-000000000001', 'email', 'rejected', 'tomar',
+   jsonb_build_object('title', 'Já foi', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date - interval '30 months', 'YYYY-MM-DD')))),
+   'antigo@exemplo.pt', 'hash-antigo', 'o texto do email', now() - interval '30 months'),
+  -- caducada também, mas com um anexo ainda no balde
+  ('e0000000-0000-4000-8000-000000000002', 'email', 'rejected', 'tomar',
+   jsonb_build_object('title', 'Com cartaz', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date - interval '30 months', 'YYYY-MM-DD')))),
+   'cartaz@exemplo.pt', 'hash-cartaz', 'o texto do outro', now() - interval '30 months'),
+  -- NÃO caducada: chegou há 30 meses, mas o evento é daqui a dois — e é o caso
+  -- que separa este expurgo de «apagar 24 meses depois de chegar»
+  ('e0000000-0000-4000-8000-000000000003', 'email', 'pending', 'tomar',
+   jsonb_build_object('title', 'Ainda vai ser', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date + interval '2 months', 'YYYY-MM-DD')))),
+   'futuro@exemplo.pt', 'hash-futuro', 'o texto do terceiro', now() - interval '30 months');
+
+-- A fotografia que a `reject_submission` grava em `admin_actions.before` (0006)
+-- leva o endereço, o hash do IP e o texto em bruto.
+insert into public.admin_actions (actor, action, entity_type, entity_id, before)
+values ('ci', 'submission.reject', 'submission', 'e0000000-0000-4000-8000-000000000001',
+        jsonb_build_object('id', 'e0000000-0000-4000-8000-000000000001',
+                           'sender_email', 'antigo@exemplo.pt',
+                           'ip_hash', 'hash-antigo',
+                           'raw_text', 'o texto do email',
+                           'status', 'pending'));
+
+insert into public.submission_attachments (submission_id, storage_path, mime_type, size_bytes)
+values ('e0000000-0000-4000-8000-000000000002', 'e0000000/cartaz.pdf', 'application/pdf', 2048);
+insert into storage.objects (bucket_id, name) values ('intake', 'e0000000/cartaz.pdf');
+
+do $$
+declare
+  v_apagadas integer;
+  v_retidas integer;
+  v_before jsonb;
+begin
+  select apagadas, retidas into v_apagadas, v_retidas from public.prune_submissions();
+
+  assert v_apagadas = 1, format('esperava-se uma submissão apagada, foram %s', v_apagadas);
+  assert v_retidas = 1, format('esperava-se uma submissão retida pelo anexo, foram %s', v_retidas);
+
+  assert not exists (select 1 from public.submissions
+                      where id = 'e0000000-0000-4000-8000-000000000001'),
+    'a submissão caducada sem anexos não foi apagada';
+
+  -- Os bytes ainda estão no balde: apagar a linha deixava-os lá sem ninguém
+  -- que soubesse o caminho.
+  assert exists (select 1 from public.submissions
+                  where id = 'e0000000-0000-4000-8000-000000000002'),
+    'a submissão com o anexo ainda no balde foi apagada — os bytes ficaram órfãos';
+
+  -- E o evento que ainda não aconteceu fica, mesmo tendo chegado há 30 meses.
+  assert exists (select 1 from public.submissions
+                  where id = 'e0000000-0000-4000-8000-000000000003'),
+    'apagou-se a submissão de um evento que ainda não aconteceu — a âncora não leu o payload do email';
+
+  select before into v_before from public.admin_actions
+   where entity_id = 'e0000000-0000-4000-8000-000000000001';
+  assert not (v_before ? 'sender_email'), 'o endereço ficou na fotografia de admin_actions.before';
+  assert not (v_before ? 'ip_hash'), 'o hash do IP ficou na fotografia de admin_actions.before';
+  assert not (v_before ? 'raw_text'), 'o texto em bruto ficou na fotografia de admin_actions.before';
+  assert v_before ? 'status', 'a anonimização levou atrás o resto do rasto';
+  assert v_before ? 'expurgado_em', 'a fotografia não diz que foi expurgada';
+end
+$$;
+
+-- Tirado o ficheiro do balde pela API do Storage, a linha sai na noite
+-- seguinte, e o anexo vai atrás por cascata.
+delete from storage.objects where bucket_id = 'intake' and name = 'e0000000/cartaz.pdf';
+
+do $$
+declare
+  v_apagadas integer;
+  v_retidas integer;
+begin
+  select apagadas, retidas into v_apagadas, v_retidas from public.prune_submissions();
+  assert v_apagadas = 1 and v_retidas = 0,
+    format('depois de o ficheiro sair do balde esperavam-se 1 apagada e 0 retidas, foram %s e %s',
+           v_apagadas, v_retidas);
+  assert not exists (select 1 from public.submission_attachments
+                      where submission_id = 'e0000000-0000-4000-8000-000000000002'),
+    'o anexo não saiu por cascata com a submissão';
+end
+$$;
+
+-- As quotas de remetente: as inativas saem, a bloqueada fica. Um bloqueio é
+-- uma decisão humana e o prazo de conservação não é uma amnistia (0018).
+insert into public.sender_quotas (sender_email, updated_at, is_blocked)
+values ('inativo@exemplo.pt', now() - interval '30 months', false),
+       ('bloqueado@exemplo.pt', now() - interval '30 months', true),
+       ('recente@exemplo.pt', now(), false);
+
+do $$
+declare
+  n integer;
+begin
+  n := public.prune_sender_quotas();
+  assert n = 1, format('esperava-se uma quota apagada, foram %s', n);
+  assert exists (select 1 from public.sender_quotas where sender_email = 'bloqueado@exemplo.pt'),
+    'o expurgo desfez um bloqueio em silêncio';
+  assert exists (select 1 from public.sender_quotas where sender_email = 'recente@exemplo.pt'),
+    'o expurgo apagou uma quota dentro do prazo';
+end
+$$;
+
+-- E o registo de moderação com mais de 24 meses.
+insert into public.admin_actions (actor, action, entity_type, entity_id, created_at)
+values ('ci', 'event.hide', 'event', 'prova-do-prazo', now() - interval '30 months');
+
+do $$
+declare
+  n integer;
+begin
+  n := public.prune_admin_actions();
+  assert n = 1, format('esperava-se uma ação de moderação apagada, foram %s', n);
+  assert not exists (select 1 from public.admin_actions where entity_id = 'prova-do-prazo'),
+    'a ação de moderação fora de prazo ficou';
+end
+$$;
+
+rollback;
+
 -- ---- Contadores por evento ----
 begin;
 insert into public.events (id, slug, title, municipality_id, venue_id, status, origin,

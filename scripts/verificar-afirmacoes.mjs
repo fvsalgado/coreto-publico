@@ -734,6 +734,93 @@ presente(
   },
 );
 /*
+ * Os prazos de conservação: três coisas que só valem juntas.
+ *
+ * O `docs/RGPD.md` §5 promete apagar, a `/privacidade` publica a promessa sem
+ * ressalva, e o SQL da 0133 executa-a. Entre os três há duas costuras que já se
+ * soltaram uma vez cada:
+ *
+ * **(a) O formato do payload.** O prazo conta «após a data do evento», e essa
+ * data está dentro do `payload` da submissão — em três formas, uma por canal.
+ * O canal de email grava um `ExtractedEvent`, que não tem `date_start`: as
+ * ocorrências vêm em `dates: [{ date, startTime }]`. Uma primeira versão da
+ * função lia duas das três formas e, para o canal de email, recuava em silêncio
+ * para a data de chegada — apagava a submissão de um evento que ainda não tinha
+ * acontecido, que é o contrário exato da frase publicada, e no canal que é
+ * justamente o que traz `sender_email`, `ip_hash` e `raw_text`. Se alguém
+ * mudar o nome da chave no schema da extração, isto apanha-o no mesmo dia.
+ *
+ * **(b) Uma função de expurgo que ninguém chama.** É o defeito desta casa em
+ * forma canónica: a `prune_rate_limits` existe desde a 0005 e esteve muito
+ * tempo sem nada que a chamasse; a política de leitura do arquivo esteve
+ * sessenta e seis migrações aberta com a consulta a filtrar por fora. Uma
+ * função de expurgo escrita e não agendada não apaga nada, e a tabela do
+ * RGPD.md passa a dizer que apaga.
+ */
+{
+  const PASTA = 'supabase/migrations';
+  const migracoes = readdirSync(join(RAIZ, PASTA))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  const sqlPorFicheiro = new Map(migracoes.map((f) => [f, ler(`${PASTA}/${f}`)]));
+
+  // (a) a chave que o schema da extração usa para as ocorrências, e o SQL que a lê
+  const esquema = ler('packages/core/src/schemas.ts');
+  const bloco = esquema.split('export const extractedEventSchema')[1]?.split('\n});')[0] ?? '';
+  const chaveDasDatas = /(\w+): z ?\.array\(z\.object\(\{ date:/.exec(
+    bloco.replace(/\s+/g, ' '),
+  )?.[1];
+
+  const queLeemOPayload = migracoes.filter((f) =>
+    /function public\.data_do_evento_na_submissao/.test(sqlPorFicheiro.get(f)),
+  );
+  const ultima = queLeemOPayload.at(-1);
+  const sqlDaAncora = ultima ? sqlPorFicheiro.get(ultima) : '';
+
+  afirmar({
+    afirmacao:
+      'o SQL do prazo de conservação sabe ler a chave onde o canal de email grava as datas',
+    porque:
+      'sem ela o prazo recua para a data de chegada e apaga a submissão de um evento que ainda não aconteceu — no canal que traz o endereço, o hash do IP e o texto em bruto',
+    onde: `${origem('packages/core/src/schemas.ts', /\.array\(z\.object\(\{ date/)} e ${PASTA}/${ultima ?? '?'}`,
+    ok: Boolean(chaveDasDatas) && sqlDaAncora.includes(`'${chaveDasDatas}'`),
+    esperava: `«'${chaveDasDatas ?? 'a chave das ocorrências'}'» na migração que define data_do_evento_na_submissao`,
+    encontrei: !chaveDasDatas
+      ? 'não consegui ler a chave das ocorrências em extractedEventSchema'
+      : !ultima
+        ? 'nenhuma migração define data_do_evento_na_submissao'
+        : `${PASTA}/${ultima} não menciona '${chaveDasDatas}'`,
+  });
+
+  // (b) toda a função de expurgo escrita é chamada pelo trabalho noturno
+  const escritas = [
+    ...new Set(
+      migracoes.flatMap((f) =>
+        [
+          ...sqlPorFicheiro.get(f).matchAll(/create or replace function public\.(prune_\w+)\(/g),
+        ].map((m) => m[1]),
+      ),
+    ),
+  ].sort();
+  const noturno = ler('.github/workflows/scrape.yml');
+  const porChamar = escritas.filter((nome) => !noturno.includes(nome));
+
+  afirmar({
+    afirmacao: 'todas as funções de expurgo escritas são chamadas todas as noites',
+    porque:
+      'uma função de expurgo que ninguém agenda não apaga nada, e a tabela de prazos do RGPD.md passa a dizer que apaga',
+    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+    ok: escritas.length > 0 && porChamar.length === 0,
+    esperava: escritas.length
+      ? `${escritas.join(', ')} no trabalho noturno`
+      : 'pelo menos uma função de expurgo',
+    encontrei: porChamar.length
+      ? `sem quem as chame: ${porChamar.join(', ')}`
+      : 'nenhuma função de expurgo escrita',
+  });
+}
+
+/*
  * A guarda do widget vale em três sítios, e é por isso que se verificam os
  * três. Esteve escrita contra um só — «`export function ehCaixaEmbebida` em
  * `posthog.ts`» — e a primeira mexida legítima fê-la falhar: a função mudou
