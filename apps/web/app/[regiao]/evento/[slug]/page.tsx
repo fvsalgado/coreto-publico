@@ -502,6 +502,9 @@ export default async function EventPage({ params }: Props) {
           <a
             href={event.source_url}
             rel="noopener nofollow"
+            // Contado desde a 0141. Era o único botão desta fila sem marca, e é
+            // o que dá a quem organiza a prova de que a agenda lhe manda gente.
+            data-stat-kind="source_click"
             className="inline-flex min-h-11 items-center rounded border border-border bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline"
           >
             Página oficial ↗

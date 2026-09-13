@@ -97,6 +97,7 @@ const RELATORIO: RelatorioMensal = {
     available: true,
     from: '2026-08-01',
     to: '2026-09-01',
+    clicks_since: '2026-08-20',
     by_municipality: [
       {
         municipality_id: 'tomar',
@@ -106,6 +107,8 @@ const RELATORIO: RelatorioMensal = {
         ical_downloads: 9,
         shares: 4,
         clicks: 50,
+        source_clicks: 12,
+        directions_clicks: null,
       },
     ],
   },
@@ -179,7 +182,7 @@ describe('escolherRegiao', () => {
 });
 
 describe('porqueSemHistorico', () => {
-  const vazio = { available: false, by_municipality: [] };
+  const vazio = { available: false, clicks_since: null, by_municipality: [] };
 
   it('diz o que faltou, com as datas que há', () => {
     expect(porqueSemHistorico({ ...vazio, from: null, to: null })).toMatch(/nenhuma fotografia/);
@@ -222,7 +225,7 @@ describe('paraCsv', () => {
       'seccao;desfecho;revistas',
       'seccao;concelho_id;concelho;publicados;por_publicar;no_catalogo;com_hora;com_espaco;com_imagem;com_descricao;com_preco;com_coordenadas',
       'seccao;chave;valor',
-      'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques',
+      'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques;pagina_oficial;como_chegar',
     ]);
     // Uma linha vazia entre blocos, e nunca duas.
     expect(csv).not.toContain('\r\n\r\n\r\n');
@@ -258,7 +261,10 @@ describe('paraCsv', () => {
     expect(linhas).toContain('submissoes_revistas;Aprovadas;5');
     expect(linhas).toContain('qualidade;tomar;Tomar;40;3;43;30;20;35;41;22;20');
     expect(linhas).toContain('visitas;fotografia_de;2026-08-01');
-    expect(linhas).toContain('visitas_por_concelho;tomar;Tomar;412;37;9;4;50');
+    // `source_clicks` vem preenchido e `directions_clicks` a nulo: é o caso
+    // real de um mês em que só um dos dois contadores tinha as duas
+    // fotografias, e o vazio no fim é o que distingue «não medi» de «zero».
+    expect(linhas).toContain('visitas_por_concelho;tomar;Tomar;412;37;9;4;50;12;');
   });
 
   it('protege o separador e as aspas, e deixa o resto sem aspas', () => {
@@ -284,7 +290,13 @@ describe('paraCsv', () => {
   it('um mês sem fotografias diz que não tem visitas em vez de inventar zeros', () => {
     const semHistorico: RelatorioMensal = {
       ...RELATORIO,
-      visits: { available: false, from: null, to: '2026-09-01', by_municipality: [] },
+      visits: {
+        available: false,
+        from: null,
+        to: '2026-09-01',
+        clicks_since: null,
+        by_municipality: [],
+      },
     };
     const semVisitas = paraCsv(semHistorico).split('\r\n');
     expect(semVisitas).toContain('visitas;disponivel;não');

@@ -1450,7 +1450,18 @@ begin
    where table_schema = 'public'
      and table_name = 'event_stats'
      and column_name not in ('event_id', 'views', 'ticket_clicks',
-                             'ical_downloads', 'shares', 'clicks', 'updated_at');
+                             'ical_downloads', 'shares', 'clicks', 'updated_at',
+                             -- Dois contadores novos na 0141: o clique na
+                             -- página oficial do evento e o clique em «como
+                             -- chegar». São contagens agregadas por evento como
+                             -- as outras cinco — não trazem IP, sessão,
+                             -- dispositivo nem data de visita, que é a única
+                             -- coisa que esta asserção existe para travar.
+                             --
+                             -- A lista escreve-se à mão de propósito: acrescentar
+                             -- um nome aqui obriga a passar por este comentário e
+                             -- a perguntar se a coluna nova identifica alguém.
+                             'source_clicks', 'directions_clicks');
   assert n = 0, format('event_stats ganhou colunas fora dos contadores: %s', v_cols);
 
   -- A lista acima trava qualquer coluna nova; esta trava-a pelo nome, para que
@@ -1473,7 +1484,13 @@ begin
    where table_schema = 'public'
      and table_name = 'event_stats_snapshots'
      and column_name not in ('municipality_id', 'taken_on', 'events_counted', 'views',
-                             'ticket_clicks', 'ical_downloads', 'shares', 'clicks');
+                             'ticket_clicks', 'ical_downloads', 'shares', 'clicks',
+                             -- Os dois contadores da 0141. Aqui são anuláveis, e é
+                             -- a diferença que importa: uma fotografia anterior à
+                             -- 0141 tem nulo, a diferença do mês dá nulo, e o
+                             -- relatório diz «a partir de» em vez de um zero que
+                             -- se lia como «ninguém carregou».
+                             'source_clicks', 'directions_clicks');
   assert n = 0, format('event_stats_snapshots ganhou colunas fora dos contadores: %s', v_cols);
 
   select count(*) into n

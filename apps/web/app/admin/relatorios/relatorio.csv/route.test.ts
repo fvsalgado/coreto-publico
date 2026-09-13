@@ -57,7 +57,7 @@ const RELATORIO: RelatorioMensal = {
     reviewed: { approved: 0, rejected: 0, other: 0 },
   },
   quality: [],
-  visits: { available: false, from: null, to: null, by_municipality: [] },
+  visits: { available: false, from: null, to: null, clicks_since: null, by_municipality: [] },
 };
 
 function pedido(query = ''): Request {

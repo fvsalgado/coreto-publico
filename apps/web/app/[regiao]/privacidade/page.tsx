@@ -255,12 +255,13 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
 
         <h2 className="pt-2 font-semibold">Como é medida a utilização</h2>
         <p>
-          Cada ficha de evento tem quatro contadores: quantas vezes foi aberta e quantas vezes se
-          carregou em «Bilhetes e reservas», em «Adicionar ao calendário» e em «Partilhar». A tabela
-          onde ficam não tem coluna nenhuma que identifique quem visitou: nem endereço IP, nem
-          identificador de sessão ou de dispositivo, nem sequer a data e a hora de cada visita.
-          Respondem a «esta ficha foi aberta 412 vezes» e nunca a «por quem». Estes totais são
-          públicos, precisamente porque não há neles nada de ninguém.
+          Cada ficha de evento tem seis contadores: quantas vezes foi aberta e quantas vezes se
+          carregou em «Bilhetes e reservas», em «Adicionar ao calendário», em «Partilhar», em
+          «Página oficial» e em «como chegar». A tabela onde ficam não tem coluna nenhuma que
+          identifique quem visitou: nem endereço IP, nem identificador de sessão ou de dispositivo,
+          nem sequer a data e a hora de cada visita. Respondem a «esta ficha foi aberta 412 vezes» e
+          nunca a «por quem». Estes totais são públicos, precisamente porque não há neles nada de
+          ninguém.
         </p>
         {hasAnalytics ? (
           <p>
