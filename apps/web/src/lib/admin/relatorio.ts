@@ -31,6 +31,68 @@ export interface TotaisDaJanela {
   submissions_approved: number;
 }
 
+/**
+ * Os cinco indicadores dos compromissos declarados (0149).
+ *
+ * **A base é «programado», e não «publicado hoje»**, e a diferença tem um
+ * número: o CAMINHOS uniu dez concelhos entre abril e maio de 2026 e os seus
+ * eventos estão hoje arquivados. Contando só `published`, o relatório de
+ * abril diz 5 eventos e 0 em rede; contando o que foi programado, diz 13 e 4
+ * em 4 concelhos. Um indicador de coesão que esquece o programa que uniu a
+ * região, por ele ter acabado, mede a data em que se abriu o relatório.
+ *
+ * Por isso `total` **não é** `comparison.current.events_happening`: em
+ * setembro de 2026 são 104 e 101. Somar os dois dá um terceiro número que não
+ * quer dizer nada.
+ *
+ * E tudo isto mede **o que a agenda conseguiu recolher**, não o que aconteceu
+ * no território — confundir as duas coisas é acusar um município de não fazer
+ * nada quando o que ele não faz é publicar em HTML legível.
+ */
+export interface Compromissos {
+  from: string;
+  to: string;
+  total: number;
+  /**
+   * Nunca como tabela ordenada: uma lista de concelhos por ordem de
+   * programação é uma tabela classificativa, e entre municípios da mesma CIM
+   * isso não é um instrumento de coesão.
+   */
+  cohesion: {
+    municipalities: number;
+    municipalities_with_programming: number;
+    /** Quota do concelho com mais programação, entre 0 e 1. Nula sem programação. */
+    top_share: number | null;
+    /** Conta todos os concelhos, zeros incluídos. */
+    median: number | null;
+    below_half_median: number;
+  };
+  /** As três somam `total`. */
+  association: {
+    in_association_venue: number;
+    in_other_venue: number;
+    without_venue: number;
+  };
+  /** As três somam `total`. «Não diz» não é «pago» nem «grátis». */
+  admission: { free: number; priced: number; undeclared: number };
+  /**
+   * `any` e `none` somam `total`. As quatro condições **sobrepõem-se** e por
+   * isso não somam: um evento com língua gestual e cadeira de rodas conta nas
+   * duas. São quatro e não cinco — `events` não tem coluna de legendagem, e
+   * contar uma quinta que não existe era um zero que se lê como «ninguém
+   * legenda».
+   */
+  accessibility: {
+    any: number;
+    none: number;
+    wheelchair: number;
+    sign_language: number;
+    audio_description: number;
+    relaxed: number;
+  };
+  network: { events: number; municipalities_touched: number };
+}
+
 export interface RelatorioMensal {
   region: { id: string; name: string };
   /** `AAAA-MM`. */
@@ -135,6 +197,7 @@ export interface RelatorioMensal {
     same_month_last_year: TotaisDaJanela | null;
     year_to_date: TotaisDaJanela | null;
   };
+  promises: Compromissos;
   visits: {
     /** Falso quando não há duas fotografias com que contar o mês. */
     available: boolean;
@@ -373,7 +436,7 @@ export function variacao(antes: number, agora: number): Variacao {
  * faz a sua.
  */
 export function paraCsv(relatorio: RelatorioMensal): string {
-  const { events, sources, submissions, quality, visits, territory } = relatorio;
+  const { events, sources, submissions, quality, visits, territory, promises: p } = relatorio;
 
   const blocos: string[][] = [
     bloco(
@@ -529,6 +592,40 @@ export function paraCsv(relatorio: RelatorioMensal): string {
           ] as Celula[],
         ];
       }),
+    ),
+    // Chave e valor, e não uma linha por família: as cinco têm formas
+    // diferentes — três contagens, quatro sobrepostas, uma quota entre 0 e 1 —
+    // e forçá-las a colunas comuns dava um cabeçalho com metade das células
+    // vazias em cada linha.
+    bloco(
+      'compromissos',
+      ['chave', 'valor'],
+      [
+        ['de', p.from],
+        ['ate', p.to],
+        ['programados', p.total],
+        ['concelhos', p.cohesion.municipalities],
+        ['concelhos_com_programacao', p.cohesion.municipalities_with_programming],
+        // Vazia sem programação nenhuma: não há quota de zero, e um zero
+        // lia-se como «o maior concelho não tem nada».
+        ['quota_do_maior', p.cohesion.top_share ?? ''],
+        ['mediana_por_concelho', p.cohesion.median ?? ''],
+        ['concelhos_abaixo_de_metade_da_mediana', p.cohesion.below_half_median],
+        ['em_espaco_de_coletividade', p.association.in_association_venue],
+        ['em_equipamento', p.association.in_other_venue],
+        ['sem_espaco_do_catalogo', p.association.without_venue],
+        ['entrada_livre', p.admission.free],
+        ['com_preco', p.admission.priced],
+        ['sem_dizer_o_preco', p.admission.undeclared],
+        ['com_acesso_declarado', p.accessibility.any],
+        ['sem_acesso_declarado', p.accessibility.none],
+        ['cadeira_de_rodas', p.accessibility.wheelchair],
+        ['lingua_gestual', p.accessibility.sign_language],
+        ['audiodescricao', p.accessibility.audio_description],
+        ['sessao_relaxada', p.accessibility.relaxed],
+        ['em_serie_regional', p.network.events],
+        ['concelhos_tocados_em_rede', p.network.municipalities_touched],
+      ],
     ),
     bloco(
       'visitas',
