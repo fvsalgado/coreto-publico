@@ -56,3 +56,8 @@ apps/web/CLAUDE.md
 # um adaptador à mão, e deixa isto para trás.
 __pycache__/
 *.pyc
+
+# O que o resumo diário lê e escreve na área de trabalho da execução. Sai como
+# artefacto, e não tem nada que fazer no repositório — são contagens de um dia.
+resumo-*.json
+corpo-*.txt

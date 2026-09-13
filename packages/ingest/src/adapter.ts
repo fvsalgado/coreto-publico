@@ -31,8 +31,15 @@ export interface SourceRow {
   circuit_open_until: string | null;
 }
 
+/**
+ * Tem de ser, linha por linha, a lista do `SourceKind` e a do `source_kind` da
+ * base. Ver o comentário em `packages/core/src/types.ts`: quando estas três
+ * divergiram, a recolha seguinte carregaria zero fontes de quarenta, porque o
+ * `safeParse` de um array rebenta o lote inteiro na primeira linha má.
+ */
 const sourceKindSchema: z.ZodType<SourceKind> = z.enum([
   'municipal_site',
+  'parish_site',
   'venue_site',
   'pdf_agenda',
   'feed',

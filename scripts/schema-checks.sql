@@ -390,7 +390,16 @@ begin
      and privilege_type = 'SELECT'
      and column_name not in ('id', 'name', 'kind', 'municipality_id', 'region_id',
                              'venue_id', 'url', 'is_enabled', 'last_success_at',
-                             'last_run_at', 'public_note');
+                             'last_run_at', 'public_note',
+                             -- O nome do leitor, público desde a 0139. É o que
+                             -- deixa a /estado dizer «sete das oito fontes
+                             -- caladas correm o mesmo produto» em vez de oito
+                             -- linhas soltas — e qualquer pessoa o infere
+                             -- abrindo o sítio da câmara. O `config` é outra
+                             -- coisa e continua onde estava: leva seletores,
+                             -- exclusões e chaves de caminho. O nome do leitor
+                             -- é público, a configuração dele nunca.
+                             'adapter');
   assert n = 0, format('%s colunas internas das fontes estão legíveis pelo público', n);
 
   -- ---- E o público lê mesmo o que tem de ler ----
@@ -423,7 +432,9 @@ begin
     from information_schema.column_privileges
    where table_schema = 'public' and table_name = 'sources'
      and grantee = 'anon' and privilege_type = 'SELECT';
-  assert n = 11, format('esperavam-se 11 colunas públicas nas fontes, há %s', n);
+  -- Doze desde a 0139, que pôs o nome do leitor na rua e deixou a
+  -- configuração onde estava.
+  assert n = 12, format('esperavam-se 12 colunas públicas nas fontes, há %s', n);
 
   -- ---- O acesso resolvido diz o que a ficha diria ----
   --
@@ -1050,6 +1061,238 @@ end
 $$;
 rollback;
 
+-- ---- Os tipos de fonte descrevem o território (0135/0136) ----
+--
+-- As asserções da 0136 correram uma vez, antes de a região de prova existir.
+-- Estas correm depois de tudo, e é aqui que a segunda CIM do CI é obrigada às
+-- mesmas regras da primeira — que é a única razão por que a região de prova
+-- existe.
+do
+$$
+declare
+  n integer;
+  v_lista text;
+begin
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources
+   where (id like 'jf-%' or id like 'uf-%') and kind is distinct from 'parish_site';
+  assert n = 0, format('fontes com id de junta que não são parish_site: %s', v_lista);
+
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources
+   where kind = 'parish_site' and id not like 'jf-%' and id not like 'uf-%';
+  assert n = 0, format('fontes marcadas como junta sem o id de uma: %s', v_lista);
+
+  -- Uma fonte de junta não tem espaço: uma junta é uma instituição, não uma
+  -- sala. É a diferença que justifica o `parish_site` existir.
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources where kind = 'parish_site' and venue_id is not null;
+  assert n = 0, format('fontes de junta com espaço: %s', v_lista);
+
+  -- O denominador, em toda a região completa que não seja a montra.
+  select count(*), string_agg(m.id, ', ' order by m.id) into n, v_lista
+    from public.municipalities m
+    join public.regions r on r.id = m.region_id
+   where m.parish_count is null
+     and r.kind <> 'montra'
+     and r.expected_municipality_count =
+         (select count(*) from public.municipalities x where x.region_id = r.id);
+  assert n = 0,
+    format('concelhos sem freguesias contadas numa região que se declara completa: %s — '
+           'ver docs/NOVA-CIM.md', v_lista);
+
+  -- E o numerador nunca pode passar o denominador: mais juntas ligadas do que
+  -- freguesias existem é a fração a dizer que 27 de 84 são 27 de 84 mais uma.
+  select count(*), string_agg(m.id, ', ' order by m.id) into n, v_lista
+    from public.municipalities m
+   where m.parish_count is not null
+     and (select count(*) from public.sources s
+           where s.kind = 'parish_site' and s.municipality_id = m.id) > m.parish_count;
+  assert n = 0, format('concelhos com mais juntas ligadas do que freguesias: %s', v_lista);
+end
+$$;
+
+-- ---- Nada de `security definer` ao alcance de quem não é a chave de serviço ----
+--
+-- A regra está escrita desde a 0007 e nunca esteve verificada: lá, oito funções
+-- foram revogadas uma a uma, à mão. Uma regra que se cumpre à mão cumpre-se até
+-- ao dia em que alguém escreve a nona — e escreveram-se três, nas 0129 e 0130,
+-- todas com o `execute` que o Postgres dá a PUBLIC por omissão. Quem as apanhou
+-- foi o linter da Supabase, que existe, funciona, e ninguém lia.
+--
+-- Isto não tem lista de exceções de propósito. Se um dia uma função
+-- `security definer` tiver mesmo de ser pública, a exceção escreve-se aqui com
+-- a razão ao lado — que é o momento em que alguém tem de a justificar.
+do
+$$
+declare
+  v_ao_alcance text;
+begin
+  select string_agg(p.proname || '() → ' || pg_get_function_result(p.oid), ', ' order by p.proname)
+    into v_ao_alcance
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.prosecdef
+     and (has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute'));
+
+  assert v_ao_alcance is null,
+    format('funções security definer ao alcance do anon ou do authenticated: %s', v_ao_alcance);
+end
+$$;
+
+-- A tabela dos resumos das migrações vive no esquema que o PostgREST serve, e
+-- é a única que nasceu fora de uma migração — por isso escapou à regra das
+-- outras treze tabelas de serviço até à 0134.
+do
+$$
+begin
+  assert (select relrowsecurity from pg_class where oid = 'public.migration_checksums'::regclass),
+    'migration_checksums está no esquema exposto sem RLS';
+  assert not has_table_privilege('anon', 'public.migration_checksums', 'select'),
+    'o anon lê a lista de migrações aplicadas';
+  assert not has_table_privilege('authenticated', 'public.migration_checksums', 'select'),
+    'quem tem sessão lê a lista de migrações aplicadas';
+end
+$$;
+
+-- ---- Prazos de conservação (0133) ----
+--
+-- A política publicada promete apagar; isto verifica que o código apaga o que
+-- ela promete e **só** isso. As fixtures são uma por FORMATO de payload e não
+-- uma por canal: o que uma primeira versão da âncora não sabia ler era o
+-- formato do email (`dates[]`), e uma asserção escrita por canal passava na
+-- mesma porque a fixture do email trazia um `date_start` que a rota nunca
+-- escreve.
+begin;
+
+insert into public.submissions (id, channel, status, municipality_id, payload,
+                                sender_email, ip_hash, raw_text, created_at)
+values
+  -- caducada: email de um evento que aconteceu há 30 meses
+  ('e0000000-0000-4000-8000-000000000001', 'email', 'rejected', 'tomar',
+   jsonb_build_object('title', 'Já foi', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date - interval '30 months', 'YYYY-MM-DD')))),
+   'antigo@exemplo.pt', 'hash-antigo', 'o texto do email', now() - interval '30 months'),
+  -- caducada também, mas com um anexo ainda no balde
+  ('e0000000-0000-4000-8000-000000000002', 'email', 'rejected', 'tomar',
+   jsonb_build_object('title', 'Com cartaz', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date - interval '30 months', 'YYYY-MM-DD')))),
+   'cartaz@exemplo.pt', 'hash-cartaz', 'o texto do outro', now() - interval '30 months'),
+  -- NÃO caducada: chegou há 30 meses, mas o evento é daqui a dois — e é o caso
+  -- que separa este expurgo de «apagar 24 meses depois de chegar»
+  ('e0000000-0000-4000-8000-000000000003', 'email', 'pending', 'tomar',
+   jsonb_build_object('title', 'Ainda vai ser', 'dates', jsonb_build_array(
+     jsonb_build_object('date', to_char(current_date + interval '2 months', 'YYYY-MM-DD')))),
+   'futuro@exemplo.pt', 'hash-futuro', 'o texto do terceiro', now() - interval '30 months');
+
+-- A fotografia que a `reject_submission` grava em `admin_actions.before` (0006)
+-- leva o endereço, o hash do IP e o texto em bruto.
+insert into public.admin_actions (actor, action, entity_type, entity_id, before)
+values ('ci', 'submission.reject', 'submission', 'e0000000-0000-4000-8000-000000000001',
+        jsonb_build_object('id', 'e0000000-0000-4000-8000-000000000001',
+                           'sender_email', 'antigo@exemplo.pt',
+                           'ip_hash', 'hash-antigo',
+                           'raw_text', 'o texto do email',
+                           'status', 'pending'));
+
+insert into public.submission_attachments (submission_id, storage_path, mime_type, size_bytes)
+values ('e0000000-0000-4000-8000-000000000002', 'e0000000/cartaz.pdf', 'application/pdf', 2048);
+insert into storage.objects (bucket_id, name) values ('intake', 'e0000000/cartaz.pdf');
+
+do $$
+declare
+  v_apagadas integer;
+  v_retidas integer;
+  v_before jsonb;
+begin
+  select apagadas, retidas into v_apagadas, v_retidas from public.prune_submissions();
+
+  assert v_apagadas = 1, format('esperava-se uma submissão apagada, foram %s', v_apagadas);
+  assert v_retidas = 1, format('esperava-se uma submissão retida pelo anexo, foram %s', v_retidas);
+
+  assert not exists (select 1 from public.submissions
+                      where id = 'e0000000-0000-4000-8000-000000000001'),
+    'a submissão caducada sem anexos não foi apagada';
+
+  -- Os bytes ainda estão no balde: apagar a linha deixava-os lá sem ninguém
+  -- que soubesse o caminho.
+  assert exists (select 1 from public.submissions
+                  where id = 'e0000000-0000-4000-8000-000000000002'),
+    'a submissão com o anexo ainda no balde foi apagada — os bytes ficaram órfãos';
+
+  -- E o evento que ainda não aconteceu fica, mesmo tendo chegado há 30 meses.
+  assert exists (select 1 from public.submissions
+                  where id = 'e0000000-0000-4000-8000-000000000003'),
+    'apagou-se a submissão de um evento que ainda não aconteceu — a âncora não leu o payload do email';
+
+  select before into v_before from public.admin_actions
+   where entity_id = 'e0000000-0000-4000-8000-000000000001';
+  assert not (v_before ? 'sender_email'), 'o endereço ficou na fotografia de admin_actions.before';
+  assert not (v_before ? 'ip_hash'), 'o hash do IP ficou na fotografia de admin_actions.before';
+  assert not (v_before ? 'raw_text'), 'o texto em bruto ficou na fotografia de admin_actions.before';
+  assert v_before ? 'status', 'a anonimização levou atrás o resto do rasto';
+  assert v_before ? 'expurgado_em', 'a fotografia não diz que foi expurgada';
+end
+$$;
+
+-- Tirado o ficheiro do balde pela API do Storage, a linha sai na noite
+-- seguinte, e o anexo vai atrás por cascata.
+delete from storage.objects where bucket_id = 'intake' and name = 'e0000000/cartaz.pdf';
+
+do $$
+declare
+  v_apagadas integer;
+  v_retidas integer;
+begin
+  select apagadas, retidas into v_apagadas, v_retidas from public.prune_submissions();
+  assert v_apagadas = 1 and v_retidas = 0,
+    format('depois de o ficheiro sair do balde esperavam-se 1 apagada e 0 retidas, foram %s e %s',
+           v_apagadas, v_retidas);
+  assert not exists (select 1 from public.submission_attachments
+                      where submission_id = 'e0000000-0000-4000-8000-000000000002'),
+    'o anexo não saiu por cascata com a submissão';
+end
+$$;
+
+-- As quotas de remetente: as inativas saem, a bloqueada fica. Um bloqueio é
+-- uma decisão humana e o prazo de conservação não é uma amnistia (0018).
+insert into public.sender_quotas (sender_email, updated_at, is_blocked)
+values ('inativo@exemplo.pt', now() - interval '30 months', false),
+       ('bloqueado@exemplo.pt', now() - interval '30 months', true),
+       ('recente@exemplo.pt', now(), false);
+
+do $$
+declare
+  n integer;
+begin
+  n := public.prune_sender_quotas();
+  assert n = 1, format('esperava-se uma quota apagada, foram %s', n);
+  assert exists (select 1 from public.sender_quotas where sender_email = 'bloqueado@exemplo.pt'),
+    'o expurgo desfez um bloqueio em silêncio';
+  assert exists (select 1 from public.sender_quotas where sender_email = 'recente@exemplo.pt'),
+    'o expurgo apagou uma quota dentro do prazo';
+end
+$$;
+
+-- E o registo de moderação com mais de 24 meses.
+insert into public.admin_actions (actor, action, entity_type, entity_id, created_at)
+values ('ci', 'event.hide', 'event', 'prova-do-prazo', now() - interval '30 months');
+
+do $$
+declare
+  n integer;
+begin
+  n := public.prune_admin_actions();
+  assert n = 1, format('esperava-se uma ação de moderação apagada, foram %s', n);
+  assert not exists (select 1 from public.admin_actions where entity_id = 'prova-do-prazo'),
+    'a ação de moderação fora de prazo ficou';
+end
+$$;
+
+rollback;
+
 -- ---- Contadores por evento ----
 begin;
 insert into public.events (id, slug, title, municipality_id, venue_id, status, origin,
@@ -1207,7 +1450,18 @@ begin
    where table_schema = 'public'
      and table_name = 'event_stats'
      and column_name not in ('event_id', 'views', 'ticket_clicks',
-                             'ical_downloads', 'shares', 'clicks', 'updated_at');
+                             'ical_downloads', 'shares', 'clicks', 'updated_at',
+                             -- Dois contadores novos na 0141: o clique na
+                             -- página oficial do evento e o clique em «como
+                             -- chegar». São contagens agregadas por evento como
+                             -- as outras cinco — não trazem IP, sessão,
+                             -- dispositivo nem data de visita, que é a única
+                             -- coisa que esta asserção existe para travar.
+                             --
+                             -- A lista escreve-se à mão de propósito: acrescentar
+                             -- um nome aqui obriga a passar por este comentário e
+                             -- a perguntar se a coluna nova identifica alguém.
+                             'source_clicks', 'directions_clicks');
   assert n = 0, format('event_stats ganhou colunas fora dos contadores: %s', v_cols);
 
   -- A lista acima trava qualquer coluna nova; esta trava-a pelo nome, para que
@@ -1230,7 +1484,13 @@ begin
    where table_schema = 'public'
      and table_name = 'event_stats_snapshots'
      and column_name not in ('municipality_id', 'taken_on', 'events_counted', 'views',
-                             'ticket_clicks', 'ical_downloads', 'shares', 'clicks');
+                             'ticket_clicks', 'ical_downloads', 'shares', 'clicks',
+                             -- Os dois contadores da 0141. Aqui são anuláveis, e é
+                             -- a diferença que importa: uma fotografia anterior à
+                             -- 0141 tem nulo, a diferença do mês dá nulo, e o
+                             -- relatório diz «a partir de» em vez de um zero que
+                             -- se lia como «ninguém carregou».
+                             'source_clicks', 'directions_clicks');
   assert n = 0, format('event_stats_snapshots ganhou colunas fora dos contadores: %s', v_cols);
 
   select count(*) into n
@@ -1253,6 +1513,82 @@ begin
    where p.schemaname = 'public'
      and p.tablename = 'event_stats_snapshots';
   assert n = 0, 'há uma policy em event_stats_snapshots: as fotografias são só do painel';
+
+  -- A fotografia da qualidade (0144) tem de ficar tão fechada como a dos
+  -- contadores. Não guarda nada de pessoal — são contagens de eventos de um
+  -- catálogo público — mas é memória de operação, e uma tabela de memória
+  -- aberta à chave pública é um histórico que ninguém decidiu publicar.
+  select count(*) into n
+    from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relname = 'event_quality_snapshots' and c.relrowsecurity;
+  assert n = 1, 'event_quality_snapshots está sem RLS';
+
+  select count(*) into n
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'event_quality_snapshots';
+  assert n = 0, 'há uma policy em event_quality_snapshots: as fotografias são só do painel';
+
+  -- E não ganha uma coluna que identifique ninguém. A fotografia conta
+  -- eventos; o dia em que alguém lhe acrescentar uma coluna de pessoa, a
+  -- secção 4 do RGPD.md deixa de ser verdade sem ninguém a reler.
+  select count(*), coalesce(string_agg(column_name, ', '), '')
+    into n, v_cols
+    from information_schema.columns
+   where table_schema = 'public'
+     and table_name = 'event_quality_snapshots'
+     and column_name not in ('municipality_id', 'taken_on', 'published', 'pending',
+                             'in_catalogue', 'with_time', 'with_venue', 'with_image',
+                             'with_description', 'with_price', 'with_coordinates');
+  assert n = 0, format('event_quality_snapshots ganhou colunas fora das contagens: %s', v_cols);
+
+  -- A restrição que recusa uma lacuna maior do que o catálogo, e que é o que
+  -- impede o painel de mostrar uma percentagem acima de cem.
+  select count(*) into n
+    from pg_constraint
+   where conrelid = 'public.event_quality_snapshots'::regclass
+     and conname = 'event_quality_snapshots_dentro_do_catalogo';
+  assert n = 1, 'a restrição que trava percentagens acima de cem nas fotografias desapareceu';
+
+  -- A porta de quem decide (0151) é a segunda porta da casa, e o que a
+  -- sustenta é ser mesmo só de leitura e mesmo só de uma região.
+  --
+  -- A tabela dos segredos não se lê por chave pública nenhuma. Se um dia se
+  -- abrir, o `token_sha256` de cada região fica ao alcance de quem pedir — e
+  -- com ele a porta do balanço de todas elas.
+  select count(*) into n
+    from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relname = 'region_report_tokens' and c.relrowsecurity;
+  assert n = 1, 'region_report_tokens está sem RLS';
+
+  select count(*) into n
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'region_report_tokens';
+  assert n = 0, 'há uma policy em region_report_tokens: os segredos são só da chave de serviço';
+
+  -- Nenhuma das três funções do balanço é executável por quem entra pela
+  -- chave anónima. A `regiao_do_token_de_balanco` é a que mais custaria:
+  -- aberta, seria um oráculo a que qualquer pessoa podia perguntar se um
+  -- segredo serve, tantas vezes quantas quisesse.
+  select count(*), coalesce(string_agg(p.proname, ', '), '')
+    into n, v_cols
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public'
+     and p.proname in ('criar_token_de_balanco', 'revogar_tokens_de_balanco',
+                       'regiao_do_token_de_balanco')
+     and (has_function_privilege('anon', p.oid, 'execute')
+       or has_function_privilege('authenticated', p.oid, 'execute'));
+  assert n = 0, format('funções do balanço abertas à chave pública: %s', v_cols);
+
+  -- E o prazo é obrigatório, com a restrição que impede caducá-lo para trás
+  -- por engano. Fechar um segredo faz-se revogando, e a revogação fica na
+  -- auditoria; um `update` distraído ao prazo não é a mesma coisa.
+  select count(*) into n
+    from pg_constraint
+   where conrelid = 'public.region_report_tokens'::regclass
+     and conname = 'region_report_tokens_prazo_no_futuro';
+  assert n = 1, 'a restrição do prazo dos segredos do balanço desapareceu';
 
   -- Os contadores são legíveis pelo público de propósito; escrevê-los, não.
   select count(*) into n
@@ -1327,6 +1663,48 @@ begin
     from public.venues
    where opening_hours is not null and opening_hours_checked_on is null;
   assert n = 0, format('espaços com horário sem data de leitura: %s', v_cols);
+
+  -- A percentagem de `/admin/qualidade` e a lista de `/admin/eventos?falta=`
+  -- contam a mesma população, ou a ligação entre as duas mente.
+  --
+  -- Desde a vaga 7 a percentagem **é** a porta para a lista. Se a vista
+  -- contar uma coisa e o filtro do painel outra, quem vê 62% e carrega abre
+  -- uma lista que não é a dos 38% que faltam — e não há erro nenhum a dar por
+  -- isso, porque as duas consultas correm bem cada uma por si.
+  --
+  -- A 0143 alinhou «descrição»: a vista contava `is not null` e o filtro
+  -- conta `is null or = ''`. Eram zero linhas nesse dia, e é essa a diferença
+  -- que isto guarda a zero.
+  select count(*) into n
+    from public.events
+   where is_canonical and status in ('published', 'draft')
+     and description = '';
+  assert n = 0,
+    format('%s eventos com a descrição vazia: a vista conta-os como «com descrição» '
+           'e a lista de trabalho abre-os como «sem» — ver a 0143', n);
+
+  -- O mesmo facto, dito do lado da vista: a soma tem de bater com a contagem
+  -- que o filtro abre. Apanha uma alteração à vista que a 0143 não previu.
+  select (select coalesce(sum(with_description), 0) from public.event_quality_by_municipality)
+       - (select count(*) from public.events
+           where is_canonical and status in ('published', 'draft')
+             and description is not null and description <> '')
+    into n;
+  assert n = 0,
+    format('a vista de qualidade e a lista de trabalho divergem em %s eventos com descrição', n);
+
+  -- E o preço, que a vaga 7 pôs a ligar pela primeira vez. `with_price` conta
+  -- `is_free or price_min is not null`; o filtro conta o complemento exato.
+  -- A conta só fecha porque `is_free` é `not null` desde a 0004 — se alguém
+  -- lhe tirar o `not null`, os nulos desaparecem dos dois lados e ninguém dá
+  -- por isso. Esta asserção é o aviso.
+  select count(*) into n
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'events'
+     and column_name = 'is_free' and is_nullable = 'NO';
+  assert n = 1,
+    'events.is_free deixou de ser «not null»: o filtro «sem preço» de /admin/eventos '
+    'passa a perder os eventos em que ela é nula, que a vista também não conta';
 end
 $$;
 

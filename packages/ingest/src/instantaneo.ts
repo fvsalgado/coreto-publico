@@ -297,6 +297,7 @@ const COLUNAS = [
   'series_id',
   'category_slug',
   'category_confidence',
+  'category_source',
   'categories_raw',
   'tags',
   'audience',

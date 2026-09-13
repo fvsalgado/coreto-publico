@@ -18,6 +18,7 @@ import { requireAdminClient } from '../supabase/server';
 import { SECCOES_OPCIONAIS } from '../navegacao';
 import { REGIAO_PRINCIPAL } from '../regiao-host';
 import { CACHE_TAGS } from '../queries/events';
+import { gerarSegredo, impressaoDoSegredo } from '../balanco/token';
 
 /**
  * As ações de moderação.
@@ -380,6 +381,74 @@ export async function registarLicenca(formData: FormData): Promise<void> {
 
   // Nada de público muda: as licenças são só do painel, sem cache a invalidar.
   redirect(comAviso(voltarPara, 'Licença registada.'));
+}
+
+/**
+ * Cria ou roda o segredo de leitura de uma região, e di-lo **uma vez**.
+ *
+ * O segredo em claro existe aqui e mais em lado nenhum: vai para a base o
+ * sha256, e volta para o painel o segredo, pela barra de endereços, dentro
+ * do aviso. É o único sítio em que ele aparece — recarregar a página perde-o,
+ * e é por isso que o aviso o diz.
+ *
+ * **Pela barra de endereços e não numa sessão.** É o mecanismo que este painel
+ * já usa para todos os avisos (`comAviso`), e a alternativa — guardá-lo do
+ * lado do servidor até alguém o ler — era criar um segundo sítio onde o
+ * segredo vive.
+ *
+ * Criar quando já há um **revoga o anterior**: a 0151 fá-lo na mesma
+ * instrução, e o anterior deixa de abrir no pedido seguinte.
+ */
+export async function criarSegredoDeBalanco(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = String(formData.get('region_id') ?? '').trim();
+  const voltarPara = regiao ? `/admin/regioes/${regiao}` : '/admin/regioes';
+  if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  const dias = Number(String(formData.get('dias') ?? '180').trim());
+  if (!Number.isInteger(dias) || dias < 1 || dias > 1095) {
+    // Três anos de tecto. Um segredo com prazo maior do que o contrato que o
+    // justifica é um segredo que ninguém roda.
+    redirect(comAviso(voltarPara, 'O prazo tem de ser entre 1 e 1095 dias.'));
+  }
+
+  const segredo = gerarSegredo();
+  const impressao = impressaoDoSegredo(segredo);
+  if (!impressao) redirect(comAviso(voltarPara, 'Não consegui gerar um segredo.'));
+
+  const { error } = await supabase.rpc('criar_token_de_balanco', {
+    p_region: regiao,
+    p_actor: actor,
+    p_sha256: impressao,
+    p_dias: dias,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  redirect(`${voltarPara}?segredo=${encodeURIComponent(segredo)}`);
+}
+
+/** Fecha a porta de uma região. O que lá estava deixa de abrir no pedido seguinte. */
+export async function revogarSegredosDeBalanco(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = String(formData.get('region_id') ?? '').trim();
+  const voltarPara = regiao ? `/admin/regioes/${regiao}` : '/admin/regioes';
+  if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  const { data, error } = await supabase.rpc('revogar_tokens_de_balanco', {
+    p_region: regiao,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  const n = Number(data ?? 0);
+  redirect(
+    comAviso(
+      voltarPara,
+      n > 0 ? 'A porta do balanço ficou fechada.' : 'Não havia porta aberta para fechar.',
+    ),
+  );
 }
 
 const ESPACOS = '/admin/espacos';
