@@ -968,6 +968,38 @@ presente(
       ? `sem quem as tire: ${fotosPorTirar.join(', ')}`
       : 'nenhuma fotografia escrita',
   });
+
+  // (d) e o resumo diário, que é a terceira forma do mesmo defeito
+  //
+  // A função existe na base, o guião sabe formatá-la, e entre as duas coisas
+  // falta a única que faz o aviso chegar a alguém: a linha do agendamento.
+  // Sem ela, quem escreveu o resumo fica convencido de que o mandou.
+  const guiao = ler('scripts/resumo-diario.sh');
+  const workflows = readdirSync(join(RAIZ, '.github/workflows'))
+    .filter((f) => f.endsWith('.yml'))
+    .map((f) => ler(`.github/workflows/${f}`))
+    .join('\n');
+
+  const escreveOResumo = migracoes.some((f) =>
+    /create (?:or replace )?function public\.daily_digest\(/.test(sqlPorFicheiro.get(f)),
+  );
+
+  afirmar({
+    afirmacao: 'o resumo diário tem quem o leia, quem o formate e quem o agende',
+    porque:
+      'as três peças existem em ficheiros diferentes e nenhuma falha sem as outras: a função devolve, o guião formata, e se ninguém agendar, quem o escreveu fica convencido de que o mandou',
+    onde: 'supabase/migrations/*.sql, scripts/resumo-diario.sh e .github/workflows/',
+    ok: escreveOResumo && guiao.includes('daily_digest') && workflows.includes('resumo-diario.sh'),
+    esperava: 'daily_digest na base, no guião, e o guião num workflow agendado',
+    encontrei:
+      [
+        escreveOResumo ? '' : 'nenhuma migração define daily_digest',
+        guiao.includes('daily_digest') ? '' : 'o guião não chama daily_digest',
+        workflows.includes('resumo-diario.sh') ? '' : 'nenhum workflow corre resumo-diario.sh',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'as três',
+  });
 }
 
 /*

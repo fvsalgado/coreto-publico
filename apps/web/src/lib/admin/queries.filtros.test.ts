@@ -119,10 +119,21 @@ describe('os filtros de lacuna', () => {
     expect(chamadasDe('is').some(([coluna]) => coluna === 'location_name')).toBe(false);
   });
 
-  it('«sítio» é mais apertado do que «espaço»', async () => {
+  /**
+   * «Sem sítio nenhum» foi uma opção do selector, e não podia devolver nada: a
+   * restrição `events_has_location`, da 0004, exige espaço **ou** texto solto,
+   * e `venue_id is null and location_name is null` é falso para todas as
+   * linhas que a base aceita gravar. Zero em produção desde sempre, e não por
+   * o trabalho estar feito — por não poder haver trabalho.
+   *
+   * Saiu. O que este teste guarda é que não voltou por distração: o ramo da
+   * consulta tem de continuar fora, e `lacunas.test.ts` verifica que a
+   * restrição que o justifica continua nas migrações.
+   */
+  it('já não pergunta pelo «sítio», que a base não deixa faltar', async () => {
     await listEvents({ falta: 'sitio' });
-    expect(chamadasDe('is')).toContainEqual(['venue_id', null]);
-    expect(chamadasDe('is')).toContainEqual(['location_name', null]);
+    expect(chamadasDe('is').some(([coluna]) => coluna === 'location_name')).toBe(false);
+    expect(chamadasDe('is').some(([coluna]) => coluna === 'venue_id')).toBe(false);
   });
 
   it('uma lacuna que não existe não recorta nada', async () => {

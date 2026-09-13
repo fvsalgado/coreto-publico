@@ -33,9 +33,10 @@ export interface Lacuna {
   chave: string;
   /**
    * A coluna de `event_quality_by_*` que conta os que **não** têm esta
-   * lacuna. `null` quando a lacuna não tem célula no painel — ver `sitio`.
+   * lacuna. Uma por lacuna, e o teste que acompanha isto recusa que a vista
+   * ganhe uma coluna sem lacuna ou uma lacuna sem coluna.
    */
-  coluna: ColunaDeQualidade | null;
+  coluna: ColunaDeQualidade;
   /** O cabeçalho da coluna no painel de qualidade. */
   rotulo: string;
   /** O que a coluna conta, palavra a palavra. */
@@ -98,22 +99,34 @@ export const LACUNAS: readonly Lacuna[] = [
     ajuda: 'Eventos com coordenadas',
     filtro: 'Sem coordenadas',
   },
-  // Sem célula: é um recorte mais apertado do «Espaço», para quem quer
-  // primeiro os que não dizem sítio nenhum — nem espaço do catálogo, nem
-  // texto solto. Uma coluna própria no painel repetia a mesma medida.
-  {
-    chave: 'sitio',
-    coluna: null,
-    rotulo: 'Sítio',
-    ajuda: 'Eventos que não dizem onde são, nem por espaço nem por escrito',
-    filtro: 'Sem sítio nenhum',
-  },
+  // A lista acabou aqui, e falta-lhe uma que cá esteve.
+  //
+  // **«Sem sítio nenhum» era um filtro que não podia devolver nada.** Estava
+  // no selector de `/admin/eventos` — «nem espaço do catálogo, nem texto
+  // solto» — e a consulta que o servia era `venue_id is null and
+  // location_name is null`. A restrição `events_has_location`, da 0004, exige
+  // que pelo menos um dos dois esteja preenchido: a condição é falsa para
+  // todas as linhas que a base aceita gravar, e sempre foi.
+  //
+  // Zero em produção, e não por o trabalho estar feito — por não poder haver
+  // trabalho. Quem abrisse esse filtro via «Nenhum evento com estes filtros» e
+  // concluía que estava tudo bem, quando o que estava era uma pergunta cuja
+  // resposta a base decide desde o primeiro dia.
+  //
+  // Sai, e o teste que acompanha isto verifica que a restrição continua lá:
+  // no dia em que alguém a largar, a pergunta volta a fazer sentido e este
+  // comentário é onde está escrito porquê.
 ];
 
-/** As lacunas que têm coluna no painel, pela ordem em que a tabela as mostra. */
-export const LACUNAS_COM_COLUNA = LACUNAS.filter(
-  (l): l is Lacuna & { coluna: ColunaDeQualidade } => l.coluna !== null,
-);
+/**
+ * As lacunas que têm coluna no painel, pela ordem em que a tabela as mostra.
+ *
+ * Hoje são todas — a única que não tinha era «sem sítio nenhum», e essa saiu
+ * por não poder devolver nada. O apelido fica, e o tipo com ele: é o que
+ * marca a diferença entre «uma lacuna com percentagem» e «uma lacuna», para o
+ * dia em que houver uma segunda sem coluna.
+ */
+export const LACUNAS_COM_COLUNA: readonly (Lacuna & { coluna: ColunaDeQualidade })[] = LACUNAS;
 
 /**
  * O endereço da lista de trabalho de uma lacuna.

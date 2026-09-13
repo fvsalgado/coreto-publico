@@ -42,6 +42,12 @@ export default defineConfig({
       // `app/` não é uma rota.
       'apps/web/middleware.test.ts',
       'apps/web/app/**/*.test.ts',
+      // E os que vivem fora da aplicação: os `scripts/` que decidem alguma
+      // coisa. O `resumo-diario.mjs` decide se um aviso é enviado, e a regra
+      // — não enviar quando não há nada a fazer — é o que faz o aviso valer
+      // alguma coisa nos dias em que há. Uma decisão dessas não pode ficar
+      // sem teste por estar num `.mjs` em vez de num `.ts`.
+      'scripts/**/*.test.mjs',
     ],
     environment: 'node',
     env: { TZ: 'UTC' },
