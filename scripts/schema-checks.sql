@@ -390,7 +390,16 @@ begin
      and privilege_type = 'SELECT'
      and column_name not in ('id', 'name', 'kind', 'municipality_id', 'region_id',
                              'venue_id', 'url', 'is_enabled', 'last_success_at',
-                             'last_run_at', 'public_note');
+                             'last_run_at', 'public_note',
+                             -- O nome do leitor, público desde a 0139. É o que
+                             -- deixa a /estado dizer «sete das oito fontes
+                             -- caladas correm o mesmo produto» em vez de oito
+                             -- linhas soltas — e qualquer pessoa o infere
+                             -- abrindo o sítio da câmara. O `config` é outra
+                             -- coisa e continua onde estava: leva seletores,
+                             -- exclusões e chaves de caminho. O nome do leitor
+                             -- é público, a configuração dele nunca.
+                             'adapter');
   assert n = 0, format('%s colunas internas das fontes estão legíveis pelo público', n);
 
   -- ---- E o público lê mesmo o que tem de ler ----
@@ -423,7 +432,9 @@ begin
     from information_schema.column_privileges
    where table_schema = 'public' and table_name = 'sources'
      and grantee = 'anon' and privilege_type = 'SELECT';
-  assert n = 11, format('esperavam-se 11 colunas públicas nas fontes, há %s', n);
+  -- Doze desde a 0139, que pôs o nome do leitor na rua e deixou a
+  -- configuração onde estava.
+  assert n = 12, format('esperavam-se 12 colunas públicas nas fontes, há %s', n);
 
   -- ---- O acesso resolvido diz o que a ficha diria ----
   --

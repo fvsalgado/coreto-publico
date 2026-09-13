@@ -217,6 +217,8 @@ export interface PublicSource {
   id: string;
   name: string;
   kind: string;
+  /** O leitor que sabe ler esta fonte (0139). O `config` dele não é público. */
+  adapter: string | null;
   municipality_id: string | null;
   /** A região de uma fonte sem concelho; nula quando o concelho a deriva. */
   region_id: string | null;
