@@ -19,7 +19,23 @@ export type SubmissionChannel = 'scraper' | 'email' | 'form';
 export type SubmissionStatus =
   'pending' | 'approved' | 'rejected' | 'merged' | 'duplicate' | 'needs_info';
 
-export type SourceKind = 'municipal_site' | 'venue_site' | 'pdf_agenda' | 'feed' | 'manual';
+/**
+ * O que uma fonte é, e tem de ser a mesma lista que o `source_kind` da base.
+ *
+ * **As duas divergiram uma vez, e custou tudo.** A migração 0135 acrescentou
+ * `parish_site` ao tipo da base e a 0136 pôs lá 26 fontes; esta lista ficou
+ * como estava. O `sourceRowSchema` valida **o lote inteiro de uma vez** e
+ * rebenta na primeira linha má — pelo que a recolha seguinte não teria
+ * carregado 26 de 40 fontes: teria carregado **zero de 40**, e as 26
+ * rejeitadas eram justamente as únicas que ainda respondiam.
+ *
+ * Foi apanhado antes de correr. O que impede a repetição é a asserção
+ * «os tipos de fonte da base são os mesmos do código», em
+ * `scripts/verificar-afirmacoes.mjs`: uma migração que acrescente um valor ao
+ * `source_kind` e não a esta linha falha o CI antes de chegar à noite.
+ */
+export type SourceKind =
+  'municipal_site' | 'parish_site' | 'venue_site' | 'pdf_agenda' | 'feed' | 'manual';
 
 export type RunStatus = 'running' | 'success' | 'partial' | 'failed';
 
