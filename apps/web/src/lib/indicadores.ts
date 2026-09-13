@@ -333,6 +333,113 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
     ],
   },
   {
+    bloco: 'compromissos',
+    titulo: 'O que a casa promete, medido',
+    prosa: [
+      'Cinco famílias que respondem aos compromissos escritos do projeto: a coesão do território, a cauda longa associativa, a entrada livre, a acessibilidade declarada e a programação em rede. **Quase todas começam baixas, e é para isso que servem** — um compromisso sem medida é uma intenção; com medida, é trabalho por fazer, à vista.',
+      '**A base é o que foi programado, e não o que está publicado hoje.** Um evento arquivado conta: o CAMINHOS uniu dez concelhos entre abril e maio de 2026 e os seus eventos estão hoje arquivados, pelo que um relatório de abril que contasse só os publicados diria 5 eventos e 0 em rede — quando foram 13 e 4, em 4 concelhos. Um indicador de coesão que esquece o programa que uniu a região, por ele ter acabado, mede a data em que se abriu o relatório.',
+      '**Por isso `compromissos.programados` não é `comparacao.eventos_a_decorrer`**, e os dois não se somam: em setembro de 2026 são 104 e 101. São a mesma agenda vista por duas perguntas — «o que foi programado» e «o que estava publicado a decorrer».',
+      '**Tudo isto mede o que a agenda conseguiu recolher, e não o que aconteceu no território.** Confundir as duas coisas é acusar um município de não fazer nada quando o que ele não faz é publicar num sítio que responda — e à data em que isto se escreve há oito câmaras cujo sítio não responde a um único pedido.',
+    ],
+    universo:
+      'Eventos canónicos, nem rascunho nem escondidos, com a programação a tocar o mês. Arquivados incluídos.',
+    periodicidade: 'Calculado no instante da geração, sobre a janela do mês.',
+    deOndeVem: 'A função `report_promises`.',
+    campos: [
+      { campo: 'compromissos.de', conta: 'O primeiro dia da janela.' },
+      { campo: 'compromissos.ate', conta: 'O último dia da janela.' },
+      {
+        campo: 'compromissos.programados',
+        conta: 'O total sobre o qual as famílias contam.',
+        naoConta:
+          'Não é `comparacao.eventos_a_decorrer`: este inclui os arquivados, aquele não. Somar os dois dá um terceiro número que não quer dizer nada.',
+      },
+      { campo: 'compromissos.concelhos', conta: 'Quantos concelhos tem a região.' },
+      {
+        campo: 'compromissos.concelhos_com_programacao',
+        conta: 'Quantos deles tiveram pelo menos um evento programado no mês.',
+      },
+      {
+        campo: 'compromissos.quota_do_maior',
+        conta:
+          'A fração da programação do mês que coube ao concelho com mais, entre 0 e 1. Quanto mais perto de 1, mais concentrada está a agenda.',
+        naoConta:
+          'Não diz qual é esse concelho, de propósito: uma lista de municípios da mesma CIM por ordem de programação é uma tabela classificativa, e uma tabela classificativa não é um instrumento de coesão. Vazia quando não houve programação — não há quota de zero.',
+      },
+      {
+        campo: 'compromissos.mediana_por_concelho',
+        conta:
+          'A mediana de eventos por concelho, contando **todos** os concelhos da região — os que ficaram a zero incluídos, porque é esse o achado.',
+      },
+      {
+        campo: 'compromissos.concelhos_abaixo_de_metade_da_mediana',
+        conta:
+          'Quantos concelhos ficaram abaixo de metade da mediana. É a cauda a que falta trabalho.',
+      },
+      {
+        campo: 'compromissos.em_espaco_de_coletividade',
+        conta:
+          'Eventos num espaço do catálogo marcado como coletividade (`venues.is_association`).',
+        naoConta:
+          'Não é «organizado por uma coletividade»: o modelo não tem organizador. Um evento de uma associação numa sala municipal conta como equipamento.',
+      },
+      {
+        campo: 'compromissos.em_equipamento',
+        conta: 'Eventos num espaço do catálogo que não é coletividade.',
+      },
+      {
+        campo: 'compromissos.sem_espaco_do_catalogo',
+        conta:
+          'Eventos que dizem onde são por escrito mas não estão ligados a um espaço. Hoje é a maior das três de longe — não é um defeito das coletividades, é o estado do catálogo.',
+      },
+      { campo: 'compromissos.entrada_livre', conta: 'Eventos marcados como gratuitos.' },
+      { campo: 'compromissos.com_preco', conta: 'Eventos com preço mínimo escrito.' },
+      {
+        campo: 'compromissos.sem_dizer_o_preco',
+        conta: 'Eventos que não dizem se é pago nem quanto custa.',
+        naoConta:
+          'Não é «pago» nem «grátis». Arrumá-lo numa das outras duas era inventar o preço destes eventos, e são a maioria.',
+      },
+      {
+        campo: 'compromissos.com_acesso_declarado',
+        conta:
+          'Eventos que declaram pelo menos uma das quatro condições. Com `sem_acesso_declarado`, soma o total.',
+      },
+      {
+        campo: 'compromissos.sem_acesso_declarado',
+        conta: 'Eventos que não declaram nenhuma.',
+        naoConta:
+          'Não quer dizer que não sejam acessíveis: quer dizer que ninguém escreveu que são.',
+      },
+      {
+        campo: 'compromissos.cadeira_de_rodas',
+        conta:
+          'Eventos com acesso a cadeira de rodas — o do evento, ou o do espaço quando o evento não diz, que é o que o público lê na ficha.',
+        naoConta:
+          'As quatro condições **sobrepõem-se** e por isso não somam entre si: um evento com língua gestual e cadeira de rodas conta nas duas.',
+      },
+      {
+        campo: 'compromissos.lingua_gestual',
+        conta: 'Eventos com interpretação em língua gestual.',
+      },
+      { campo: 'compromissos.audiodescricao', conta: 'Eventos com audiodescrição.' },
+      {
+        campo: 'compromissos.sessao_relaxada',
+        conta: 'Eventos marcados como sessão relaxada.',
+        naoConta:
+          'Não há contagem de legendagem: `events` não tem coluna nenhuma para ela, e contar uma quinta condição que não existe era publicar um zero que se lê como «ninguém legenda».',
+      },
+      {
+        campo: 'compromissos.em_serie_regional',
+        conta: 'Eventos de uma série marcada como regional — programação que atravessa concelhos.',
+      },
+      {
+        campo: 'compromissos.concelhos_tocados_em_rede',
+        conta: 'Quantos concelhos distintos essa programação tocou.',
+      },
+    ],
+  },
+  {
     bloco: 'visitas',
     titulo: 'Se houve com que comparar',
     prosa: [

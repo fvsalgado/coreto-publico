@@ -330,6 +330,104 @@ function Comparacoes({ comparacao }: { comparacao: RelatorioMensal['comparison']
   );
 }
 
+/**
+ * Os cinco compromissos, cada um com a sua forma.
+ *
+ * Não é uma tabela: as cinco famílias respondem a perguntas diferentes — uma
+ * quota entre 0 e 1, três contagens que somam, quatro que se sobrepõem — e
+ * forçá-las a colunas comuns dava um quadro com metade das células vazias.
+ *
+ * **A coesão não mostra qual é o concelho maior**, e é deliberado: uma lista
+ * de municípios da mesma CIM por ordem de programação é uma tabela
+ * classificativa, e uma tabela classificativa não é um instrumento de coesão.
+ */
+function Compromissos({ p }: { p: RelatorioMensal['promises'] }) {
+  const quota = p.cohesion.top_share;
+
+  const familias: Array<{ titulo: string; linhas: Array<[string, string]>; nota?: string }> = [
+    {
+      titulo: 'Coesão do território',
+      linhas: [
+        [
+          'Concelhos com programação',
+          `${contar(p.cohesion.municipalities_with_programming)} de ${contar(p.cohesion.municipalities)}`,
+        ],
+        [
+          'Quota do concelho com mais',
+          quota === null ? 'sem programação' : `${Math.round(quota * 100)}%`,
+        ],
+        ['Mediana por concelho', p.cohesion.median === null ? '—' : contar(p.cohesion.median)],
+        ['Abaixo de metade da mediana', contar(p.cohesion.below_half_median)],
+      ],
+      nota: 'Qual é o concelho maior não se diz: entre municípios da mesma CIM, uma tabela ordenada não é um instrumento de coesão.',
+    },
+    {
+      titulo: 'Cauda longa associativa',
+      linhas: [
+        ['Em espaço de coletividade', contar(p.association.in_association_venue)],
+        ['Em equipamento', contar(p.association.in_other_venue)],
+        ['Sem espaço do catálogo', contar(p.association.without_venue)],
+      ],
+      nota: 'As três somam o total. «Sem espaço do catálogo» é o evento que diz onde é por escrito e não está ligado a lado nenhum — hoje é a maior das três, e isso é o estado do catálogo e não das coletividades.',
+    },
+    {
+      titulo: 'Entrada',
+      linhas: [
+        ['Livre', contar(p.admission.free)],
+        ['Com preço', contar(p.admission.priced)],
+        ['Não diz', contar(p.admission.undeclared)],
+      ],
+      nota: '«Não diz» tem o mesmo peso das outras duas, de propósito: arrumá-lo numa delas era inventar o preço destes eventos.',
+    },
+    {
+      titulo: 'Acessibilidade declarada',
+      linhas: [
+        ['Declaram alguma condição', contar(p.accessibility.any)],
+        ['Não declaram nenhuma', contar(p.accessibility.none)],
+        ['Cadeira de rodas', contar(p.accessibility.wheelchair)],
+        ['Língua gestual', contar(p.accessibility.sign_language)],
+        ['Audiodescrição', contar(p.accessibility.audio_description)],
+        ['Sessão relaxada', contar(p.accessibility.relaxed)],
+      ],
+      nota: 'As duas primeiras somam o total; as quatro condições sobrepõem-se e não somam. Não declarar não quer dizer não ser acessível — quer dizer que ninguém escreveu que é.',
+    },
+    {
+      titulo: 'Programação em rede',
+      linhas: [
+        ['Eventos em série regional', contar(p.network.events)],
+        ['Concelhos tocados', contar(p.network.municipalities_touched)],
+      ],
+    },
+  ];
+
+  return (
+    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+      {familias.map((familia) => (
+        <section
+          key={familia.titulo}
+          className="rounded border border-border px-4 py-3"
+          aria-labelledby={`compromisso-${familia.titulo.replace(/\s/g, '-')}`}
+        >
+          <h3 id={`compromisso-${familia.titulo.replace(/\s/g, '-')}`} className="font-semibold">
+            {familia.titulo}
+          </h3>
+          <dl className="mt-2 space-y-1 text-sm">
+            {familia.linhas.map(([rotulo, valor]) => (
+              <div key={rotulo} className="flex justify-between gap-4">
+                <dt className="text-muted">{rotulo}</dt>
+                <dd className="tabular-nums">{valor}</dd>
+              </div>
+            ))}
+          </dl>
+          {familia.nota ? (
+            <p className="mt-2 max-w-prose text-xs text-muted">{familia.nota}</p>
+          ) : null}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   searchParams: Promise<{ regiao?: string; mes?: string }>;
 }
@@ -491,6 +589,14 @@ export default async function Relatorios({ searchParams }: Props) {
               }
             >
               <Comparacoes comparacao={relatorio.comparison} />
+            </Seccao>
+
+            <Seccao
+              id="compromissos"
+              titulo="O que a casa promete"
+              legenda={`Cinco famílias sobre os ${contar(relatorio.promises.total)} eventos programados no mês — canónicos, nem rascunho nem escondidos, arquivados incluídos. Não é o mesmo número que «eventos a decorrer» acima, e os dois não se somam: um conta o que foi programado, o outro o que estava publicado. Tudo isto mede o que a agenda conseguiu recolher, e não o que aconteceu no território.`}
+            >
+              <Compromissos p={relatorio.promises} />
             </Seccao>
 
             <Seccao
