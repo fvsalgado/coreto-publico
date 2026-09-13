@@ -45,7 +45,13 @@ const RELATORIO: RelatorioMensal = {
     reviewed: { approved: 0, rejected: 0, other: 0 },
   },
   quality: [],
-  visits: { available: true, from: '2026-08-01', to: '2026-09-01', by_municipality: [] },
+  visits: {
+    available: true,
+    from: '2026-08-01',
+    to: '2026-09-01',
+    clicks_since: null,
+    by_municipality: [],
+  },
 };
 
 function pedido(query: string): Request {

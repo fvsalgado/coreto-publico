@@ -89,6 +89,14 @@ export interface RelatorioMensal {
     from: string | null;
     /** O dia da fotografia de chegada, ou `null` se não existiu. */
     to: string | null;
+    /**
+     * O dia da primeira fotografia que traz os contadores da 0141 — o clique na
+     * página oficial e o «como chegar». `null` enquanto não houver nenhuma.
+     *
+     * É o que deixa a página escrever «a partir de 14 de setembro» em vez de
+     * deixar dois nulos por explicar.
+     */
+    clicks_since: string | null;
     by_municipality: Array<{
       municipality_id: string;
       municipality_name: string;
@@ -97,6 +105,13 @@ export interface RelatorioMensal {
       ical_downloads: number;
       shares: number;
       clicks: number;
+      /**
+       * `null` quando uma das duas fotografias do mês não tinha o contador.
+       * Zero diria que ninguém carregou; ninguém carregou porque não havia
+       * botão que contasse.
+       */
+      source_clicks: number | null;
+      directions_clicks: number | null;
     }>;
   };
 }
@@ -369,11 +384,22 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         ['disponivel', visits.available],
         ['fotografia_de', visits.from],
         ['fotografia_ate', visits.to],
+        ['cliques_desde', visits.clicks_since],
       ],
     ),
     bloco(
       'visitas_por_concelho',
-      ['concelho_id', 'concelho', 'aberturas', 'bilhetica', 'calendario', 'partilhas', 'cliques'],
+      [
+        'concelho_id',
+        'concelho',
+        'aberturas',
+        'bilhetica',
+        'calendario',
+        'partilhas',
+        'cliques',
+        'pagina_oficial',
+        'como_chegar',
+      ],
       visits.by_municipality.map((v) => [
         v.municipality_id,
         v.municipality_name,
@@ -382,6 +408,10 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         v.ical_downloads,
         v.shares,
         v.clicks,
+        // Vazio, e não zero, quando uma das fotografias do mês ainda não tinha
+        // o contador: numa folha de cálculo um zero soma-se e um vazio não.
+        v.source_clicks,
+        v.directions_clicks,
       ]),
     ),
   ];

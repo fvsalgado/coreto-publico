@@ -227,10 +227,17 @@ lista completa dos sítios onde pode estar alguma coisa de alguém:
 
 Esta secção existe porque é a pergunta que um jurista faz primeiro.
 
-Cada evento tem quatro contadores: aberturas da ficha, cliques na bilhética,
-descarregamentos do calendário e partilhas. A tabela `public.event_stats` tem
-**cinco colunas de dados e mais nada**: o identificador do evento, os quatro
-contadores, a soma materializada e a data da última atualização.
+Cada evento tem seis contadores: aberturas da ficha, cliques na bilhética,
+descarregamentos do calendário, partilhas, cliques na página oficial do evento e
+cliques em «como chegar». A tabela `public.event_stats` tem **sete colunas de
+dados e mais nada**: o identificador do evento, os seis contadores, a soma
+materializada dos três primeiros cliques e a data da última atualização.
+
+Os dois últimos contadores entraram na migração 0141, e entraram por esta porta:
+a lista fechada das `schema-checks` recusou-os até alguém — eu — ir escrever aqui
+e na página publicada o que passava a ser contado. É o comportamento pretendido,
+e está escrito porque a próxima pessoa a acrescentar um contador vai bater na
+mesma porta.
 
 Não há linha por visita. Não há identificador de sessão, de visitante ou de
 dispositivo. Não há endereço IP — nem em claro nem em hash. Não há data e hora
