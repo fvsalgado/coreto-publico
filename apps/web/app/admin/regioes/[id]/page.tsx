@@ -1,9 +1,19 @@
 import { notFound } from 'next/navigation';
 import { InterruptoresDeSeccoes } from '@/src/components/InterruptoresDeSeccoes';
 import { PageHeader } from '@/src/components/PageHeader';
-import { atualizarRegiao, registarLicenca } from '@/src/lib/admin/actions';
+import {
+  atualizarRegiao,
+  criarSegredoDeBalanco,
+  registarLicenca,
+  revogarSegredosDeBalanco,
+} from '@/src/lib/admin/actions';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
-import { listRegionLicenses, listRegionsAdmin, listSiteSections } from '@/src/lib/admin/queries';
+import {
+  listRegionLicenses,
+  listRegionsAdmin,
+  listSegredosDeBalanco,
+  listSiteSections,
+} from '@/src/lib/admin/queries';
 import { hasServiceRole } from '@/src/lib/env';
 import { REGIAO_PRINCIPAL } from '@/src/lib/regiao-host';
 
@@ -14,7 +24,7 @@ const LABEL = 'block text-sm font-medium';
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ aviso?: string }>;
+  searchParams: Promise<{ aviso?: string; segredo?: string }>;
 }
 
 /** Um campo de texto do formulário, com o rótulo e a ajuda no sítio do costume. */
@@ -93,7 +103,7 @@ function Area({
  * promessas das schema-checks, e mudam por migração, seguindo o NOVA-CIM.md.
  */
 export default async function FichaDaRegiao({ params, searchParams }: Props) {
-  const [{ id }, { aviso }] = await Promise.all([params, searchParams]);
+  const [{ id }, { aviso, segredo }] = await Promise.all([params, searchParams]);
 
   if (!hasServiceRole) {
     return (
@@ -106,10 +116,11 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
     );
   }
 
-  const [regioes, seccoes, todasAsLicencas] = await Promise.all([
+  const [regioes, seccoes, todasAsLicencas, segredos] = await Promise.all([
     listRegionsAdmin(),
     listSiteSections(id),
     listRegionLicenses(),
+    listSegredosDeBalanco(),
   ]);
   const regiao = regioes.find((linha) => linha.id === id);
   if (!regiao) notFound();
@@ -117,6 +128,8 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
   // Já vêm por ordem decrescente de início — a mais recente manda no estado.
   const licencas = todasAsLicencas.filter((linha) => linha.region_id === id);
   const licenca = estadoDaLicenca(licencas, new Date().toISOString().slice(0, 10));
+  // No máximo um por região: a 0151 revoga o anterior ao criar o seguinte.
+  const segredoDaRegiao = segredos.find((linha) => linha.region_id === id);
 
   return (
     <>
@@ -400,6 +413,103 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           Guardar alterações
         </button>
       </form>
+
+      {/*
+        A porta de quem decide.
+        ---------------------------------------------------------------------
+        Um segredo por região que abre `/balanco` em leitura, sem sessão de
+        administração e sem acesso a mais nada. **É a segunda porta da casa**,
+        e a regra escrita diz «uma palavra-passe, sem contas»: a regra foi
+        escrita para a moderação, onde há um operador só, e quem entra por
+        aqui não modera, não escreve, e o que vê já é do território dele. O
+        argumento está por extenso na 0151.
+
+        O segredo aparece **uma vez**, logo a seguir a ser criado, e mais
+        nunca: a base guarda o sha256 e o painel não tem por onde o
+        reconstruir. Recarregar esta página perde-o.
+      */}
+      <section aria-labelledby="balanco" className="mt-10 max-w-2xl">
+        <h2 id="balanco" className="text-lg font-semibold">
+          A porta de quem decide
+        </h2>
+        <p className="mt-1 max-w-xl text-sm text-muted">
+          Um endereço de leitura desta região — seis números sobre o mês, com o que cada um mede e o
+          que não mede escrito ao lado. Abre sem sessão de administração e não dá acesso a mais
+          nada: nem à fila, nem à auditoria, nem às licenças.
+        </p>
+
+        {segredo ? (
+          <div
+            role="status"
+            className="mt-4 rounded border border-highlight bg-surface px-3 py-3 text-sm"
+          >
+            <p className="font-medium">O endereço, uma vez.</p>
+            <p className="mt-1 text-muted">
+              Copie-o agora. Não volta a aparecer: a base guarda só uma impressão dele, e nem esta
+              página o consegue reconstruir. Se o perder, crie outro — o novo fecha este.
+            </p>
+            <p className="mt-2 break-all font-mono text-xs">
+              /balanco?chave={segredo}&amp;regiao={regiao.id}
+            </p>
+          </div>
+        ) : null}
+
+        {segredoDaRegiao ? (
+          <p className="mt-3 text-sm">
+            Há uma porta aberta desde{' '}
+            <span className="tabular-nums">{segredoDaRegiao.created_at.slice(0, 10)}</span>, criada
+            por {segredoDaRegiao.created_by}, com prazo até{' '}
+            <span className="tabular-nums">{segredoDaRegiao.expires_on}</span>.{' '}
+            {segredoDaRegiao.last_used_on
+              ? `Usada pela última vez a ${segredoDaRegiao.last_used_on}.`
+              : 'Ainda não foi usada.'}
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-muted">Não há porta aberta para esta região.</p>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <form action={criarSegredoDeBalanco} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="region_id" value={regiao.id} />
+            <div>
+              <label htmlFor="dias-do-balanco" className={LABEL}>
+                Prazo, em dias
+              </label>
+              <input
+                id="dias-do-balanco"
+                name="dias"
+                type="number"
+                min={1}
+                max={1095}
+                defaultValue={180}
+                className={`${FIELD} w-32`}
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+            >
+              {segredoDaRegiao ? 'Criar uma nova (fecha a atual)' : 'Criar'}
+            </button>
+          </form>
+
+          {segredoDaRegiao ? (
+            <form action={revogarSegredosDeBalanco}>
+              <input type="hidden" name="region_id" value={regiao.id} />
+              <button
+                type="submit"
+                className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+              >
+                Fechar a porta
+              </button>
+            </form>
+          ) : null}
+        </div>
+        <p className="mt-2 max-w-xl text-xs text-muted">
+          Criar uma nova fecha a anterior no pedido seguinte — não no fim do prazo. A criação e o
+          fecho ficam na auditoria, com o identificador e nunca com o segredo.
+        </p>
+      </section>
 
       {/*
         As licenças vivem fora do formulário da ficha: formulários não se

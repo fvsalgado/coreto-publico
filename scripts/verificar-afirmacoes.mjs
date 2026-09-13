@@ -1003,6 +1003,76 @@ presente(
 }
 
 /*
+ * A porta de quem decide não pode ser um caminho para o painel.
+ *
+ * O `/balanco` abre com um segredo de leitura e existe porque dar o relatório
+ * a uma CIM não pode ser dar-lhe a fila de moderação. A garantia que sustenta
+ * esse argumento é uma só, e é estrutural: **daquela página não há caminho
+ * nenhum para `/admin`**. Uma ligação acrescentada por distração — um menu
+ * partilhado, um rodapé comum, um «voltar» — transformava a chave de leitura
+ * num convite a bater à porta onde se escreve.
+ *
+ * Verifica-se no texto e não no comportamento de propósito: o dia em que
+ * alguém escrever `/admin` dentro desta árvore, isto falha antes de a página
+ * chegar a ser servida a alguém.
+ */
+{
+  const pasta = 'apps/web/app/balanco';
+  const ficheiros = readdirSync(join(RAIZ, pasta), { recursive: true })
+    .map(String)
+    .filter((nome) => nome.endsWith('.tsx') || nome.endsWith('.ts'));
+
+  const comAdmin = ficheiros.filter((nome) => {
+    // **Sem comentários**, e a primeira versão disto não os tirava: a página
+    // explica, num comentário, que o mês por omissão é o mesmo de
+    // `/admin/relatorios`, e a asserção deu isso como uma ligação ao painel.
+    // Uma guarda que se despiste na prosa ensina-se a ignorar em duas
+    // semanas, e é assim que passa a deixar entrar o que interessa.
+    //
+    // As importações de `@/src/lib/admin/…` ficam de fora por outra razão, e
+    // é de propósito: o balanço lê o mesmo relatório que o painel, e ler não
+    // é ligar. O que não pode haver é um **endereço** — uma ligação, um
+    // redirecionamento, um `action` de formulário.
+    const codigo = semComentarios(ler(`${pasta}/${nome}`));
+    return /(?:href|action|redirect\(|new URL\()\s*=?\s*\{?\s*['"`]\/admin/.test(codigo);
+  });
+
+  afirmar({
+    afirmacao: 'nenhum caminho a partir do balanço chega ao painel',
+    porque:
+      'a porta de leitura existe porque dar o relatório a uma CIM não pode ser dar-lhe a fila de moderação — e uma ligação acrescentada por distração transforma a chave de leitura num convite a bater à porta onde se escreve',
+    onde: `${pasta}/**`,
+    ok: ficheiros.length > 0 && comAdmin.length === 0,
+    esperava: 'nenhum endereço /admin na árvore do balanço',
+    encontrei:
+      ficheiros.length === 0
+        ? 'a árvore do balanço não existe'
+        : comAdmin.length
+          ? `com endereço para o painel: ${comAdmin.join(', ')}`
+          : 'nenhum',
+  });
+
+  // E o segredo não pode ser guardado em lado nenhum do lado do sítio: o que
+  // existe é a impressão. Um `token_sha256` lido para o painel era uma cópia
+  // do segredo à espera de aparecer num ecrã.
+  // Sem comentários, pela mesma razão: a própria função explica, por escrito,
+  // que nunca traz `token_sha256` — e uma asserção que lesse a explicação
+  // falhava por a promessa estar escrita.
+  const consultas = semComentarios(ler('apps/web/src/lib/admin/queries.ts'));
+  afirmar({
+    afirmacao: 'o painel nunca lê a impressão do segredo do balanço',
+    porque:
+      'a impressão não serve para nada no painel, e uma coluna que não é pedida é uma coluna que não pode aparecer num ecrã por cima do ombro de alguém',
+    onde: origem('apps/web/src/lib/admin/queries.ts', /region_report_tokens/),
+    ok: !consultas.includes('token_sha256'),
+    esperava: 'sem token_sha256 em nenhuma leitura do painel',
+    encontrei: consultas.includes('token_sha256')
+      ? 'o painel pede a coluna token_sha256'
+      : 'não a pede',
+  });
+}
+
+/*
  * A guarda do widget vale em três sítios, e é por isso que se verificam os
  * três. Esteve escrita contra um só — «`export function ehCaixaEmbebida` em
  * `posthog.ts`» — e a primeira mexida legítima fê-la falhar: a função mudou
