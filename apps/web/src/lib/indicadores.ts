@@ -60,6 +60,13 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
         naoConta:
           'Vazio quando não houve fotografia nesse mês — e aí a qualidade é a de hoje, não a do mês. Meses anteriores a setembro de 2026 ficam sempre vazios: a medida só passou a guardar memória então, e recuar a de hoje seria escrever sobre um mês um número que ninguém leu nele.',
       },
+      {
+        campo: 'relatorio.observado_desde',
+        conta:
+          'O primeiro dia em que esta região passou a ser observada: o mais antigo entre o primeiro evento, a primeira submissão e a primeira execução de uma fonte sua. Uma recolha que não trouxe nada conta na mesma — estávamos a olhar.',
+        naoConta:
+          'Não é a data em que a região aderiu, nem a do primeiro evento publicado. É o que decide quais das janelas do bloco «comparacao» existem: um mês que começou antes disto foi visto em parte.',
+      },
     ],
   },
   {
@@ -240,8 +247,10 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
     ],
     universo:
       'Eventos canónicos, publicados ou por publicar. Escondidos e arquivados ficam de fora.',
-    periodicidade: 'O estado no instante da geração; não tem histórico.',
-    deOndeVem: 'A vista `event_quality_by_municipality`.',
+    periodicidade:
+      'Uma fotografia por noite desde setembro de 2026. O relatório de um mês leva a última tirada dentro dele — o estado com que o mês fechou —, e `relatorio.qualidade_de` diz de que dia é. Meses sem fotografia levam o estado de hoje, e esse campo fica vazio.',
+    deOndeVem:
+      'A tabela `event_quality_snapshots`, alimentada todas as noites a partir da vista `event_quality_by_municipality`. Sem fotografia no mês, a vista diretamente.',
     campos: [
       { campo: 'qualidade.concelho_id', conta: 'O concelho.' },
       { campo: 'qualidade.concelho', conta: 'O nome do concelho.' },
@@ -270,6 +279,57 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
           'Um evento cujo preço não se conseguiu ler não conta — «não consegui saber» não é «entrada livre».',
       },
       { campo: 'qualidade.com_coordenadas', conta: 'Eventos com coordenadas.' },
+    ],
+  },
+  {
+    bloco: 'comparacao',
+    titulo: 'As mesmas medidas noutras janelas',
+    prosa: [
+      'Uma linha por janela — o mês, o mês anterior, o mês homólogo, e o acumulado do ano —, com as mesmas cinco medidas em todas. As cinco saem da mesma expressão de base de dados chamada quatro vezes: uma comparação em que os dois lados são contados de maneiras diferentes é uma comparação entre duas perguntas.',
+      '**Uma janela que não se pode comparar não aparece no ficheiro.** Não vem a zero: um zero num CSV lê-se como uma medição, e um mês que começou antes de `relatorio.observado_desde` foi visto em parte. Comparar contra ele mede a data em que o projeto começou, não a agenda de ninguém.',
+      'As datas de cada janela vão nas colunas `de` e `ate`, e não são decorativas: o acumulado do ano começa a 1 de janeiro **ou** no dia em que a região passou a ser observada, o que for mais tarde.',
+    ],
+    universo:
+      'A mesma região do relatório. Eventos canónicos; sessões não canceladas de eventos publicados.',
+    periodicidade: 'Calculado no instante da geração, sobre janelas fechadas de datas.',
+    deOndeVem: 'A função `report_totals`, uma vez por janela.',
+    campos: [
+      {
+        campo: 'comparacao.janela',
+        conta: 'Qual das quatro: «mes», «mes_anterior», «homologo» ou «acumulado_do_ano».',
+        naoConta: 'As janelas ausentes são as que não se podem comparar — não são linhas perdidas.',
+      },
+      { campo: 'comparacao.de', conta: 'O primeiro dia dentro da janela.' },
+      { campo: 'comparacao.ate', conta: 'O último dia dentro da janela.' },
+      {
+        campo: 'comparacao.eventos_publicados',
+        conta:
+          'Eventos cuja **decisão de publicar** caiu dentro da janela, arquivados incluídos: um evento publicado em julho e arquivado em agosto foi publicado em julho.',
+        naoConta: 'Não é o que estava à vista na janela — essa é a coluna ao lado.',
+      },
+      {
+        campo: 'comparacao.eventos_a_decorrer',
+        conta: 'Eventos publicados cuja programação tocou a janela, ainda que por um dia.',
+        naoConta:
+          'Um evento que atravessa dois meses conta nos dois. Somar meses dá mais do que o acumulado, e o acumulado é que está certo.',
+      },
+      {
+        campo: 'comparacao.sessoes',
+        conta:
+          'Sessões não canceladas, de eventos publicados, com data dentro da janela. É a unidade que o INE usa em espetáculos ao vivo: um festival de três dias é um evento e três sessões.',
+        naoConta:
+          'Uma sessão cancelada não conta — não foi um espetáculo. E um evento sem sessões gravadas não aparece aqui, ainda que apareça em «eventos a decorrer».',
+      },
+      {
+        campo: 'comparacao.submissoes_recebidas',
+        conta: 'Submissões que **chegaram** dentro da janela, por qualquer canal.',
+      },
+      {
+        campo: 'comparacao.submissoes_aprovadas',
+        conta: 'Submissões **revistas e aprovadas** dentro da janela.',
+        naoConta:
+          'Não são as aprovadas de entre as recebidas na janela: uma submissão que chegou em agosto e foi aprovada em setembro conta na recebida de agosto e na aprovada de setembro.',
+      },
     ],
   },
   {

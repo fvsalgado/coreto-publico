@@ -5,12 +5,15 @@ import { listRegionsAdmin, monthlyReport } from '@/src/lib/admin/queries';
 import {
   CANAIS,
   DESFECHOS,
+  JANELAS,
+  MEDIDAS_COMPARAVEIS,
   escolherRegiao,
   lerMes,
   mesAnterior,
   nomeDoFicheiro,
   nomeDoMes,
   porqueSemHistorico,
+  variacao,
   type RelatorioMensal,
 } from '@/src/lib/admin/relatorio';
 import { hasServiceRole } from '@/src/lib/env';
@@ -238,6 +241,95 @@ function Seccao({
   );
 }
 
+/**
+ * As quatro janelas lado a lado, e a variação contra o mês anterior.
+ *
+ * «128 eventos em setembro» não diz se setembro foi bom; «128, contra 94 em
+ * agosto» diz. É a diferença entre uma contagem e uma prestação de contas.
+ *
+ * **Uma janela sem comparação não vem a zero: vem a «sem comparação».** Um
+ * mês que começou antes de a região passar a ser observada foi visto em
+ * parte, e uma variação calculada sobre ele mede a data em que o projeto
+ * começou. É a regra que as visitas seguem desde a 0120, e é também a razão
+ * por que o primeiro relatório com comparações a sério é o do segundo mês
+ * inteiro — quem vir as colunas vazias antes disso não está a ver uma avaria.
+ *
+ * Sem cores e sem setas: a casa não tem cores de estado, e um mês com menos
+ * submissões pode ser um mês em que a recolha automática passou a trazer
+ * tudo. A variação vai por palavras e por sinal, e quem lê decide.
+ */
+function Comparacoes({ comparacao }: { comparacao: RelatorioMensal['comparison'] }) {
+  const anterior = comparacao.previous_month;
+
+  return (
+    <div
+      className="mt-3 overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label="Tabela, deslocável na horizontal"
+    >
+      <table className="w-full text-sm">
+        <caption className="sr-only">
+          As mesmas medidas no mês, no mês anterior, no mês homólogo e no acumulado do ano, com a
+          variação contra o mês anterior.
+        </caption>
+        <thead>
+          <tr className="border-b border-border text-left">
+            <th scope="col" className="py-2 pr-4">
+              Medida
+            </th>
+            {JANELAS.map((janela) => (
+              <th key={janela.chave} scope="col" className="py-2 pr-4">
+                {janela.rotulo}
+                {/* A janela por baixo do rótulo, sempre. «Acumulado» sem as
+                    datas ao lado deixa o leitor a supor que é o ano civil, e
+                    não é: começa no dia em que passámos a olhar. */}
+                <span className="block text-xs font-normal text-muted tabular-nums">
+                  {comparacao[janela.campo]
+                    ? `${comparacao[janela.campo]?.from} a ${comparacao[janela.campo]?.to}`
+                    : 'sem comparação'}
+                </span>
+              </th>
+            ))}
+            <th scope="col" className="py-2 pr-4">
+              Contra o mês anterior
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {MEDIDAS_COMPARAVEIS.map((medida) => {
+            const v = anterior
+              ? variacao(anterior[medida.campo], comparacao.current[medida.campo])
+              : null;
+            return (
+              <tr key={medida.campo} className="border-b border-border">
+                <th scope="row" className="py-2 pr-4 text-left font-normal">
+                  {medida.rotulo}
+                </th>
+                {JANELAS.map((janela) => {
+                  const totais = comparacao[janela.campo];
+                  return (
+                    <td key={janela.chave} className="py-2 pr-4 tabular-nums">
+                      {totais ? (
+                        contar(totais[medida.campo])
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="py-2 pr-4">
+                  {v ? v.palavras : <span className="text-muted">sem comparação</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 interface Props {
   searchParams: Promise<{ regiao?: string; mes?: string }>;
 }
@@ -387,6 +479,18 @@ export default async function Relatorios({ searchParams }: Props) {
                   count: relatorio.events.totals.happening_in_month,
                 }}
               />
+            </Seccao>
+
+            <Seccao
+              id="comparacoes"
+              titulo="Comparações"
+              legenda={
+                relatorio.comparison.observed_since
+                  ? `As mesmas medidas noutras janelas. Esta região é observada desde ${relatorio.comparison.observed_since}: um mês que tenha começado antes disso foi visto em parte, e não se compara — escreve-se «sem comparação» em vez de um zero que se lê como uma medição. As sessões vão ao lado dos eventos porque é a unidade que o INE usa em espetáculos ao vivo: um festival de três dias é um evento e três sessões.`
+                  : 'Esta região ainda não tem registo nenhum, e por isso não há nada a comparar.'
+              }
+            >
+              <Comparacoes comparacao={relatorio.comparison} />
             </Seccao>
 
             <Seccao
