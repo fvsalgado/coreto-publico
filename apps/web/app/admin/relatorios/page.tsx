@@ -129,7 +129,30 @@ const VISITAS: Array<StatColumn<Visita>> = [
     render: (v) => contar(v.ical_downloads),
   },
   { key: 'partilhas', label: 'Partilhas', isNumeric: true, render: (v) => contar(v.shares) },
-  { key: 'cliques', label: 'Cliques', isNumeric: true, render: (v) => contar(v.clicks) },
+  {
+    key: 'pagina_oficial',
+    label: 'Página oficial',
+    isNumeric: true,
+    // Travessão, e não zero, quando o mês não tem as duas pontas medidas. É a
+    // frase «a agenda mandou 340 pessoas ao vosso portal» a não ser dita com um
+    // número que ninguém contou.
+    render: (v) => (v.source_clicks === null ? '—' : contar(v.source_clicks)),
+  },
+  {
+    key: 'como_chegar',
+    label: 'Como chegar',
+    isNumeric: true,
+    render: (v) => (v.directions_clicks === null ? '—' : contar(v.directions_clicks)),
+  },
+  {
+    key: 'cliques',
+    // «Cliques» é a coluna gerada `ticket_clicks + ical_downloads + shares`
+    // (0017) — não é uma contagem própria, e não inclui as duas novas. O rótulo
+    // di-lo para ninguém a somar às outras e contar tudo duas vezes.
+    label: 'Soma dos três',
+    isNumeric: true,
+    render: (v) => contar(v.clicks),
+  },
 ];
 
 function somaQualidade(linhas: Qualidade[]): Qualidade {
@@ -155,6 +178,18 @@ function somaQualidade(linhas: Qualidade[]): Qualidade {
   return total;
 }
 
+/**
+ * O total da região, e o nulo a propagar-se.
+ *
+ * Os dois contadores da 0141 são `null` quando uma das fotografias do mês ainda
+ * não os tinha. Somar um nulo como zero fazia o total da região parecer medido
+ * quando não foi — e o total é o número que sai na frase do relatório anual.
+ * Basta um concelho por medir para o total ficar nulo, que é a resposta certa.
+ */
+function somar(total: number | null, parcela: number | null): number | null {
+  return total === null || parcela === null ? null : total + parcela;
+}
+
 function somaVisitas(linhas: Visita[]): Visita {
   return linhas.reduce<Visita>(
     (total, v) => ({
@@ -164,6 +199,8 @@ function somaVisitas(linhas: Visita[]): Visita {
       ical_downloads: total.ical_downloads + v.ical_downloads,
       shares: total.shares + v.shares,
       clicks: total.clicks + v.clicks,
+      source_clicks: somar(total.source_clicks, v.source_clicks),
+      directions_clicks: somar(total.directions_clicks, v.directions_clicks),
     }),
     {
       municipality_id: '',
@@ -173,6 +210,8 @@ function somaVisitas(linhas: Visita[]): Visita {
       ical_downloads: 0,
       shares: 0,
       clicks: 0,
+      source_clicks: 0,
+      directions_clicks: 0,
     },
   );
 }
@@ -464,7 +503,19 @@ export default async function Relatorios({ searchParams }: Props) {
                   <p className="mt-2 text-sm text-muted">
                     Contadas entre a fotografia de{' '}
                     <span className="tabular-nums">{relatorio.visits.from}</span> e a de{' '}
-                    <span className="tabular-nums">{relatorio.visits.to}</span>.
+                    <span className="tabular-nums">{relatorio.visits.to}</span>.{' '}
+                    {relatorio.visits.clicks_since ? (
+                      <>
+                        «Página oficial» e «como chegar» só se contam a partir de{' '}
+                        <span className="tabular-nums">{relatorio.visits.clicks_since}</span>; um
+                        travessão é um mês sem as duas pontas medidas, e não um mês sem cliques.
+                      </>
+                    ) : (
+                      <>
+                        «Página oficial» e «como chegar» ainda não têm uma única fotografia: os dois
+                        contadores nasceram agora e a primeira é a da próxima recolha noturna.
+                      </>
+                    )}
                   </p>
                   <StatTable
                     caption={`Visitas por concelho entre ${relatorio.visits.from} e ${relatorio.visits.to}, com o total da região na última linha.`}

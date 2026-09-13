@@ -283,6 +283,13 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
       },
       { campo: 'visitas.fotografia_de', conta: 'O dia da primeira fotografia.' },
       { campo: 'visitas.fotografia_ate', conta: 'O dia da segunda.' },
+      {
+        campo: 'visitas.cliques_desde',
+        conta:
+          'O dia da primeira fotografia que traz os dois contadores mais recentes — «página oficial» e «como chegar».',
+        naoConta:
+          'Antes dessa data os dois saem **vazios** e não a zero: zero dizia que ninguém carregou, e ninguém carregou porque não havia botão que contasse. Vazio enquanto não houver uma única fotografia com eles.',
+      },
     ],
   },
   {
@@ -309,6 +316,20 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
         conta: 'Descarregamentos do calendário de um evento.',
       },
       { campo: 'visitas_por_concelho.partilhas', conta: 'Partilhas a partir da ficha.' },
+      {
+        campo: 'visitas_por_concelho.pagina_oficial',
+        conta:
+          'Cliques na ligação para a página de quem organiza. É a prova de retorno que a agenda dá a quem lhe dá programação: «a agenda mandou 340 pessoas ao vosso portal em setembro».',
+        naoConta:
+          'Vazio, e não zero, num mês cujas duas fotografias não o tinham as duas — ver `visitas.cliques_desde`. Um total da região só aparece se todos os concelhos o tiverem medido.',
+      },
+      {
+        campo: 'visitas_por_concelho.como_chegar',
+        conta:
+          'Cliques em «Abrir no Google Maps» ou «Ver no OpenStreetMap» a partir de uma ficha de evento. Os dois contam como um: a pergunta é quantas pessoas quiseram saber como lá chegar, não qual dos mapas preferem.',
+        naoConta:
+          'Os mesmos botões na ficha de um **espaço** não contam: o contador é por evento, e uma ficha de espaço não tem evento a que somar. E vazio, e não zero, pela mesma razão da coluna anterior.',
+      },
       {
         campo: 'visitas_por_concelho.cliques',
         conta:
