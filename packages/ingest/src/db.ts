@@ -54,6 +54,7 @@ const STORED_KEYS = [
   'series_id',
   'category_slug',
   'category_confidence',
+  'category_source',
   'categories_raw',
   'tags',
   'audience',
@@ -164,6 +165,17 @@ const audienceSchema = z
   .nullish()
   .transform((value) => value ?? null);
 
+/**
+ * A origem da categoria (0138). A restrição da base recusa qualquer outra
+ * palavra; ler aqui a mesma lista fechada é a segunda guarda — uma coluna que
+ * ganhasse um valor novo à revelia fazia esta leitura falhar, em vez de o
+ * passar adiante como se fosse conhecido.
+ */
+const categorySourceSchema = z
+  .enum(['alias', 'keyword', 'venue_kind', 'person'])
+  .nullish()
+  .transform((value) => value ?? null);
+
 const storedEventSchema: z.ZodType<StoredEvent, unknown> = z.object({
   id: z.string(),
   slug: z.string(),
@@ -182,6 +194,7 @@ const storedEventSchema: z.ZodType<StoredEvent, unknown> = z.object({
   series_id: nullableString,
   category_slug: nullableString,
   category_confidence: nullableNumber,
+  category_source: categorySourceSchema,
   categories_raw: stringArray,
   tags: stringArray,
   audience: audienceSchema,

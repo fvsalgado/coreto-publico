@@ -734,6 +734,424 @@ presente(
   },
 );
 /*
+ * A ficha técnica dos indicadores contra os campos que o relatório escreve.
+ *
+ * O relatório mensal é a peça que uma CIM anexa quando tem de justificar o que
+ * pagou, e quase todos os seus campos respondem a uma pergunta ligeiramente
+ * diferente da que o nome sugere: `eventos_publicados_no_mes` conta a **decisão
+ * de publicar** e inclui o que já foi arquivado; `eventos_a_decorrer_no_mes`
+ * conta a **programação** e não inclui; `qualidade` conta o catálogo, que é
+ * publicados **mais** por publicar. Somar colunas de blocos diferentes dá um
+ * número que não quer dizer nada, e o erro não é do leitor.
+ *
+ * A ficha técnica (`src/lib/indicadores.ts`, servida em `/indicadores`) diz,
+ * campo a campo, o que conta e o que não conta. Uma ficha assim envelhece no dia
+ * em que alguém acrescenta um indicador — e é
+ * exatamente aí que ele passa a mentir por omissão, que é pior do que não
+ * existir. Por isso o par prende-se nos dois sentidos: nenhum campo sem linha,
+ * nenhuma linha sem campo.
+ */
+{
+  const relatorio = ler('apps/web/src/lib/admin/relatorio.ts');
+  const csv = relatorio.split('export function paraCsv')[1]?.split('\n}')[0] ?? '';
+
+  // Cada `bloco('nome', [cabeçalho], linhas)`. Nos blocos de chave/valor o
+  // cabeçalho é literalmente ['chave', 'valor'], e os campos são as chaves das
+  // linhas — que é o que sai no ficheiro e o que um leitor vê.
+  const campos = [];
+  for (const bloco of csv.matchAll(/bloco\(\s*'([a-z_]+)',\s*\[([^\]]*)\],/g)) {
+    const nome = bloco[1];
+    const cabecalho = [...bloco[2].matchAll(/'([a-z_]+)'/g)].map((e) => e[1]);
+    if (cabecalho.join() === 'chave,valor') {
+      const corpo = csv.slice(bloco.index + bloco[0].length).split('\n    ),')[0] ?? '';
+      for (const chave of corpo.matchAll(/\['([a-z_]+)',/g)) campos.push(`${nome}.${chave[1]}`);
+    } else {
+      for (const coluna of cabecalho) campos.push(`${nome}.${coluna}`);
+    }
+  }
+
+  const ficha = ler('apps/web/src/lib/indicadores.ts');
+  const documentados = new Set(
+    [...ficha.matchAll(/campo: '([a-z_]+\.[a-z_]+)'/g)].map((entrada) => entrada[1]),
+  );
+
+  const semLinha = campos.filter((campo) => !documentados.has(campo));
+  const semCampo = [...documentados].filter((campo) => !campos.includes(campo));
+
+  afirmar({
+    afirmacao:
+      'cada campo do relatório mensal tem uma linha na ficha técnica, e cada linha um campo',
+    porque:
+      'quase todos estes números respondem a uma pergunta ligeiramente diferente da que o nome sugere, e dois leitores que somem a mesma coluna chegam a números diferentes — o que desconta a peça não é o erro, é ninguém saber dizer qual era o certo',
+    onde: `apps/web/src/lib/indicadores.ts contra ${origem('apps/web/src/lib/admin/relatorio.ts', /export function paraCsv/)}`,
+    ok: campos.length > 0 && semLinha.length === 0 && semCampo.length === 0,
+    esperava: `${campos.length} campos, um por linha da ficha`,
+    encontrei:
+      [
+        campos.length === 0 ? 'não consegui ler os campos do relatório' : '',
+        semLinha.length ? `sem linha na ficha: ${semLinha.join(', ')}` : '',
+        semCampo.length ? `na ficha e já não no relatório: ${semCampo.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
+ * O exemplo de resposta de `/levar` contra as colunas que a API serve.
+ *
+ * A página `/levar` publica um JSON de exemplo com o cabeçalho «a resposta».
+ * Quem integra lê aquilo e escreve o seu leitor a partir dali — e o exemplo
+ * não tinha como saber que a rota tinha mudado. Estava a **menos de cinco
+ * campos** que a API devolve há meses (`is_ongoing`, `municipality_name`,
+ * `category_name`, `venue_name`, `updated_at`, `sessions`), e um exemplo que
+ * omite metade da resposta ensina a integração errada com toda a calma.
+ *
+ * A rota faz `{...event}` sobre uma linha de `CARD_EVENT_FIELDS` e acrescenta
+ * os campos resolvidos. É esse par que aqui se prende: nenhuma coluna do cartão
+ * pode faltar ao exemplo, e nenhum campo do exemplo pode ser inventado.
+ */
+{
+  const campos = ler('apps/web/src/lib/queries/fields.ts');
+  const bloco = campos.split('export const CARD_EVENT_FIELDS = [')[1]?.split('].join(')[0] ?? '';
+  // `'wheelchair_accessible:wheelchair_accessible_resolved'` sai com o nome de
+  // fora, que é o que o contrato publicado promete desde sempre.
+  const colunas = [...bloco.matchAll(/'([a-z_]+)(?::[a-z_]+)?'/g)].map((e) => e[1]);
+
+  // Os campos que a rota acrescenta por cima da linha, lidos da própria rota.
+  const rota = ler('apps/web/app/[regiao]/api/events/route.ts');
+  const resposta = rota.split('events: events.map((event) => ({')[1]?.split('      })),')[0] ?? '';
+  const acrescentados = [...resposta.matchAll(/^\s{8}([a-z_]+):/gm)].map((e) => e[1]);
+
+  const pagina = ler('apps/web/app/[regiao]/levar/page.tsx');
+  const exemplo = pagina.split('const exemploDeResposta')[1]?.split('\n}`;')[0] ?? '';
+  const documentados = new Set([...exemplo.matchAll(/^\s{6}"([a-z_]+)":/gm)].map((e) => e[1]));
+
+  const esperados = [...new Set([...colunas, ...acrescentados])];
+  const emFalta = esperados.filter((campo) => !documentados.has(campo));
+  const aMais = [...documentados].filter((campo) => !esperados.includes(campo));
+
+  afirmar({
+    afirmacao: 'o exemplo de resposta em /levar tem os campos que a API devolve, e só esses',
+    porque:
+      'quem integra escreve o leitor a partir daquele exemplo; um exemplo a menos de cinco campos ensina a integração errada com toda a calma, e um campo a mais promete o que não chega',
+    onde: `${origem('apps/web/app/[regiao]/levar/page.tsx', /const exemploDeResposta/)} contra apps/web/src/lib/queries/fields.ts`,
+    ok:
+      colunas.length > 0 && acrescentados.length > 0 && emFalta.length === 0 && aMais.length === 0,
+    esperava: esperados.join(', ') || 'não consegui ler as colunas do cartão',
+    encontrei:
+      [
+        emFalta.length ? `em falta: ${emFalta.join(', ')}` : '',
+        aMais.length ? `a mais: ${aMais.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
+ * Os prazos de conservação: três coisas que só valem juntas.
+ *
+ * O `docs/RGPD.md` §5 promete apagar, a `/privacidade` publica a promessa sem
+ * ressalva, e o SQL da 0133 executa-a. Entre os três há duas costuras que já se
+ * soltaram uma vez cada:
+ *
+ * **(a) O formato do payload.** O prazo conta «após a data do evento», e essa
+ * data está dentro do `payload` da submissão — em três formas, uma por canal.
+ * O canal de email grava um `ExtractedEvent`, que não tem `date_start`: as
+ * ocorrências vêm em `dates: [{ date, startTime }]`. Uma primeira versão da
+ * função lia duas das três formas e, para o canal de email, recuava em silêncio
+ * para a data de chegada — apagava a submissão de um evento que ainda não tinha
+ * acontecido, que é o contrário exato da frase publicada, e no canal que é
+ * justamente o que traz `sender_email`, `ip_hash` e `raw_text`. Se alguém
+ * mudar o nome da chave no schema da extração, isto apanha-o no mesmo dia.
+ *
+ * **(b) Uma função de expurgo que ninguém chama.** É o defeito desta casa em
+ * forma canónica: a `prune_rate_limits` existe desde a 0005 e esteve muito
+ * tempo sem nada que a chamasse; a política de leitura do arquivo esteve
+ * sessenta e seis migrações aberta com a consulta a filtrar por fora. Uma
+ * função de expurgo escrita e não agendada não apaga nada, e a tabela do
+ * RGPD.md passa a dizer que apaga.
+ */
+{
+  const PASTA = 'supabase/migrations';
+  const migracoes = readdirSync(join(RAIZ, PASTA))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  const sqlPorFicheiro = new Map(migracoes.map((f) => [f, ler(`${PASTA}/${f}`)]));
+
+  // (a) a chave que o schema da extração usa para as ocorrências, e o SQL que a lê
+  const esquema = ler('packages/core/src/schemas.ts');
+  const bloco = esquema.split('export const extractedEventSchema')[1]?.split('\n});')[0] ?? '';
+  const chaveDasDatas = /(\w+): z ?\.array\(z\.object\(\{ date:/.exec(
+    bloco.replace(/\s+/g, ' '),
+  )?.[1];
+
+  const queLeemOPayload = migracoes.filter((f) =>
+    /function public\.data_do_evento_na_submissao/.test(sqlPorFicheiro.get(f)),
+  );
+  const ultima = queLeemOPayload.at(-1);
+  const sqlDaAncora = ultima ? sqlPorFicheiro.get(ultima) : '';
+
+  afirmar({
+    afirmacao:
+      'o SQL do prazo de conservação sabe ler a chave onde o canal de email grava as datas',
+    porque:
+      'sem ela o prazo recua para a data de chegada e apaga a submissão de um evento que ainda não aconteceu — no canal que traz o endereço, o hash do IP e o texto em bruto',
+    onde: `${origem('packages/core/src/schemas.ts', /\.array\(z\.object\(\{ date/)} e ${PASTA}/${ultima ?? '?'}`,
+    ok: Boolean(chaveDasDatas) && sqlDaAncora.includes(`'${chaveDasDatas}'`),
+    esperava: `«'${chaveDasDatas ?? 'a chave das ocorrências'}'» na migração que define data_do_evento_na_submissao`,
+    encontrei: !chaveDasDatas
+      ? 'não consegui ler a chave das ocorrências em extractedEventSchema'
+      : !ultima
+        ? 'nenhuma migração define data_do_evento_na_submissao'
+        : `${PASTA}/${ultima} não menciona '${chaveDasDatas}'`,
+  });
+
+  // (b) toda a função de expurgo escrita é chamada pelo trabalho noturno
+  const escritas = [
+    ...new Set(
+      migracoes.flatMap((f) =>
+        [
+          ...sqlPorFicheiro.get(f).matchAll(/create or replace function public\.(prune_\w+)\(/g),
+        ].map((m) => m[1]),
+      ),
+    ),
+  ].sort();
+  const noturno = ler('.github/workflows/scrape.yml');
+  const porChamar = escritas.filter((nome) => !noturno.includes(nome));
+
+  afirmar({
+    afirmacao: 'todas as funções de expurgo escritas são chamadas todas as noites',
+    porque:
+      'uma função de expurgo que ninguém agenda não apaga nada, e a tabela de prazos do RGPD.md passa a dizer que apaga',
+    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+    ok: escritas.length > 0 && porChamar.length === 0,
+    esperava: escritas.length
+      ? `${escritas.join(', ')} no trabalho noturno`
+      : 'pelo menos uma função de expurgo',
+    encontrei: porChamar.length
+      ? `sem quem as chame: ${porChamar.join(', ')}`
+      : 'nenhuma função de expurgo escrita',
+  });
+
+  // (c) o mesmo para as fotografias, e pela mesma razão
+  //
+  // Uma fotografia é memória: só existe se alguém a tirar, e uma noite que
+  // não a tira não dá erro nenhum — deixa um buraco no histórico que só se
+  // descobre meses depois, ao abrir o relatório de um mês que não tem
+  // qualidade nenhuma para mostrar. A 0120 escreveu a dos contadores e a
+  // 0144 a da qualidade; as duas valem zero sem a linha do trabalho noturno.
+  const fotografias = [
+    ...new Set(
+      migracoes.flatMap((f) =>
+        [
+          ...sqlPorFicheiro
+            .get(f)
+            .matchAll(/create (?:or replace )?function public\.(snapshot_\w+)\(/g),
+        ].map((m) => m[1]),
+      ),
+    ),
+  ].sort();
+  const fotosPorTirar = fotografias.filter((nome) => !noturno.includes(nome));
+
+  afirmar({
+    afirmacao: 'todas as fotografias escritas são tiradas todas as noites',
+    porque:
+      'uma fotografia que ninguém agenda deixa um buraco no histórico que só se descobre meses depois, ao abrir o relatório de um mês que não tem qualidade nenhuma para mostrar',
+    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+    ok: fotografias.length > 0 && fotosPorTirar.length === 0,
+    esperava: fotografias.length
+      ? `${fotografias.join(', ')} no trabalho noturno`
+      : 'pelo menos uma fotografia',
+    encontrei: fotosPorTirar.length
+      ? `sem quem as tire: ${fotosPorTirar.join(', ')}`
+      : 'nenhuma fotografia escrita',
+  });
+
+  // (d) e o resumo diário, que é a terceira forma do mesmo defeito
+  //
+  // A função existe na base, o guião sabe formatá-la, e entre as duas coisas
+  // falta a única que faz o aviso chegar a alguém: a linha do agendamento.
+  // Sem ela, quem escreveu o resumo fica convencido de que o mandou.
+  const guiao = ler('scripts/resumo-diario.sh');
+  const workflows = readdirSync(join(RAIZ, '.github/workflows'))
+    .filter((f) => f.endsWith('.yml'))
+    .map((f) => ler(`.github/workflows/${f}`))
+    .join('\n');
+
+  const escreveOResumo = migracoes.some((f) =>
+    /create (?:or replace )?function public\.daily_digest\(/.test(sqlPorFicheiro.get(f)),
+  );
+
+  afirmar({
+    afirmacao: 'o resumo diário tem quem o leia, quem o formate e quem o agende',
+    porque:
+      'as três peças existem em ficheiros diferentes e nenhuma falha sem as outras: a função devolve, o guião formata, e se ninguém agendar, quem o escreveu fica convencido de que o mandou',
+    onde: 'supabase/migrations/*.sql, scripts/resumo-diario.sh e .github/workflows/',
+    ok: escreveOResumo && guiao.includes('daily_digest') && workflows.includes('resumo-diario.sh'),
+    esperava: 'daily_digest na base, no guião, e o guião num workflow agendado',
+    encontrei:
+      [
+        escreveOResumo ? '' : 'nenhuma migração define daily_digest',
+        guiao.includes('daily_digest') ? '' : 'o guião não chama daily_digest',
+        workflows.includes('resumo-diario.sh') ? '' : 'nenhum workflow corre resumo-diario.sh',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'as três',
+  });
+}
+
+/*
+ * Os tipos de fonte da base e os do código são a mesma lista.
+ *
+ * **Divergiram uma vez, e o custo era total.** A migração 0135 acrescentou
+ * `parish_site` ao tipo `source_kind` da base e a 0136 pôs lá 26 das 40 fontes
+ * ativas. O `SourceKind` do `packages/core` e o `sourceKindSchema` do
+ * `packages/ingest` ficaram com cinco valores.
+ *
+ * Não dava um erro por fonte: `loadSources` faz `z.array(...).safeParse()` sobre
+ * o lote **todo**, e um array rebenta inteiro na primeira linha má. A recolha
+ * seguinte não teria carregado 26 fontes de 40 — teria carregado **zero de
+ * 40**. E as 26 rejeitadas eram exatamente as únicas que naquela noite ainda
+ * respondiam.
+ *
+ * Uma migração que acrescente um valor e não toque no código não falha em lado
+ * nenhum: passa no `verify-migrations.sh`, passa nos testes, passa no `build`.
+ * Só falha de noite, uma vez, e em silêncio. Esta asserção é o sítio onde tem
+ * de falhar.
+ */
+{
+  const PASTA = 'supabase/migrations';
+  const migracoes = readdirSync(join(RAIZ, PASTA))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  // O tipo nasce num `create type` e cresce com `alter type … add value`. A
+  // lista em vigor é a união dos dois, por ordem de migração.
+  const naBase = [];
+  for (const ficheiro of migracoes) {
+    const sql = ler(`${PASTA}/${ficheiro}`);
+    const criacao = /create type public\.source_kind as enum\s*\(([^)]*)\)/i.exec(sql);
+    if (criacao) {
+      for (const v of criacao[1].matchAll(/'([a-z_]+)'/g)) naBase.push(v[1]);
+    }
+    for (const v of sql.matchAll(
+      /alter type public\.source_kind\s+add value(?:\s+if not exists)?\s+'([a-z_]+)'/gi,
+    )) {
+      if (!naBase.includes(v[1])) naBase.push(v[1]);
+    }
+  }
+
+  const tipos = semComentarios(ler('packages/core/src/types.ts'));
+  const bloco = /export type SourceKind\s*=([^;]*);/.exec(tipos)?.[1] ?? '';
+  const noCodigo = [...bloco.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+
+  const validador = semComentarios(ler('packages/ingest/src/adapter.ts'));
+  const esquema =
+    /const sourceKindSchema[^=]*=\s*z\.enum\(\[([^\]]*)\]\)/.exec(validador)?.[1] ?? '';
+  const noValidador = [...esquema.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+
+  const faltamNoCodigo = naBase.filter((v) => !noCodigo.includes(v));
+  const faltamNoValidador = naBase.filter((v) => !noValidador.includes(v));
+  const aMais = noCodigo.filter((v) => !naBase.includes(v));
+
+  afirmar({
+    afirmacao: 'os tipos de fonte da base são exatamente os do código e os do validador',
+    porque:
+      'o `loadSources` valida o lote inteiro de uma vez e rebenta na primeira linha má — um valor que exista na base e não no código não faz a recolha perder essa fonte, faz perder TODAS, e em silêncio, de noite',
+    onde: `${PASTA}/*.sql, packages/core/src/types.ts e packages/ingest/src/adapter.ts`,
+    ok:
+      naBase.length > 0 &&
+      faltamNoCodigo.length === 0 &&
+      faltamNoValidador.length === 0 &&
+      aMais.length === 0,
+    esperava: naBase.length ? naBase.join(', ') : 'pelo menos um tipo de fonte nas migrações',
+    encontrei:
+      [
+        naBase.length === 0 ? 'não consegui ler o tipo source_kind das migrações' : '',
+        faltamNoCodigo.length ? `a faltar no SourceKind: ${faltamNoCodigo.join(', ')}` : '',
+        faltamNoValidador.length
+          ? `a faltar no sourceKindSchema: ${faltamNoValidador.join(', ')}`
+          : '',
+        aMais.length ? `no código e já não na base: ${aMais.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
+ * A porta de quem decide não pode ser um caminho para o painel.
+ *
+ * O `/balanco` abre com um segredo de leitura e existe porque dar o relatório
+ * a uma CIM não pode ser dar-lhe a fila de moderação. A garantia que sustenta
+ * esse argumento é uma só, e é estrutural: **daquela página não há caminho
+ * nenhum para `/admin`**. Uma ligação acrescentada por distração — um menu
+ * partilhado, um rodapé comum, um «voltar» — transformava a chave de leitura
+ * num convite a bater à porta onde se escreve.
+ *
+ * Verifica-se no texto e não no comportamento de propósito: o dia em que
+ * alguém escrever `/admin` dentro desta árvore, isto falha antes de a página
+ * chegar a ser servida a alguém.
+ */
+{
+  const pasta = 'apps/web/app/balanco';
+  const ficheiros = readdirSync(join(RAIZ, pasta), { recursive: true })
+    .map(String)
+    .filter((nome) => nome.endsWith('.tsx') || nome.endsWith('.ts'));
+
+  const comAdmin = ficheiros.filter((nome) => {
+    // **Sem comentários**, e a primeira versão disto não os tirava: a página
+    // explica, num comentário, que o mês por omissão é o mesmo de
+    // `/admin/relatorios`, e a asserção deu isso como uma ligação ao painel.
+    // Uma guarda que se despiste na prosa ensina-se a ignorar em duas
+    // semanas, e é assim que passa a deixar entrar o que interessa.
+    //
+    // As importações de `@/src/lib/admin/…` ficam de fora por outra razão, e
+    // é de propósito: o balanço lê o mesmo relatório que o painel, e ler não
+    // é ligar. O que não pode haver é um **endereço** — uma ligação, um
+    // redirecionamento, um `action` de formulário.
+    const codigo = semComentarios(ler(`${pasta}/${nome}`));
+    return /(?:href|action|redirect\(|new URL\()\s*=?\s*\{?\s*['"`]\/admin/.test(codigo);
+  });
+
+  afirmar({
+    afirmacao: 'nenhum caminho a partir do balanço chega ao painel',
+    porque:
+      'a porta de leitura existe porque dar o relatório a uma CIM não pode ser dar-lhe a fila de moderação — e uma ligação acrescentada por distração transforma a chave de leitura num convite a bater à porta onde se escreve',
+    onde: `${pasta}/**`,
+    ok: ficheiros.length > 0 && comAdmin.length === 0,
+    esperava: 'nenhum endereço /admin na árvore do balanço',
+    encontrei:
+      ficheiros.length === 0
+        ? 'a árvore do balanço não existe'
+        : comAdmin.length
+          ? `com endereço para o painel: ${comAdmin.join(', ')}`
+          : 'nenhum',
+  });
+
+  // E o segredo não pode ser guardado em lado nenhum do lado do sítio: o que
+  // existe é a impressão. Um `token_sha256` lido para o painel era uma cópia
+  // do segredo à espera de aparecer num ecrã.
+  // Sem comentários, pela mesma razão: a própria função explica, por escrito,
+  // que nunca traz `token_sha256` — e uma asserção que lesse a explicação
+  // falhava por a promessa estar escrita.
+  const consultas = semComentarios(ler('apps/web/src/lib/admin/queries.ts'));
+  afirmar({
+    afirmacao: 'o painel nunca lê a impressão do segredo do balanço',
+    porque:
+      'a impressão não serve para nada no painel, e uma coluna que não é pedida é uma coluna que não pode aparecer num ecrã por cima do ombro de alguém',
+    onde: origem('apps/web/src/lib/admin/queries.ts', /region_report_tokens/),
+    ok: !consultas.includes('token_sha256'),
+    esperava: 'sem token_sha256 em nenhuma leitura do painel',
+    encontrei: consultas.includes('token_sha256')
+      ? 'o painel pede a coluna token_sha256'
+      : 'não a pede',
+  });
+}
+
+/*
  * A guarda do widget vale em três sítios, e é por isso que se verificam os
  * três. Esteve escrita contra um só — «`export function ehCaixaEmbebida` em
  * `posthog.ts`» — e a primeira mexida legítima fê-la falhar: a função mudou
@@ -1336,6 +1754,43 @@ if (!BASE) {
           ? 'sem atalho, porque o recorte está vazio'
           : 'o atalho, porque o recorte tem eventos',
       encontrei: `total ${total} e o atalho ${oferece ? 'oferecido' : 'ausente'}`,
+    });
+  }
+
+  // ---- O ficheiro de dados abertos conta o mesmo que a API ----
+  //
+  // O `dados.json` traz `total` dentro do próprio ficheiro, e é esse número que
+  // uma CIM cita. Se ele se afastar do que a API diz para a mesma região e o
+  // mesmo dia, um dos dois está a mentir — e quem o lê não tem como saber qual.
+  //
+  // O tecto do ficheiro é 5000 e a agenda tem 194: a igualdade é a afirmação
+  // certa hoje. No dia em que deixar de ser, é porque o catálogo passou o tecto,
+  // e essa é exatamente a altura de dar por isso.
+  for (const dominio of [ORIGENS.regiao, ORIGENS.montra]) {
+    const ficheiro = await pedir(dominio, '/dados.json');
+    const api = await pedir(dominio, '/api/events?limit=1');
+    const noFicheiro = Number(ficheiro.corpo.match(/"total":(\d+)/)?.[1] ?? '-1');
+    const naApi = Number(api.corpo.match(/"total":(\d+)/)?.[1] ?? '-2');
+    afirmar({
+      afirmacao: `${dominio}: o ficheiro de dados abertos conta o mesmo que a API`,
+      porque:
+        'o `total` viaja dentro do ficheiro e é o que uma CIM cita; dois números diferentes para a mesma pergunta deixam quem lê sem saber qual é o certo',
+      onde: onde(dominio, '/dados.json', 'apps/web/app/[regiao]/dados.json/route.ts'),
+      ok: noFicheiro >= 0 && noFicheiro === naApi,
+      esperava: `o mesmo total nos dois (a API diz ${naApi})`,
+      encontrei: `ficheiro ${noFicheiro} · API ${naApi}`,
+    });
+
+    afirmar({
+      afirmacao: `${dominio}: o ficheiro de dados abertos leva a licença e a data dentro`,
+      porque:
+        'um ficheiro de dados abertos que não diz de quando é obriga quem o recebe a acreditar no nome do anexo, e um sem licença não se pode reutilizar sem perguntar',
+      onde: onde(dominio, '/dados.json', 'apps/web/src/lib/feeds/dump.ts'),
+      ok:
+        /"gerado_em":"\d{4}-\d{2}-\d{2}T/.test(ficheiro.corpo) &&
+        ficheiro.corpo.includes('creativecommons.org/licenses/by/4.0/'),
+      esperava: 'gerado_em em ISO 8601 e a licença CC BY 4.0',
+      encontrei: ficheiro.corpo.slice(0, 160),
     });
   }
 

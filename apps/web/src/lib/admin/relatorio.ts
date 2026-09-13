@@ -10,6 +10,89 @@
  * vão buscar — para os três dizerem o mesmo.
  */
 
+/**
+ * Os totais comparáveis de uma janela. Saem todos de `report_totals` (0146),
+ * a mesma expressão chamada quatro vezes: uma comparação em que os dois lados
+ * são contados por SQL diferente é uma comparação entre duas perguntas.
+ */
+export interface TotaisDaJanela {
+  /** O primeiro e o último dia **dentro** da janela. */
+  from: string;
+  to: string;
+  events_published: number;
+  events_happening: number;
+  /**
+   * A unidade do INE para espetáculos ao vivo. Um festival de três dias é um
+   * evento e três sessões, e sem esta contagem a CIM não consegue pôr o seu
+   * número ao lado do oficial na mesma frase. As canceladas ficam de fora.
+   */
+  sessions_happening: number;
+  submissions_received: number;
+  submissions_approved: number;
+}
+
+/**
+ * Os cinco indicadores dos compromissos declarados (0149).
+ *
+ * **A base é «programado», e não «publicado hoje»**, e a diferença tem um
+ * número: o CAMINHOS uniu dez concelhos entre abril e maio de 2026 e os seus
+ * eventos estão hoje arquivados. Contando só `published`, o relatório de
+ * abril diz 5 eventos e 0 em rede; contando o que foi programado, diz 13 e 4
+ * em 4 concelhos. Um indicador de coesão que esquece o programa que uniu a
+ * região, por ele ter acabado, mede a data em que se abriu o relatório.
+ *
+ * Por isso `total` **não é** `comparison.current.events_happening`: em
+ * setembro de 2026 são 104 e 101. Somar os dois dá um terceiro número que não
+ * quer dizer nada.
+ *
+ * E tudo isto mede **o que a agenda conseguiu recolher**, não o que aconteceu
+ * no território — confundir as duas coisas é acusar um município de não fazer
+ * nada quando o que ele não faz é publicar em HTML legível.
+ */
+export interface Compromissos {
+  from: string;
+  to: string;
+  total: number;
+  /**
+   * Nunca como tabela ordenada: uma lista de concelhos por ordem de
+   * programação é uma tabela classificativa, e entre municípios da mesma CIM
+   * isso não é um instrumento de coesão.
+   */
+  cohesion: {
+    municipalities: number;
+    municipalities_with_programming: number;
+    /** Quota do concelho com mais programação, entre 0 e 1. Nula sem programação. */
+    top_share: number | null;
+    /** Conta todos os concelhos, zeros incluídos. */
+    median: number | null;
+    below_half_median: number;
+  };
+  /** As três somam `total`. */
+  association: {
+    in_association_venue: number;
+    in_other_venue: number;
+    without_venue: number;
+  };
+  /** As três somam `total`. «Não diz» não é «pago» nem «grátis». */
+  admission: { free: number; priced: number; undeclared: number };
+  /**
+   * `any` e `none` somam `total`. As quatro condições **sobrepõem-se** e por
+   * isso não somam: um evento com língua gestual e cadeira de rodas conta nas
+   * duas. São quatro e não cinco — `events` não tem coluna de legendagem, e
+   * contar uma quinta que não existe era um zero que se lê como «ninguém
+   * legenda».
+   */
+  accessibility: {
+    any: number;
+    none: number;
+    wheelchair: number;
+    sign_language: number;
+    audio_description: number;
+    relaxed: number;
+  };
+  network: { events: number; municipalities_touched: number };
+}
+
 export interface RelatorioMensal {
   region: { id: string; name: string };
   /** `AAAA-MM`. */
@@ -48,12 +131,34 @@ export interface RelatorioMensal {
     last_success_at: string | null;
     items_new_in_month: number;
   }>;
+  /**
+   * Quanto do território está ligado — o numerador e o denominador de «26 das
+   * 84 juntas já publicam na agenda regional» (0137).
+   *
+   * `parishes` é `null` quando um concelho da região ainda não tem as
+   * freguesias contadas. Somar só os que têm dava um denominador menor sem
+   * ninguém escrever nada de falso, que é a mentira mais barata que há numa
+   * fração: quem lê não pode distinguir «26 em 84» de «26 em 72».
+   */
+  territory: {
+    municipalities: number;
+    parishes: number | null;
+    municipal_sources_enabled: number;
+    parish_sources_enabled: number;
+  };
   submissions: {
     received_by_channel: { scraper: number; email: number; form: number };
     received: number;
     reviewed: { approved: number; rejected: number; other: number };
   };
-  /** A vista de qualidade tal como está hoje, uma linha por concelho. */
+  /**
+   * A qualidade do catálogo, uma linha por concelho.
+   *
+   * Desde a 0145 é a **última fotografia tirada dentro do mês** quando há
+   * uma — o estado com que o mês fechou. Sem fotografia no mês é o catálogo
+   * tal como está hoje, como sempre foi, e `quality_as_of` diz qual dos dois
+   * é. Ler isto sem ler essa data é ler um número sem saber de que dia é.
+   */
   quality: Array<{
     municipality_id: string;
     municipality_name: string;
@@ -67,6 +172,32 @@ export interface RelatorioMensal {
     with_price: number;
     with_coordinates: number;
   }>;
+  /**
+   * O dia da fotografia que `quality` traz, ou `null` quando não houve
+   * nenhuma nesse mês e a qualidade é a de hoje.
+   *
+   * A mesma forma que `visits.clicks_since`: o relatório prefere escrever «a
+   * partir de» a mostrar um número que não mediu.
+   */
+  quality_as_of: string | null;
+  /**
+   * Os mesmos totais em quatro janelas, para o relatório se poder comparar.
+   *
+   * Três das quatro podem vir a `null`, e é a parte que interessa: só se
+   * compara um mês que tenha sido observado por inteiro. Um mês que começou
+   * antes de `observed_since` foi visto em parte, e dividir por ele mede a
+   * data em que o projeto começou — não a agenda de ninguém. Aí escreve-se
+   * «sem comparação», que é a regra que as visitas seguem desde a 0120.
+   */
+  comparison: {
+    /** O primeiro dia em que esta região passou a ser observada. */
+    observed_since: string | null;
+    current: TotaisDaJanela;
+    previous_month: TotaisDaJanela | null;
+    same_month_last_year: TotaisDaJanela | null;
+    year_to_date: TotaisDaJanela | null;
+  };
+  promises: Compromissos;
   visits: {
     /** Falso quando não há duas fotografias com que contar o mês. */
     available: boolean;
@@ -74,6 +205,14 @@ export interface RelatorioMensal {
     from: string | null;
     /** O dia da fotografia de chegada, ou `null` se não existiu. */
     to: string | null;
+    /**
+     * O dia da primeira fotografia que traz os contadores da 0141 — o clique na
+     * página oficial e o «como chegar». `null` enquanto não houver nenhuma.
+     *
+     * É o que deixa a página escrever «a partir de 14 de setembro» em vez de
+     * deixar dois nulos por explicar.
+     */
+    clicks_since: string | null;
     by_municipality: Array<{
       municipality_id: string;
       municipality_name: string;
@@ -82,6 +221,13 @@ export interface RelatorioMensal {
       ical_downloads: number;
       shares: number;
       clicks: number;
+      /**
+       * `null` quando uma das duas fotografias do mês não tinha o contador.
+       * Zero diria que ninguém carregou; ninguém carregou porque não havia
+       * botão que contasse.
+       */
+      source_clicks: number | null;
+      directions_clicks: number | null;
     }>;
   };
 }
@@ -220,6 +366,68 @@ function bloco(
 }
 
 /**
+ * As quatro janelas que o relatório compara, pela ordem em que se leem.
+ *
+ * O corrente primeiro, porque é o mês de que o relatório é; depois o que se
+ * lhe compara. `chave` é o que sai no CSV e o que a ficha técnica documenta.
+ */
+export const JANELAS = [
+  { chave: 'mes', rotulo: 'Este mês', campo: 'current' },
+  { chave: 'mes_anterior', rotulo: 'Mês anterior', campo: 'previous_month' },
+  { chave: 'homologo', rotulo: 'Mês homólogo', campo: 'same_month_last_year' },
+  { chave: 'acumulado_do_ano', rotulo: 'Acumulado', campo: 'year_to_date' },
+] as const satisfies ReadonlyArray<{
+  chave: string;
+  rotulo: string;
+  campo: keyof Omit<RelatorioMensal['comparison'], 'observed_since'>;
+}>;
+
+/** As medidas de cada janela, pela ordem em que se leem. */
+export const MEDIDAS_COMPARAVEIS = [
+  { campo: 'events_published', rotulo: 'Eventos publicados' },
+  { campo: 'events_happening', rotulo: 'Eventos a decorrer' },
+  { campo: 'sessions_happening', rotulo: 'Sessões' },
+  { campo: 'submissions_received', rotulo: 'Submissões recebidas' },
+  { campo: 'submissions_approved', rotulo: 'Submissões aprovadas' },
+] as const satisfies ReadonlyArray<{
+  campo: keyof Omit<TotaisDaJanela, 'from' | 'to'>;
+  rotulo: string;
+}>;
+
+export interface Variacao {
+  /** A diferença, com sinal. */
+  absoluto: number;
+  /**
+   * A variação relativa, arredondada ao ponto percentual. `null` quando o
+   * ponto de partida era zero: de 0 para 5 não são «mais infinito por cento»
+   * nem «mais 500%», são cinco onde não havia nenhum, e escreve-se assim.
+   */
+  percentagem: number | null;
+  /** A mesma coisa por palavras, para quem lê e não calcula. */
+  palavras: string;
+}
+
+/**
+ * A variação entre duas janelas.
+ *
+ * Por palavras e por sinal, sem cores: a casa não tem cores de estado, e uma
+ * seta vermelha decide pelo leitor o que é bom — um mês com menos submissões
+ * pode ser um mês em que a recolha automática passou a trazer tudo.
+ */
+export function variacao(antes: number, agora: number): Variacao {
+  const absoluto = agora - antes;
+  const percentagem = antes === 0 ? null : Math.round((absoluto / antes) * 100);
+  if (absoluto === 0) return { absoluto, percentagem, palavras: 'igual' };
+  const verbo = absoluto > 0 ? 'mais' : 'menos';
+  const quantos = Math.abs(absoluto);
+  const parte =
+    percentagem === null
+      ? `de ${antes} para ${agora}`
+      : `${Math.abs(percentagem)}% ${absoluto > 0 ? 'acima' : 'abaixo'}`;
+  return { absoluto, percentagem, palavras: `${quantos} ${verbo}, ${parte}` };
+}
+
+/**
  * O relatório inteiro num CSV só, por blocos separados por uma linha vazia.
  *
  * Um ficheiro por secção era mais puro e menos útil: quem descarrega quer
@@ -228,7 +436,7 @@ function bloco(
  * faz a sua.
  */
 export function paraCsv(relatorio: RelatorioMensal): string {
-  const { events, sources, submissions, quality, visits } = relatorio;
+  const { events, sources, submissions, quality, visits, territory, promises: p } = relatorio;
 
   const blocos: string[][] = [
     bloco(
@@ -239,6 +447,12 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         ['regiao', relatorio.region.name],
         ['mes', relatorio.month],
         ['gerado_em', relatorio.generated_at],
+        // Vazia quando o mês não teve fotografia e a qualidade é a de hoje.
+        // Uma coluna vazia diz «não medi» melhor do que uma data emprestada.
+        ['qualidade_de', relatorio.quality_as_of ?? ''],
+        // Sem esta data, o bloco «comparacao» parece ter linhas em falta por
+        // descuido. Com ela, diz-se porquê: não se observou o mês inteiro.
+        ['observado_desde', relatorio.comparison.observed_since ?? ''],
       ],
     ),
     bloco(
@@ -290,6 +504,19 @@ export function paraCsv(relatorio: RelatorioMensal): string {
       ]),
     ),
     bloco(
+      'territorio',
+      ['chave', 'valor'],
+      [
+        ['concelhos', territory.municipalities],
+        // Vazio e não zero quando falta contar um concelho: «não consegui
+        // saber» e «não há» são duas respostas diferentes, e numa folha de
+        // cálculo um zero num denominador é uma divisão por zero à espera.
+        ['freguesias', territory.parishes],
+        ['camaras_ligadas', territory.municipal_sources_enabled],
+        ['juntas_ligadas', territory.parish_sources_enabled],
+      ],
+    ),
+    bloco(
       'submissoes_recebidas',
       ['canal', 'recebidas'],
       (Object.keys(CANAIS) as Array<keyof typeof CANAIS>).map((canal) => [
@@ -334,6 +561,72 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         q.with_coordinates,
       ]),
     ),
+    // Uma linha por janela, com as mesmas cinco medidas. As janelas sem
+    // comparação ficam **de fora** do ficheiro, e não com zeros: um zero num
+    // CSV lê-se como uma medição, e ninguém mediu agosto.
+    bloco(
+      'comparacao',
+      [
+        'janela',
+        'de',
+        'ate',
+        'eventos_publicados',
+        'eventos_a_decorrer',
+        'sessoes',
+        'submissoes_recebidas',
+        'submissoes_aprovadas',
+      ],
+      JANELAS.flatMap((janela) => {
+        const totais = relatorio.comparison[janela.campo];
+        if (!totais) return [];
+        return [
+          [
+            janela.chave,
+            totais.from,
+            totais.to,
+            totais.events_published,
+            totais.events_happening,
+            totais.sessions_happening,
+            totais.submissions_received,
+            totais.submissions_approved,
+          ] as Celula[],
+        ];
+      }),
+    ),
+    // Chave e valor, e não uma linha por família: as cinco têm formas
+    // diferentes — três contagens, quatro sobrepostas, uma quota entre 0 e 1 —
+    // e forçá-las a colunas comuns dava um cabeçalho com metade das células
+    // vazias em cada linha.
+    bloco(
+      'compromissos',
+      ['chave', 'valor'],
+      [
+        ['de', p.from],
+        ['ate', p.to],
+        ['programados', p.total],
+        ['concelhos', p.cohesion.municipalities],
+        ['concelhos_com_programacao', p.cohesion.municipalities_with_programming],
+        // Vazia sem programação nenhuma: não há quota de zero, e um zero
+        // lia-se como «o maior concelho não tem nada».
+        ['quota_do_maior', p.cohesion.top_share ?? ''],
+        ['mediana_por_concelho', p.cohesion.median ?? ''],
+        ['concelhos_abaixo_de_metade_da_mediana', p.cohesion.below_half_median],
+        ['em_espaco_de_coletividade', p.association.in_association_venue],
+        ['em_equipamento', p.association.in_other_venue],
+        ['sem_espaco_do_catalogo', p.association.without_venue],
+        ['entrada_livre', p.admission.free],
+        ['com_preco', p.admission.priced],
+        ['sem_dizer_o_preco', p.admission.undeclared],
+        ['com_acesso_declarado', p.accessibility.any],
+        ['sem_acesso_declarado', p.accessibility.none],
+        ['cadeira_de_rodas', p.accessibility.wheelchair],
+        ['lingua_gestual', p.accessibility.sign_language],
+        ['audiodescricao', p.accessibility.audio_description],
+        ['sessao_relaxada', p.accessibility.relaxed],
+        ['em_serie_regional', p.network.events],
+        ['concelhos_tocados_em_rede', p.network.municipalities_touched],
+      ],
+    ),
     bloco(
       'visitas',
       ['chave', 'valor'],
@@ -341,11 +634,22 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         ['disponivel', visits.available],
         ['fotografia_de', visits.from],
         ['fotografia_ate', visits.to],
+        ['cliques_desde', visits.clicks_since],
       ],
     ),
     bloco(
       'visitas_por_concelho',
-      ['concelho_id', 'concelho', 'aberturas', 'bilhetica', 'calendario', 'partilhas', 'cliques'],
+      [
+        'concelho_id',
+        'concelho',
+        'aberturas',
+        'bilhetica',
+        'calendario',
+        'partilhas',
+        'cliques',
+        'pagina_oficial',
+        'como_chegar',
+      ],
       visits.by_municipality.map((v) => [
         v.municipality_id,
         v.municipality_name,
@@ -354,6 +658,10 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         v.ical_downloads,
         v.shares,
         v.clicks,
+        // Vazio, e não zero, quando uma das fotografias do mês ainda não tinha
+        // o contador: numa folha de cálculo um zero soma-se e um vazio não.
+        v.source_clicks,
+        v.directions_clicks,
       ]),
     ),
   ];

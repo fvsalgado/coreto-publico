@@ -1,5 +1,6 @@
 import 'server-only';
 import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
+import { reportarErro } from '../registo';
 import { requireAdminClient } from '../supabase/server';
 
 /**
@@ -230,6 +231,29 @@ export async function listSourceHealth(): Promise<SourceHealth[]> {
   });
 }
 
+/** Id e nome de cada fonte, para o selector da lista de eventos. */
+export interface FonteParaFiltro {
+  id: string;
+  name: string;
+}
+
+/**
+ * As fontes, só com o que um selector precisa.
+ *
+ * `listSourceHealth` traz dez colunas e calcula estado derivado para cada
+ * uma; um `<select>` precisa de duas. Consulta própria, e não uma leitura
+ * grande reaproveitada, porque a página dos eventos já faz três.
+ */
+export async function listSourcesParaFiltro(): Promise<FonteParaFiltro[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase.from('sources').select('id, name').order('name');
+  // Vazio por erro deixava o selector sem opções e a página a parecer dizer
+  // que o catálogo não tem fontes nenhumas — quando o que não se conseguiu
+  // foi lê-las.
+  exigirLeitura('listSourcesParaFiltro', error);
+  return (data ?? []) as unknown as FonteParaFiltro[];
+}
+
 export interface RunRow {
   id: string;
   source_id: string;
@@ -284,12 +308,60 @@ export interface AdminAction {
   after: unknown;
 }
 
-export async function listAdminActions(page: number, perPage = 50): Promise<AdminAction[]> {
+/**
+ * Os recortes da auditoria.
+ *
+ * Cinquenta linhas por página e quinze mil ações por ano fazem da auditoria um
+ * sítio onde só se encontra o que aconteceu esta manhã. Quem a abre tem sempre
+ * uma pergunta concreta — «o que é que o João mexeu em agosto?», «quem aprovou
+ * submissões?» — e essa pergunta responde-se com quatro recortes.
+ *
+ * `mes` é `AAAA-MM`; qualquer outra coisa é ignorada em vez de rebentar, porque
+ * o que entra aqui vem da barra de endereços.
+ */
+export interface RecorteDaAuditoria {
+  actor?: string;
+  action?: string;
+  entityType?: string;
+  mes?: string;
+}
+
+/** As opções que os recortes oferecem, lidas do que existe mesmo na base. */
+export interface OpcoesDaAuditoria {
+  actors: string[];
+  actions: string[];
+  entityTypes: string[];
+}
+
+const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** O primeiro dia do mês seguinte, para o intervalo ser meio-aberto. */
+function mesSeguinte(mes: string): string {
+  const [ano, numero] = mes.split('-').map(Number);
+  return numero === 12
+    ? `${(ano ?? 0) + 1}-01-01`
+    : `${ano}-${String((numero ?? 0) + 1).padStart(2, '0')}-01`;
+}
+
+export async function listAdminActions(
+  page: number,
+  perPage = 50,
+  recorte: RecorteDaAuditoria = {},
+): Promise<AdminAction[]> {
   const supabase = requireAdminClient();
   const from = (page - 1) * perPage;
-  const { data, error } = await supabase
+  let query = supabase
     .from('admin_actions')
-    .select('id, actor, action, entity_type, entity_id, created_at, before, after')
+    .select('id, actor, action, entity_type, entity_id, created_at, before, after');
+
+  if (recorte.actor) query = query.eq('actor', recorte.actor);
+  if (recorte.action) query = query.eq('action', recorte.action);
+  if (recorte.entityType) query = query.eq('entity_type', recorte.entityType);
+  if (recorte.mes && MES.test(recorte.mes)) {
+    query = query.gte('created_at', `${recorte.mes}-01`).lt('created_at', mesSeguinte(recorte.mes));
+  }
+
+  const { data, error } = await query
     .order('id', { ascending: false })
     .range(from, from + perPage - 1);
 
@@ -310,6 +382,47 @@ export async function listAdminActions(page: number, perPage = 50): Promise<Admi
   return (data ?? []) as unknown as AdminAction[];
 }
 
+/**
+ * As opções dos recortes, lidas do que a base tem mesmo.
+ *
+ * Escritas à mão ficavam desatualizadas no dia em que uma função nova
+ * registasse uma ação com outro nome — e um filtro que não oferece o que
+ * existe é pior do que filtro nenhum, porque parece completo.
+ *
+ * Lê um tecto de linhas em vez da tabela inteira: o que interessa é oferecer o
+ * que se usa, e o que se usa aparece nas mais recentes.
+ */
+export async function opcoesDaAuditoria(limite = 2000): Promise<OpcoesDaAuditoria> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('admin_actions')
+    .select('actor, action, entity_type')
+    .order('id', { ascending: false })
+    .limit(limite);
+
+  if (error) {
+    // Sem as opções, os recortes ficam vazios e a lista continua a servir —
+    // que é o comportamento certo: a auditoria responde a «quem fez o quê»
+    // mesmo sem filtros, e não responde a nada se a página rebentar.
+    reportarErro('opcoesDaAuditoria', error);
+    return { actors: [], actions: [], entityTypes: [] };
+  }
+
+  const linhas = (data ?? []) as unknown as Array<{
+    actor: string;
+    action: string;
+    entity_type: string;
+  }>;
+  const unicos = (valores: string[]) =>
+    [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'pt'));
+
+  return {
+    actors: unicos(linhas.map((l) => l.actor)),
+    actions: unicos(linhas.map((l) => l.action)),
+    entityTypes: unicos(linhas.map((l) => l.entity_type)),
+  };
+}
+
 export interface AdminEventRow {
   id: string;
   slug: string;
@@ -328,12 +441,25 @@ export interface AdminEventRow {
 export interface EventFilter {
   q?: string;
   municipality?: string;
+  /** Id da fonte, para entrar na lista pela célula de `/admin/qualidade`. */
+  fonte?: string;
   status?: string;
   janela?: string;
   falta?: string;
   /** Cursor composto `data|id` — ver `listEvents`. */
   antes?: string;
 }
+
+/**
+ * Os estados que o painel conta como «no catálogo».
+ *
+ * São os mesmos que `event_quality_by_municipality` agrega, e tem de ser: a
+ * percentagem do painel de qualidade abre a lista por aqui, e `estado=todos`
+ * trazia também escondidos, cancelados e arquivados — decisões de uma pessoa
+ * sobre um evento, não lacunas de recolha. A lista mostrava mais linhas do
+ * que o número prometia.
+ */
+export const ESTADOS_DO_CATALOGO = ['published', 'draft'] as const;
 
 /** Quantos por página. O lote de ações tem o mesmo tecto, de propósito. */
 export const EVENTS_PAGE_SIZE = 50;
@@ -361,7 +487,9 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
 
   if (filter.q) query = query.ilike('title', `%${filter.q}%`);
   if (filter.municipality) query = query.eq('municipality_id', filter.municipality);
-  if (filter.status && filter.status !== 'todos') query = query.eq('status', filter.status);
+  if (filter.fonte) query = query.eq('source_id', filter.fonte);
+  if (filter.status === 'catalogo') query = query.in('status', [...ESTADOS_DO_CATALOGO]);
+  else if (filter.status && filter.status !== 'todos') query = query.eq('status', filter.status);
 
   // Filtros de lacuna: é por aqui que se entra a corrigir um campo em falta
   // em vez de percorrer o catálogo à procura dele.
@@ -372,10 +500,17 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
     const ids = await idsSemHora(filter);
     if (ids.length === 0) return [];
     query = query.in('id', ids);
-  } else if (filter.falta === 'sitio') query = query.is('venue_id', null).is('location_name', null);
-  else if (filter.falta === 'espaco') query = query.is('venue_id', null);
+    // Não há ramo para «sem sítio nenhum», e é de propósito: a restrição
+    // `events_has_location` da 0004 exige espaço **ou** texto solto, pelo que
+    // a condição nunca é verdadeira. Ver `lacunas.ts`.
+  } else if (filter.falta === 'espaco') query = query.is('venue_id', null);
   else if (filter.falta === 'imagem') query = query.is('image_url', null);
   else if (filter.falta === 'descricao') query = query.or('description.is.null,description.eq.');
+  // `is_free` é `not null default false` desde a 0004, e por isso o
+  // complemento de `is_free or price_min is not null` não precisa de terceira
+  // hipótese: ou diz que é grátis, ou diz quanto custa, ou não diz nada.
+  else if (filter.falta === 'preco') query = query.eq('is_free', false).is('price_min', null);
+  else if (filter.falta === 'mapa') query = query.is('latitude', null);
 
   if (futuros) query = query.gte('date_end', new Date().toISOString().slice(0, 10));
 
@@ -414,7 +549,17 @@ export async function countEventsByStatus(): Promise<Record<string, number>> {
 
 export interface UnknownTag {
   tag: string;
+  /**
+   * Avistamentos: a recolha soma um de cada vez que vê a etiqueta, todas as
+   * noites, no mesmo evento. **Não é o número que decide** — serve para
+   * separar uma etiqueta que apareceu uma vez e nunca mais de uma que a fonte
+   * escreve todas as noites num evento só.
+   */
   hits: number;
+  /** Eventos do catálogo que trazem esta etiqueta. É o número que decide. */
+  eventos: number;
+  /** E, desses, os que continuam sem prateleira nenhuma. */
+  eventos_sem_prateleira: number;
   last_seen: string;
   example_url: string | null;
 }
@@ -426,7 +571,16 @@ export async function listUnknownTags(): Promise<UnknownTag[]> {
     // — «Ar Livre», «Cultura», «Multidisciplinar». Sem ela a fila só crescia:
     // uma etiqueta mapeada deixa de ser desconhecida, mas a linha ficava lá.
     .from('unknown_tags_pendentes')
-    .select('tag, hits, last_seen, example_url')
+    .select('tag, hits, eventos, eventos_sem_prateleira, last_seen, example_url')
+    /*
+     * Por eventos, e não por avistamentos (0140).
+     *
+     * A 0084 escreveu o critério para abrir prateleira nova: meia dúzia **de
+     * eventos**. Ordenada por `hits`, esta fila punha no topo «Infantis, 12
+     * vezes» — que é um evento, visto doze noites seguidas. Quem abrisse o
+     * painel lia um padrão onde havia um caso.
+     */
+    .order('eventos', { ascending: false })
     .order('hits', { ascending: false })
     .limit(200);
   exigirLeitura('listUnknownTags', error);
@@ -579,6 +733,120 @@ export async function qualityBySource(): Promise<QualityRow[]> {
     name: source_name,
     ...rest,
   }));
+}
+
+/** Uma fotografia da qualidade, tal como a 0144 a guarda. */
+export interface QualitySnapshotRow extends QualityRow {
+  /** O dia em que foi tirada. */
+  taken_on: string;
+}
+
+/**
+ * A última fotografia da qualidade tirada até uma data, uma linha por concelho.
+ *
+ * A 0144 tira uma por noite. Esta leitura procura a mais recente **até** ao
+ * dia pedido — não a do dia pedido — porque uma noite falhada não pode apagar
+ * a memória do mês: com a fotografia de 31 em falta, a de 30 responde à mesma
+ * pergunta com um dia de erro, e o dia vem no `taken_on` para quem quiser
+ * saber.
+ *
+ * Devolve `[]` quando não há fotografia nenhuma até lá — o caso dos meses
+ * anteriores à 0144, que ficam sem memória para sempre. «Não há» e «não
+ * consegui saber» continuam a ser duas respostas diferentes: o erro atira.
+ */
+export async function qualitySnapshotAte(ate: string): Promise<QualitySnapshotRow[]> {
+  const supabase = requireAdminClient();
+  const { data: dia, error: erroDia } = await supabase
+    .from('event_quality_snapshots')
+    .select('taken_on')
+    .lte('taken_on', ate)
+    .order('taken_on', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  exigirLeitura('qualitySnapshotAte (dia)', erroDia);
+  const taken_on = (dia as { taken_on: string } | null)?.taken_on;
+  if (!taken_on) return [];
+
+  const { data, error } = await supabase
+    .from('event_quality_snapshots')
+    .select(
+      'municipality_id, taken_on, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
+    )
+    .eq('taken_on', taken_on);
+  // Uma memória vazia por erro de leitura lê-se como «não houve mudança
+  // nenhuma» — a frase mais tranquilizadora que um painel de qualidade pode
+  // dizer, e dita no instante em que não se consegue ler a base.
+  exigirLeitura('qualitySnapshotAte', error);
+
+  const rows = (data ?? []) as unknown as Array<
+    Omit<QualitySnapshotRow, 'id' | 'name'> & { municipality_id: string }
+  >;
+  return rows.map(({ municipality_id, ...rest }) => ({
+    id: municipality_id,
+    // A fotografia não guarda o nome do concelho, e bem: o nome vive em
+    // `municipalities` e um nome guardado seria um segundo nome a envelhecer.
+    // Quem a lê já tem a lista dos concelhos à mão.
+    name: municipality_id,
+    ...rest,
+  }));
+}
+
+/**
+ * A região que um segredo de balanço abre, ou `null`.
+ *
+ * `null` para um segredo que não existe, para um revogado e para um fora de
+ * prazo — os três são a mesma resposta de propósito. Distingui-los dizia a
+ * quem tenta se acertou no segredo de alguém, que é metade do caminho.
+ *
+ * **Recebe a impressão, e nunca o segredo.** Quem o tem em claro é o pedido; o
+ * que atravessa esta camada e chega à base é o sha256, e é por isso que o
+ * segredo não pode aparecer num plano de consulta nem num registo.
+ *
+ * Esta é a única leitura do painel que **não** atira com erro. Uma porta que
+ * deixa entrar porque não conseguiu ler a base é pior do que uma porta
+ * fechada: o `null` faz o chamador responder 401, que é a resposta certa
+ * quando não se consegue confirmar que alguém pode entrar.
+ */
+export async function regiaoDoSegredoDeBalanco(impressao: string): Promise<string | null> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase.rpc('regiao_do_token_de_balanco', {
+    p_sha256: impressao,
+  });
+  if (error) {
+    reportarErro('regiaoDoTokenDeBalanco', error);
+    return null;
+  }
+  return (data as string | null) ?? null;
+}
+
+/** Um segredo de balanço tal como o painel o mostra — sem o segredo, claro. */
+export interface SegredoDeBalanco {
+  id: string;
+  region_id: string;
+  created_at: string;
+  created_by: string;
+  expires_on: string;
+  last_used_on: string | null;
+}
+
+/**
+ * Os segredos vivos, um por região no máximo.
+ *
+ * Nunca traz `token_sha256`: o painel não tem nada que fazer com ele, e uma
+ * coluna que não é pedida é uma coluna que não pode aparecer num ecrã por
+ * cima do ombro de alguém.
+ */
+export async function listSegredosDeBalanco(): Promise<SegredoDeBalanco[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('region_report_tokens')
+    .select('id, region_id, created_at, created_by, expires_on, last_used_on')
+    .is('revoked_at', null)
+    .order('region_id');
+  // Vazio por erro dizia «nenhuma região tem porta aberta» — e quem lesse isso
+  // dava um segredo novo a alguém que já tinha um, revogando o dele sem saber.
+  exigirLeitura('listSegredosDeBalanco', error);
+  return (data ?? []) as unknown as SegredoDeBalanco[];
 }
 
 export interface DashboardCounts {
@@ -836,7 +1104,9 @@ const IDS_SEM_HORA_MAX = 200;
  * e uma consulta à tabela dos eventos não a vê; a vista vê. Aplicam-se aqui
  * o concelho e o estado, para que o tecto de ids corte o menos possível.
  */
-async function idsSemHora(filter: Pick<EventFilter, 'municipality' | 'status'>): Promise<string[]> {
+async function idsSemHora(
+  filter: Pick<EventFilter, 'municipality' | 'fonte' | 'status'>,
+): Promise<string[]> {
   const supabase = requireAdminClient();
   let query = supabase
     .from('events_without_time')
@@ -845,7 +1115,13 @@ async function idsSemHora(filter: Pick<EventFilter, 'municipality' | 'status'>):
     .order('id')
     .limit(IDS_SEM_HORA_MAX);
   if (filter.municipality) query = query.eq('municipality_id', filter.municipality);
-  if (filter.status && filter.status !== 'todos') query = query.eq('status', filter.status);
+  if (filter.fonte) query = query.eq('source_id', filter.fonte);
+  // A vista já só tem `published` e `draft` — a 0118 deixou os outros de fora
+  // pela razão da 0026 —, e por isso `catalogo` aqui não precisa de recorte:
+  // recortá-lo seria pedir ao Postgres que confirmasse o que a vista garante.
+  if (filter.status && filter.status !== 'todos' && filter.status !== 'catalogo') {
+    query = query.eq('status', filter.status);
+  }
 
   const { data, error } = await query;
   // Alimenta o filtro «falta a hora» do catálogo. A lista vazia faz o filtro

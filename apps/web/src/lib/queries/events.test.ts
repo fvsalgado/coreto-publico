@@ -28,6 +28,8 @@ const EVENTO: EventCard = {
   venue_id: null,
   location_name: 'Escola Adães Bermudes, Montalvo',
   category_slug: 'comunidade',
+  category_confidence: 0.95,
+  category_source: 'alias',
   date_start: '2026-09-07',
   date_end: '2026-09-07',
   is_ongoing: false,

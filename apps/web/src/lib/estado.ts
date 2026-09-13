@@ -51,6 +51,13 @@ export interface FonteVigiada {
    * aparecem como «atrasada», e só esta coluna as separa.
    */
   last_run_at: string | null;
+  /**
+   * O leitor que sabe ler esta fonte, público desde a 0139 — e `null` quando
+   * quem chama não o tem (a `/fontes` não precisa dele).
+   *
+   * Não decide saúde nenhuma: decide se oito avarias são oito ou uma.
+   */
+  adapter?: string | null;
 }
 
 /** Dias inteiros entre dois instantes. Trunca: meio dia não é um dia. */
@@ -241,4 +248,92 @@ export function veredito(recolha: EstadoDaRecolha, agenda: EstadoDaAgenda): Vere
     grau: 'bom',
     frase: 'Todas as fontes ligadas foram lidas com sucesso nas últimas 48 horas.',
   };
+}
+
+/**
+ * Quantas fontes daquele leitor estão caladas para o caso valer uma frase.
+ *
+ * Duas. Uma fonte calada é uma fonte calada; duas do mesmo produto na mesma
+ * noite já é um padrão, e é o padrão que muda o que se faz a seguir.
+ */
+export const CALADAS_ATE_PADRAO = 2;
+
+export interface FamiliaCalada {
+  /** O nome do leitor, tal como a base o guarda. */
+  adapter: string;
+  /** Fontes ligadas que correm este leitor. */
+  total: number;
+  /** Dessas, as que foram tentadas depois da última leitura boa. */
+  caladas: number;
+  /** Os nomes das caladas, por ordem, para a página as poder dizer. */
+  nomes: string[];
+}
+
+/**
+ * Os leitores cujas fontes se calaram quase todas ao mesmo tempo.
+ *
+ * **Porquê.** A 12 e 13 de setembro de 2026, oito fontes do Médio Tejo não
+ * responderam a um único pedido nas duas noites, enquanto as 26 juntas de
+ * freguesia responderam a todos. Sete das oito correm o mesmo leitor; a oitava
+ * é o CAMINHOS. Nos catorze dias anteriores, nenhuma. A `/estado` mostrava
+ * oito linhas de «sem leitura com sucesso desde 11 de setembro» e deixava a
+ * quem lê o trabalho de descobrir o que elas tinham em comum.
+ *
+ * Oito domínios a calarem-se na mesma noite não são oito avarias: é uma, e
+ * quase de certeza do lado de lá. A diferença não é cosmética — oito avarias
+ * mandam abrir oito adaptadores, uma avaria manda escrever a um fornecedor.
+ *
+ * **Porque é que a saúde não serve aqui, e foi uma fixture que mo mostrou.**
+ * `saudeDaFonte` só chama «atrasada» a uma fonte ao terceiro dia sem leitura
+ * boa — `DIAS_ATE_ATRASO` é 2, e é tolerância deliberada para uma noite falhada
+ * não acender a página. No caso real, as oito estavam mudas há duas noites e a
+ * `/estado` chamava-lhes «em dia»: a tolerância que serve para uma fonte
+ * esconde exatamente o padrão de oito.
+ *
+ * Por isso o sinal daqui é outro, e é o que a 0128 pôs na base de propósito:
+ * **tentada depois da última leitura boa**. `last_run_at` > `last_success_at` é
+ * a fonte a ter sido lida e a não ter trazido nada, e diz-se na primeira noite,
+ * não na terceira. O que impede o ruído não é o tempo — é a família: duas, e
+ * metade do leitor.
+ *
+ * **O que isto não faz.** Não diz de quem é a culpa nem propõe dar a volta. A
+ * regra da casa é anterior a esta função: contornar um bloqueio não é
+ * recolher. O que aqui se produz é o nome do padrão, para quem decide o poder
+ * ver.
+ */
+export function tentadaESemTrazerNada(fonte: FonteVigiada): boolean {
+  if (!fonte.last_run_at) return false;
+  if (!fonte.last_success_at) return true;
+  return new Date(fonte.last_run_at).getTime() > new Date(fonte.last_success_at).getTime();
+}
+
+export function familiasCaladas(recolha: EstadoDaRecolha): FamiliaCalada[] {
+  const porLeitor = new Map<string, { total: number; caladas: FonteComSaude[] }>();
+
+  for (const fonte of recolha.vigiadas) {
+    const leitor = fonte.adapter;
+    // Sem o nome do leitor não há família: uma fonte que não o traz não conta
+    // para nenhum lado, em vez de fazer família com as outras que também não
+    // o trazem.
+    if (!leitor) continue;
+    const entrada = porLeitor.get(leitor) ?? { total: 0, caladas: [] };
+    entrada.total += 1;
+    if (tentadaESemTrazerNada(fonte)) entrada.caladas.push(fonte);
+    porLeitor.set(leitor, entrada);
+  }
+
+  return (
+    [...porLeitor.entries()]
+      .filter(([, dados]) => dados.caladas.length >= CALADAS_ATE_PADRAO)
+      // Metade do leitor calado, ou mais. Duas em vinte e seis é ruído normal
+      // de dois sítios em baixo; duas em três é o produto.
+      .filter(([, dados]) => dados.caladas.length * 2 >= dados.total)
+      .map(([adapter, dados]) => ({
+        adapter,
+        total: dados.total,
+        caladas: dados.caladas.length,
+        nomes: dados.caladas.map((fonte) => fonte.name),
+      }))
+      .sort((a, b) => b.caladas - a.caladas || a.adapter.localeCompare(b.adapter, 'pt'))
+  );
 }

@@ -399,3 +399,61 @@ describe('o anfitrião mta-sts. serve a política, e mais nada', () => {
     expect(resposta.headers.get('x-middleware-rewrite')).toContain('/nao-e-endereco');
   });
 });
+
+/**
+ * A segunda porta da casa, vista de fora.
+ *
+ * O balanço abre com um segredo na barra do endereço, e por isso o que aqui
+ * se verifica não é para onde ele vai — é o que **não** pode acontecer a um
+ * endereço que carrega um segredo: ser indexado, ficar numa cache partilhada,
+ * ou ser entregue ao primeiro sítio para onde alguém siga a partir dele.
+ *
+ * E que não é a porta do painel: um segredo de leitura não pode passar pela
+ * guarda que serve para escrever.
+ */
+describe('a porta do balanço', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchDoMapa());
+    esquecerMapaDeDominios();
+  });
+
+  it.each([
+    'https://coreto.mediotejo.pt/balanco?chave=x',
+    'https://coreto.org/balanco',
+    'https://mediotejo.coreto.org/balanco?chave=x&mes=2026-08',
+  ])('%s passa, e não é redirecionada para o domínio canónico', async (url) => {
+    const resposta = await middleware(pedido(url));
+    expect(resposta.status).not.toBe(308);
+    expect(resposta.headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('nunca é indexada nem guardada, seja em que anfitrião for', async () => {
+    const resposta = await middleware(pedido('https://coreto.mediotejo.pt/balanco?chave=x'));
+    expect(resposta.headers.get('X-Robots-Tag')).toBe('noindex, nofollow, noarchive');
+    expect(resposta.headers.get('Cache-Control')).toBe('no-store, must-revalidate');
+  });
+
+  /**
+   * Com o segredo na barra, um `Referer` completo entregava-o ao primeiro
+   * sítio para onde alguém seguisse — e a página tem ligações para fora
+   * nenhumas exatamente por isto, mas o cabeçalho é a rede que não depende de
+   * ninguém se lembrar.
+   */
+  it('não deixa o segredo sair no cabeçalho de proveniência', async () => {
+    const resposta = await middleware(pedido('https://coreto.org/balanco?chave=x'));
+    expect(resposta.headers.get('Referrer-Policy')).toBe('no-referrer');
+  });
+
+  it('não passa pela guarda do painel: é uma porta de leitura, não de escrita', async () => {
+    const resposta = await middleware(pedido('https://coreto.org/balanco?chave=x'));
+    // A `guardAdmin` marca o caminho que guardou. Se este cabeçalho aparecer,
+    // o balanço passou a ser servido pela porta onde se escreve.
+    expect(resposta.headers.get(ADMIN_PATH_HEADER)).toBeNull();
+    expect(resposta.status).not.toBe(307);
+  });
+
+  it('o painel continua a ser o painel', async () => {
+    const resposta = await middleware(pedido('https://coreto.org/admin'));
+    expect(resposta.headers.get('X-Robots-Tag')).toBe('noindex, nofollow, noarchive');
+  });
+});

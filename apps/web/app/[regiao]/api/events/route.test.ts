@@ -72,6 +72,8 @@ const EVENTO: EventCard = {
   venue_id: 'cine-teatro',
   location_name: null,
   category_slug: 'musica',
+  category_confidence: 0.95,
+  category_source: 'alias',
   date_start: '2027-01-01',
   date_end: null,
   is_ongoing: false,
@@ -180,6 +182,16 @@ describe('GET /api/events', () => {
       updated_at: '2026-12-01T10:00:00Z',
       sessions: [{ date: '2027-01-01', start_time: '21:30:00', end_time: null }],
     });
+  });
+
+  it('diz o quanto confia na categoria e de onde ela veio', async () => {
+    // Publicar a categoria e esconder a confiança é publicar a parte que
+    // convém: quem integra ficava com «exposicoes» sem forma de saber se
+    // aquilo foi uma etiqueta da fonte, uma palavra do título, o tipo do
+    // espaço — ou uma pessoa.
+    const { events } = await agenda();
+
+    expect(events[0]).toMatchObject({ category_confidence: 0.95, category_source: 'alias' });
   });
 
   it('um evento sem espaço, sem categoria e sem sessões leva nulos e listas vazias, não buracos', async () => {

@@ -56,9 +56,29 @@ describe('PUBLIC_SOURCE_FIELDS', () => {
   });
 
   it('não pede o caderno da recolha nem a configuração', () => {
-    for (const interna of ['notes', 'config', 'last_error', 'adapter']) {
+    for (const interna of ['notes', 'config', 'last_error']) {
       expect(asList(PUBLIC_SOURCE_FIELDS)).not.toContain(interna);
     }
+  });
+
+  it('pede o nome do leitor, e nunca a configuração dele', () => {
+    /*
+     * O `adapter` esteve nesta lista de proibidas até à 0139, e sair dela foi
+     * uma decisão e não um descuido.
+     *
+     * A 12 e 13 de setembro de 2026 oito fontes do Médio Tejo não responderam a
+     * um único pedido nas duas noites, enquanto as vinte e seis juntas de
+     * freguesia responderam a todos. Sete das oito correm o mesmo leitor. A
+     * `/estado` mostrava oito linhas soltas e não tinha como dizer o que elas
+     * tinham em comum — a informação estava na base e era esta coluna.
+     *
+     * O nome do leitor infere-se abrindo o sítio da câmara, e a `/fontes` já
+     * publica o endereço de todas. A **configuração** é outra coisa: leva
+     * seletores, exclusões e chaves de caminho, e continua fora. É a distinção
+     * que este par de testes existe para prender.
+     */
+    expect(asList(PUBLIC_SOURCE_FIELDS)).toContain('adapter');
+    expect(asList(PUBLIC_SOURCE_FIELDS)).not.toContain('config');
   });
 });
 

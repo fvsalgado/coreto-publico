@@ -48,9 +48,16 @@ insert into public.regions (
 -- Os dois concelhos. Os identificadores são o espaço global de slugs do
 -- produto (os endereços não levam região), por isso até os fictícios são
 -- nomes que nenhum concelho português tem.
-insert into public.municipalities (id, name, district, latitude, longitude, sort_order, region_id) values
-  ('pontezela',     'Pontezela',     'Travessia', 40.72, -7.95, 1, 'travessia'),
-  ('vau-do-zezere', 'Vau do Zêzere', 'Travessia', 40.61, -7.78, 2, 'travessia');
+--
+-- O `parish_count` vem preenchido porque a `travessia` se declara completa
+-- (`expected_municipality_count` = 2) e as schema-checks exigem o denominador a
+-- toda a região completa que não seja a montra (0136): «26 das 84 juntas» é uma
+-- fração, e meia fração publicada é um número que mente por omissão. Numa CIM a
+-- sério o número sai do levantamento das freguesias; aqui sai da ficção, como
+-- tudo o resto desta região.
+insert into public.municipalities (id, name, district, latitude, longitude, sort_order, region_id, parish_count) values
+  ('pontezela',     'Pontezela',     'Travessia', 40.72, -7.95, 1, 'travessia', 5),
+  ('vau-do-zezere', 'Vau do Zêzere', 'Travessia', 40.61, -7.78, 2, 'travessia', 3);
 
 -- Um espaço por concelho — é o mínimo que as schema-checks exigem a qualquer
 -- região. Um municipal e uma coletividade, para as duas vias de apresentação.
@@ -62,7 +69,11 @@ insert into public.venues (id, name, municipality_id, kind, is_association, lati
 -- ler, sem o CI fazer um único pedido a um domínio que não existe.
 insert into public.sources (id, name, kind, municipality_id, url, adapter, is_enabled) values
   ('cm-pontezela',     'Agenda do Município de Pontezela',     'municipal_site', 'pontezela',     'https://cm-pontezela.example/agenda',     'generic-html', false),
-  ('cm-vau-do-zezere', 'Agenda do Município do Vau do Zêzere', 'municipal_site', 'vau-do-zezere', 'https://cm-vaudozezere.example/agenda', 'generic-html', false);
+  ('cm-vau-do-zezere', 'Agenda do Município do Vau do Zêzere', 'municipal_site', 'vau-do-zezere', 'https://cm-vaudozezere.example/agenda', 'generic-html', false),
+  -- E uma junta, para o CI exercitar o `parish_site` da 0135 — que é o que faz
+  -- o numerador de «X das Y juntas» existir. Sem uma aqui, o agrupamento de
+  -- /fontes por instituição só era exercitado no Médio Tejo.
+  ('jf-pontezela-velha', 'Junta de Freguesia de Pontezela Velha', 'parish_site', 'pontezela', 'https://jf-pontezelavelha.example/agenda', 'portal-freguesia', false);
 
 -- Um coreto no levantamento, para a secção ter chão quando se ligar.
 insert into public.coretos (id, name, parish, municipality_id, latitude, longitude, is_confirmed) values

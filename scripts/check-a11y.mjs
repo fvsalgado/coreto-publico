@@ -62,6 +62,12 @@ const ROUTES = [
   // decisão escrita na página): sem esta linha, ficava a única página pública
   // da casa por auditar — e é a que uma CIM abre quando já está aflita.
   '/estado',
+  // A ficha técnica dos indicadores, pela mesma razão do estado: não se
+  // desliga, é `noindex` por decisão escrita, e por isso não está no mapa do
+  // sítio. A declaração publicada em `/acessibilidade` promete que a auditoria
+  // corre «sobre todas as páginas públicas» — uma página fora desta lista
+  // transforma essa frase em falsa sem ninguém dar por ela.
+  '/indicadores',
   '/nao-existe',
 ];
 

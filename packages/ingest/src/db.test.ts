@@ -22,6 +22,7 @@ function makeEvent(overrides: Partial<EventRow> = {}): EventRow {
     series_id: null,
     category_slug: 'musica',
     category_confidence: 0.95,
+    category_source: 'alias',
     categories_raw: ['Música'],
     tags: [],
     audience: 'all_ages',

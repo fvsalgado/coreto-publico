@@ -30,8 +30,22 @@
  * seguidas, do mesmo executor e no mesmo minuto. A única variável entre as
  * duas era esta linha.
  */
+/*
+ * **O endereço mudou outra vez, e desta vez foi medido.**
+ *
+ * O comentário acima diz que «o endereço do repositório é o que responde
+ * sempre». Não responde: `https://github.com/fvsalgado/coreto` devolve **404**
+ * a quem não tem acesso, porque o repositório é privado — e é justamente um
+ * estranho, o administrador de sistemas que nos vê nos registos dele, quem vai
+ * seguir este endereço. A correção anterior trocou uma morada morta por outra.
+ *
+ * `https://mediotejo.coreto.org/fontes` responde 200 sem sessão de ninguém
+ * (medido), e publica exatamente o que esse administrador quer ver: que fontes
+ * se leem, com que endereços e com que frequência. É a página que justifica o
+ * pedido que ele tem nos registos à frente.
+ */
 export const USER_AGENT =
-  'Coreto/1.0 (+https://github.com/fvsalgado/coreto; agenda cultural, Portugal)';
+  'Coreto/1.0 (+https://mediotejo.coreto.org/fontes; agenda cultural, Portugal)';
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const DEFAULT_MAX_ATTEMPTS = 3;
@@ -117,13 +131,62 @@ function hostOf(url: string): string {
   }
 }
 
+/**
+ * O que correu mal, dito com o detalhe que serve para agir.
+ *
+ * **Esta função deitava fora a única informação que interessava.** O `fetch`
+ * do Node põe `fetch failed` em **todos** os erros de rede — DNS que não
+ * resolve, ligação recusada, ligação cortada a meio do aperto de mão TLS,
+ * certificado expirado, protocolo incompatível. São cinco avarias diferentes,
+ * com cinco respostas diferentes, e todas chegavam à base com a mesma frase.
+ *
+ * A causa verdadeira está em `error.cause`, com um `code` do sistema
+ * operativo. Nunca lhe tocávamos.
+ *
+ * **O que isso custou, medido:** a 12 e 13 de setembro de 2026, oito fontes do
+ * Médio Tejo gravaram `fetch failed` em `source_runs.warnings`, duas noites
+ * seguidas. Para saber o que era foi preciso ir de fora, à mão, bater a cada
+ * domínio com o `curl` — e o que lá estava era `SSL_ERROR_SYSCALL`, a ligação
+ * a ser cortada antes de o TLS acabar. Era a diferença entre «alguém nos
+ * bloqueou» e «aquela máquina partiu-se», e esteve dentro do processo, todas
+ * as noites, a ser apagada nesta linha.
+ *
+ * O código do sistema vai **à frente** da mensagem porque é o que se procura:
+ * `ECONNRESET` diz mais a quem lê do que a frase inteira à volta dele.
+ */
 function describeError(error: unknown): string {
-  if (error instanceof Error) {
-    if (error.name === 'TimeoutError' || error.name === 'AbortError')
-      return 'tempo de resposta esgotado';
-    return error.message || error.name;
+  if (!(error instanceof Error)) return String(error);
+
+  if (error.name === 'TimeoutError' || error.name === 'AbortError')
+    return 'tempo de resposta esgotado';
+
+  const base = error.message || error.name;
+
+  // `cause` pode ser um erro dentro de outro — o `undici` embrulha, e há casos
+  // com dois níveis: `fetch failed` → `socket hang up` → `EPROTO`. Quatro
+  // níveis chegam, e o contador evita o ciclo que um `cause` circular faria.
+  //
+  // **O código ganha a qualquer profundidade, e a ordem importa.** Uma
+  // primeira versão devolvia a mensagem do nível de cima assim que encontrava
+  // uma diferente, e parava aí — o que dava `fetch failed (socket hang up)` e
+  // deixava o `EPROTO` do fundo por dizer. Percorre-se tudo à procura do
+  // código **primeiro**; a mensagem é o que fica quando não há código nenhum.
+  const mensagens: string[] = [];
+  let causa: unknown = error.cause;
+  for (let i = 0; i < 4 && causa instanceof Error; i += 1) {
+    const codigo = (causa as { code?: unknown }).code;
+    if (typeof codigo === 'string' && codigo) {
+      // `ECONNRESET: fetch failed` em vez de `fetch failed`. O que muda é
+      // tudo: com o código, a noite seguinte diz por si o que aconteceu.
+      const detalhe = [...mensagens, causa.message].filter((m) => m && m !== base);
+      return detalhe.length ? `${codigo}: ${base} (${detalhe.join(' → ')})` : `${codigo}: ${base}`;
+    }
+    if (causa.message) mensagens.push(causa.message);
+    causa = causa.cause;
   }
-  return String(error);
+
+  const extra = mensagens.filter((m) => m !== base);
+  return extra.length ? `${base} (${extra.join(' → ')})` : base;
 }
 
 export class HttpClient {

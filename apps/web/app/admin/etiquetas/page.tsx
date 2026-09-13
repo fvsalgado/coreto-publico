@@ -21,6 +21,22 @@ export default async function Etiquetas() {
         lead="Etiquetas que as fontes usam e que o catálogo ainda não conhece. Nunca se adivinha uma categoria — mapeia-se."
       />
 
+      {/*
+        A ordem é por eventos, e a coluna que decide vem primeiro.
+        Aqui ordenava-se por avistamentos, e a fila punha no topo «Infantis,
+        12», que é **um** evento visto doze noites seguidas. O critério da 0084
+        para abrir prateleira nova é meia dúzia de eventos; com a coluna errada
+        à frente, lia-se um padrão onde havia um caso.
+      */}
+      <p className="max-w-prose text-sm text-muted">
+        <strong>Eventos</strong> é o número que decide: uma prateleira nova abre-se quando houver
+        meia dúzia de eventos de um género que não cabe em nenhuma das que há.{' '}
+        <strong>Sem prateleira</strong> são, desses, os que hoje não caem em categoria nenhuma — se
+        for zero, a etiqueta pede um alias e não uma prateleira. <strong>Vezes</strong> é quantas
+        noites a recolha a viu, e serve só para distinguir uma etiqueta que apareceu uma vez de uma
+        que a fonte repete todos os dias.
+      </p>
+
       {tags.length === 0 ? (
         <p className="text-muted">Nada por mapear.</p>
       ) : (
@@ -33,12 +49,18 @@ export default async function Etiquetas() {
           >
             <table className="w-full text-sm">
               <caption className="sr-only">
-                Etiquetas desconhecidas por número de ocorrências
+                Etiquetas desconhecidas, por eventos que as trazem
               </caption>
               <thead>
                 <tr className="border-b border-border text-left">
                   <th scope="col" className="py-2 pr-4">
                     Etiqueta
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Eventos
+                  </th>
+                  <th scope="col" className="py-2 pr-4">
+                    Sem prateleira
                   </th>
                   <th scope="col" className="py-2 pr-4">
                     Vezes
@@ -54,6 +76,8 @@ export default async function Etiquetas() {
                     <th scope="row" className="py-2 pr-4 text-left font-normal">
                       {tag.tag}
                     </th>
+                    <td className="py-2 pr-4 font-medium">{tag.eventos}</td>
+                    <td className="py-2 pr-4 text-muted">{tag.eventos_sem_prateleira}</td>
                     <td className="py-2 pr-4 text-muted">{tag.hits}</td>
                     <td className="py-2 pr-4 text-muted">{tag.last_seen.slice(0, 10)}</td>
                   </tr>

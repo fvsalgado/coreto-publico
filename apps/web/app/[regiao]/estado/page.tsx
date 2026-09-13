@@ -5,6 +5,7 @@ import { PageHeader } from '@/src/components/PageHeader';
 import {
   avaliarAgenda,
   avaliarRecolha,
+  familiasCaladas,
   fraseDaFonte,
   veredito,
   type EstadoDaAgenda,
@@ -175,6 +176,17 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
   const { recolha, agenda } = lido;
   const parecer = veredito(recolha, agenda);
   const porArranjar = [...recolha.paradas, ...recolha.atrasadas];
+  /*
+   * Os leitores cujas fontes se calaram quase todas ao mesmo tempo.
+   *
+   * Isto está acima do «o que está por ler» de propósito, e fala antes de a
+   * saúde individual falar: `DIAS_ATE_ATRASO` tolera duas noites falhadas — e
+   * faz bem, uma noite não é uma avaria —, mas foi essa tolerância que deixou
+   * esta página chamar «em dia» a oito fontes que não respondiam a pedido
+   * nenhum havia duas noites. Oito domínios a calarem-se na mesma noite não são
+   * oito avarias: é uma.
+   */
+  const familias = familiasCaladas(recolha);
 
   return (
     <article className="max-w-2xl">
@@ -229,6 +241,24 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
           <Numero valor={recolha.paradas.length} rotulo="paradas" />
           <Numero valor={recolha.porEstrear.length} rotulo="por estrear" />
         </div>
+
+        {familias.length > 0 ? (
+          <div className="mt-6 rounded-lg border-2 border-ink bg-surface p-5">
+            <p className="ct-eyebrow">Um padrão, e não uma lista</p>
+            {familias.map((familia) => (
+              <p key={familia.adapter} className="mt-2">
+                <span className="font-medium">
+                  {familia.caladas} das {familia.total} fontes lidas por{' '}
+                  <code className="font-mono text-[0.95em]">{familia.adapter}</code> foram tentadas
+                  e não trouxeram nada.
+                </span>{' '}
+                {joinPt(familia.nomes)}. Quando fontes que não têm nada em comum senão o produto que
+                as serve se calam ao mesmo tempo, o mais provável é o problema estar de um lado só —
+                e isso resolve-se a falar com quem as publica, não a insistir daqui.
+              </p>
+            ))}
+          </div>
+        ) : null}
 
         {porArranjar.length > 0 ? (
           <div className="mt-6">

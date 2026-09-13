@@ -81,6 +81,16 @@ function feedsGlobais(concelhos: number): readonly FeedRow[] {
       description: 'A agenda em JSON, com filtros. É a base do widget e de qualquer integração.',
     },
     {
+      path: '/dados.json',
+      description:
+        'O catálogo de uma vez, sem paginar, com a data de geração, a contagem e a licença dentro do próprio ficheiro. É o que se anexa a um processo em vez de explicar o que é uma API.',
+    },
+    {
+      path: '/dados.csv',
+      description:
+        'O mesmo, para quem abre folhas de cálculo. Com BOM, ponto e vírgula e os metadados em linhas «#» à cabeça, que o Excel e o LibreOffice saltam.',
+    },
+    {
       path: '/sitemap.xml',
       description: `Mapa do sítio: as páginas fixas, os ${concelhos} concelhos, os espaços, os ciclos com programação e os eventos por acontecer. O que já passou não entra — um mapa do sítio é para o que se pode visitar.`,
     },
@@ -101,15 +111,23 @@ const exemploDeResposta = (origem: string) => `{
       "venue_id": "cine-teatro-paraiso",
       "location_name": null,
       "category_slug": "musica",
+      "category_confidence": 0.95,
+      "category_source": "alias",
       "date_start": "2027-01-01",
       "date_end": "2027-01-01",
+      "is_ongoing": false,
       "is_free": true,
       "price_display": null,
       "image_url": "…",
       "image_alt": "…",
       "wheelchair_accessible": true,
       "audience": "all_ages",
-      "url": "${origem}/evento/concerto-de-ano-novo-tomar"
+      "url": "${origem}/evento/concerto-de-ano-novo-tomar",
+      "municipality_name": "Tomar",
+      "category_name": "Música",
+      "venue_name": "Cine-Teatro Paraíso",
+      "updated_at": "2026-12-20T03:12:44.000Z",
+      "sessions": [{ "date": "2027-01-01", "start_time": "21:30", "end_time": null }]
     }
   ],
   "total": 37,

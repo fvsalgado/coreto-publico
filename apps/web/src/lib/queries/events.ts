@@ -480,7 +480,7 @@ export const listMunicipalities = unstable_cache(
     if (!supabase) return [];
     const { data, error } = await supabase
       .from('municipalities')
-      .select('id, name, district, latitude, longitude, sort_order')
+      .select('id, name, district, latitude, longitude, sort_order, parish_count')
       .eq('region_id', regiao)
       .order('sort_order');
     exigirLeitura('listMunicipalities', error);
@@ -513,7 +513,7 @@ export const listMunicipalitiesDeTodas = unstable_cache(
     // região, e a submissão pública herda a região do concelho escolhido.
     const { data, error } = await supabase
       .from('municipalities')
-      .select('id, name, district, latitude, longitude, sort_order, region_id')
+      .select('id, name, district, latitude, longitude, sort_order, region_id, parish_count')
       .order('sort_order');
     exigirLeitura('listMunicipalitiesDeTodas', error);
     return (data ?? []) as unknown as Array<Municipality & { region_id: string }>;

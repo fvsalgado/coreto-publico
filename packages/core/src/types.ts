@@ -19,7 +19,23 @@ export type SubmissionChannel = 'scraper' | 'email' | 'form';
 export type SubmissionStatus =
   'pending' | 'approved' | 'rejected' | 'merged' | 'duplicate' | 'needs_info';
 
-export type SourceKind = 'municipal_site' | 'venue_site' | 'pdf_agenda' | 'feed' | 'manual';
+/**
+ * O que uma fonte é, e tem de ser a mesma lista que o `source_kind` da base.
+ *
+ * **As duas divergiram uma vez, e custou tudo.** A migração 0135 acrescentou
+ * `parish_site` ao tipo da base e a 0136 pôs lá 26 fontes; esta lista ficou
+ * como estava. O `sourceRowSchema` valida **o lote inteiro de uma vez** e
+ * rebenta na primeira linha má — pelo que a recolha seguinte não teria
+ * carregado 26 de 40 fontes: teria carregado **zero de 40**, e as 26
+ * rejeitadas eram justamente as únicas que ainda respondiam.
+ *
+ * Foi apanhado antes de correr. O que impede a repetição é a asserção
+ * «os tipos de fonte da base são os mesmos do código», em
+ * `scripts/verificar-afirmacoes.mjs`: uma migração que acrescente um valor ao
+ * `source_kind` e não a esta linha falha o CI antes de chegar à noite.
+ */
+export type SourceKind =
+  'municipal_site' | 'parish_site' | 'venue_site' | 'pdf_agenda' | 'feed' | 'manual';
 
 export type RunStatus = 'running' | 'success' | 'partial' | 'failed';
 
@@ -97,6 +113,15 @@ export interface RawEvent {
 }
 
 /** Uma linha de `public.events`. */
+/**
+ * Como se chegou à categoria de um evento (0138).
+ *
+ * As três primeiras são as vias do `resolveCategory`, por ordem de confiança;
+ * `person` é alguém a decidir, e ganha sempre. `null` quando não há categoria —
+ * «não consegui saber» não é uma via, é a ausência de uma.
+ */
+export type CategorySource = 'alias' | 'keyword' | 'venue_kind' | 'person' | null;
+
 export interface EventRow {
   id: string;
   slug: string;
@@ -116,6 +141,11 @@ export interface EventRow {
   series_id: string | null;
   category_slug: string | null;
   category_confidence: number | null;
+  /**
+   * Como se chegou à categoria (0138). `person` não vem do `resolveCategory`:
+   * é a base que o escreve quando alguém trava o campo, e é ela que ganha.
+   */
+  category_source: CategorySource;
   categories_raw: string[];
   tags: string[];
   audience: EventAudience | null;

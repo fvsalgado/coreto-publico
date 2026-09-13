@@ -172,3 +172,53 @@ export function resolveCategory(options: ResolveOptions): CategoryResolution {
 
   return { categorySlug: null, confidence: 0, source: 'none', unknownTags };
 }
+
+/**
+ * O limiar a partir do qual a categoria se afirma sem ressalva.
+ *
+ * 0,7 é a confiança de uma palavra inequívoca do título — «concerto», «feira»,
+ * «magusto» —, e essa afirma-se. Abaixo fica só o tipo do espaço (0,4), que é
+ * o último recurso do `resolveCategory` e o único palpite que esta casa faz
+ * sobre o assunto de um evento a partir de onde ele acontece.
+ */
+export const CATEGORIA_SEM_RESSALVA = 0.7;
+
+export interface RessalvaDaCategoria {
+  /** O nome da categoria com a ressalva à frente, para se ler de seguida. */
+  rotulo: string;
+  /** Porque é que há ressalva, em linguagem de quem lê e não de quem programa. */
+  porque: string;
+}
+
+/**
+ * A ressalva a pôr ao lado de uma categoria, ou `null` quando não há nenhuma.
+ *
+ * É a doutrina do posicionamento aplicada a um campo: o que a casa não sabe
+ * fica **ao lado** do que sabe, e não escondido nem apagado. Uma categoria
+ * atribuída pelo tipo do espaço é um palpite — o CIRA é um museu, logo aquilo
+ * seria uma exposição — e publicá-la sem dizer que é um palpite é afirmar o
+ * que não se sabe.
+ *
+ * **Quem decidiu foi uma pessoa nunca leva ressalva, e é a parte que importa.**
+ * Antes da 0138 o cadeado travava o `category_slug` e deixava a confiança da
+ * máquina por baixo: havia duas fichas em que uma pessoa tinha escolhido a
+ * categoria, com a nota escrita ao lado a explicar porquê, e esta função —
+ * lendo só a confiança — teria posto «provavelmente» por cima da decisão dela.
+ */
+export function ressalvaDaCategoria(
+  nome: string | null,
+  confidence: number | null,
+  source: 'alias' | 'keyword' | 'venue_kind' | 'person' | null,
+): RessalvaDaCategoria | null {
+  if (!nome) return null;
+  if (source === 'person') return null;
+  if (confidence === null || confidence >= CATEGORIA_SEM_RESSALVA) return null;
+
+  return {
+    rotulo: `Provavelmente ${nome.toLocaleLowerCase('pt-PT')}`,
+    porque:
+      source === 'venue_kind'
+        ? 'A fonte não disse de que tipo é este evento. A categoria vem do tipo do espaço onde acontece, e pode não ser a certa.'
+        : 'A fonte não disse de que tipo é este evento, e o que se leu não chega para o afirmar.',
+  };
+}

@@ -98,9 +98,22 @@ export function HowToArriveSection({
 
       {googleMapsHref ? (
         <p className="flex flex-wrap gap-x-2 gap-y-1">
+          {/*
+            Os dois contam como o mesmo sinal (0141), e é de propósito: a
+            pergunta que o número responde é «quantas pessoas quiseram saber
+            como lá chegar», e não «qual dos dois mapas preferem». Separá-los
+            dava duas contagens pequenas e nenhuma resposta.
+
+            Esta secção também aparece na ficha de um **espaço**, e lá a marca
+            não conta nada — o ouvinte que a lê está no `AnalyticsEventTracker`,
+            que só a ficha de evento monta. Não é esquecimento: o contador é por
+            evento, e uma ficha de espaço não tem evento a que somar. A marca
+            fica inerte em vez de somar ao sítio errado.
+          */}
           <a
             href={googleMapsHref}
             rel="noopener nofollow"
+            data-stat-kind="directions_click"
             className="-ml-2 inline-flex min-h-11 items-center rounded px-2 text-ink underline underline-offset-4"
           >
             Abrir no Google Maps
@@ -109,6 +122,7 @@ export function HowToArriveSection({
             <a
               href={openStreetMapHref}
               rel="noopener nofollow"
+              data-stat-kind="directions_click"
               className="inline-flex min-h-11 items-center rounded px-2 text-ink underline underline-offset-4"
             >
               Ver no OpenStreetMap

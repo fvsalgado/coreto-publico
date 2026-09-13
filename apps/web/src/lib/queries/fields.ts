@@ -23,6 +23,21 @@ export const CARD_EVENT_FIELDS = [
   'venue_id',
   'location_name',
   'category_slug',
+  /*
+   * A confiança e a origem da categoria (0138) — duas colunas baratas, um
+   * numérico e um texto curto, e as duas viajam por uma razão só: o
+   * `/api/events` serve o cartão, e quem integra ficava com
+   * `category_slug: "exposicoes"` sem forma de saber se aquilo foi decidido
+   * por uma etiqueta da fonte, por uma palavra do título, pelo tipo do espaço
+   * — ou por uma pessoa. Publicar a categoria e esconder o quanto se confia
+   * nela é publicar a parte que convém.
+   *
+   * **O cartão não muda.** Não desenha nenhuma das duas: é na ficha que se
+   * explica, porque uma ressalva num cartão de uma lista de cem lê-se como
+   * ruído e não como honestidade.
+   */
+  'category_confidence',
+  'category_source',
   'date_start',
   'date_end',
   'is_ongoing',
@@ -212,6 +227,16 @@ export const PUBLIC_SOURCE_FIELDS = [
   'id',
   'name',
   'kind',
+  /*
+   * O nome do leitor, público desde a 0139 — e a `/estado` é quem o usa.
+   *
+   * Oito fontes calaram-se a 12 e 13 de setembro de 2026 e sete delas correm
+   * este mesmo leitor; a página mostrava oito linhas soltas e deixava a quem lê
+   * o trabalho de descobrir o que tinham em comum. O `config` continua fora
+   * desta lista e da concessão: o nome do leitor é público, a configuração
+   * dele nunca.
+   */
+  'adapter',
   'municipality_id',
   'region_id',
   'venue_id',

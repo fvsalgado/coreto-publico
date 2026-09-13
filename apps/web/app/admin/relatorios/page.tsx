@@ -5,12 +5,15 @@ import { listRegionsAdmin, monthlyReport } from '@/src/lib/admin/queries';
 import {
   CANAIS,
   DESFECHOS,
+  JANELAS,
+  MEDIDAS_COMPARAVEIS,
   escolherRegiao,
   lerMes,
   mesAnterior,
   nomeDoFicheiro,
   nomeDoMes,
   porqueSemHistorico,
+  variacao,
   type RelatorioMensal,
 } from '@/src/lib/admin/relatorio';
 import { hasServiceRole } from '@/src/lib/env';
@@ -129,7 +132,30 @@ const VISITAS: Array<StatColumn<Visita>> = [
     render: (v) => contar(v.ical_downloads),
   },
   { key: 'partilhas', label: 'Partilhas', isNumeric: true, render: (v) => contar(v.shares) },
-  { key: 'cliques', label: 'Cliques', isNumeric: true, render: (v) => contar(v.clicks) },
+  {
+    key: 'pagina_oficial',
+    label: 'Página oficial',
+    isNumeric: true,
+    // Travessão, e não zero, quando o mês não tem as duas pontas medidas. É a
+    // frase «a agenda mandou 340 pessoas ao vosso portal» a não ser dita com um
+    // número que ninguém contou.
+    render: (v) => (v.source_clicks === null ? '—' : contar(v.source_clicks)),
+  },
+  {
+    key: 'como_chegar',
+    label: 'Como chegar',
+    isNumeric: true,
+    render: (v) => (v.directions_clicks === null ? '—' : contar(v.directions_clicks)),
+  },
+  {
+    key: 'cliques',
+    // «Cliques» é a coluna gerada `ticket_clicks + ical_downloads + shares`
+    // (0017) — não é uma contagem própria, e não inclui as duas novas. O rótulo
+    // di-lo para ninguém a somar às outras e contar tudo duas vezes.
+    label: 'Soma dos três',
+    isNumeric: true,
+    render: (v) => contar(v.clicks),
+  },
 ];
 
 function somaQualidade(linhas: Qualidade[]): Qualidade {
@@ -155,6 +181,18 @@ function somaQualidade(linhas: Qualidade[]): Qualidade {
   return total;
 }
 
+/**
+ * O total da região, e o nulo a propagar-se.
+ *
+ * Os dois contadores da 0141 são `null` quando uma das fotografias do mês ainda
+ * não os tinha. Somar um nulo como zero fazia o total da região parecer medido
+ * quando não foi — e o total é o número que sai na frase do relatório anual.
+ * Basta um concelho por medir para o total ficar nulo, que é a resposta certa.
+ */
+function somar(total: number | null, parcela: number | null): number | null {
+  return total === null || parcela === null ? null : total + parcela;
+}
+
 function somaVisitas(linhas: Visita[]): Visita {
   return linhas.reduce<Visita>(
     (total, v) => ({
@@ -164,6 +202,8 @@ function somaVisitas(linhas: Visita[]): Visita {
       ical_downloads: total.ical_downloads + v.ical_downloads,
       shares: total.shares + v.shares,
       clicks: total.clicks + v.clicks,
+      source_clicks: somar(total.source_clicks, v.source_clicks),
+      directions_clicks: somar(total.directions_clicks, v.directions_clicks),
     }),
     {
       municipality_id: '',
@@ -173,6 +213,8 @@ function somaVisitas(linhas: Visita[]): Visita {
       ical_downloads: 0,
       shares: 0,
       clicks: 0,
+      source_clicks: 0,
+      directions_clicks: 0,
     },
   );
 }
@@ -199,6 +241,193 @@ function Seccao({
   );
 }
 
+/**
+ * As quatro janelas lado a lado, e a variação contra o mês anterior.
+ *
+ * «128 eventos em setembro» não diz se setembro foi bom; «128, contra 94 em
+ * agosto» diz. É a diferença entre uma contagem e uma prestação de contas.
+ *
+ * **Uma janela sem comparação não vem a zero: vem a «sem comparação».** Um
+ * mês que começou antes de a região passar a ser observada foi visto em
+ * parte, e uma variação calculada sobre ele mede a data em que o projeto
+ * começou. É a regra que as visitas seguem desde a 0120, e é também a razão
+ * por que o primeiro relatório com comparações a sério é o do segundo mês
+ * inteiro — quem vir as colunas vazias antes disso não está a ver uma avaria.
+ *
+ * Sem cores e sem setas: a casa não tem cores de estado, e um mês com menos
+ * submissões pode ser um mês em que a recolha automática passou a trazer
+ * tudo. A variação vai por palavras e por sinal, e quem lê decide.
+ */
+function Comparacoes({ comparacao }: { comparacao: RelatorioMensal['comparison'] }) {
+  const anterior = comparacao.previous_month;
+
+  return (
+    <div
+      className="mt-3 overflow-x-auto"
+      tabIndex={0}
+      role="region"
+      aria-label="Tabela, deslocável na horizontal"
+    >
+      <table className="w-full text-sm">
+        <caption className="sr-only">
+          As mesmas medidas no mês, no mês anterior, no mês homólogo e no acumulado do ano, com a
+          variação contra o mês anterior.
+        </caption>
+        <thead>
+          <tr className="border-b border-border text-left">
+            <th scope="col" className="py-2 pr-4">
+              Medida
+            </th>
+            {JANELAS.map((janela) => (
+              <th key={janela.chave} scope="col" className="py-2 pr-4">
+                {janela.rotulo}
+                {/* A janela por baixo do rótulo, sempre. «Acumulado» sem as
+                    datas ao lado deixa o leitor a supor que é o ano civil, e
+                    não é: começa no dia em que passámos a olhar. */}
+                <span className="block text-xs font-normal text-muted tabular-nums">
+                  {comparacao[janela.campo]
+                    ? `${comparacao[janela.campo]?.from} a ${comparacao[janela.campo]?.to}`
+                    : 'sem comparação'}
+                </span>
+              </th>
+            ))}
+            <th scope="col" className="py-2 pr-4">
+              Contra o mês anterior
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {MEDIDAS_COMPARAVEIS.map((medida) => {
+            const v = anterior
+              ? variacao(anterior[medida.campo], comparacao.current[medida.campo])
+              : null;
+            return (
+              <tr key={medida.campo} className="border-b border-border">
+                <th scope="row" className="py-2 pr-4 text-left font-normal">
+                  {medida.rotulo}
+                </th>
+                {JANELAS.map((janela) => {
+                  const totais = comparacao[janela.campo];
+                  return (
+                    <td key={janela.chave} className="py-2 pr-4 tabular-nums">
+                      {totais ? (
+                        contar(totais[medida.campo])
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="py-2 pr-4">
+                  {v ? v.palavras : <span className="text-muted">sem comparação</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Os cinco compromissos, cada um com a sua forma.
+ *
+ * Não é uma tabela: as cinco famílias respondem a perguntas diferentes — uma
+ * quota entre 0 e 1, três contagens que somam, quatro que se sobrepõem — e
+ * forçá-las a colunas comuns dava um quadro com metade das células vazias.
+ *
+ * **A coesão não mostra qual é o concelho maior**, e é deliberado: uma lista
+ * de municípios da mesma CIM por ordem de programação é uma tabela
+ * classificativa, e uma tabela classificativa não é um instrumento de coesão.
+ */
+function Compromissos({ p }: { p: RelatorioMensal['promises'] }) {
+  const quota = p.cohesion.top_share;
+
+  const familias: Array<{ titulo: string; linhas: Array<[string, string]>; nota?: string }> = [
+    {
+      titulo: 'Coesão do território',
+      linhas: [
+        [
+          'Concelhos com programação',
+          `${contar(p.cohesion.municipalities_with_programming)} de ${contar(p.cohesion.municipalities)}`,
+        ],
+        [
+          'Quota do concelho com mais',
+          quota === null ? 'sem programação' : `${Math.round(quota * 100)}%`,
+        ],
+        ['Mediana por concelho', p.cohesion.median === null ? '—' : contar(p.cohesion.median)],
+        ['Abaixo de metade da mediana', contar(p.cohesion.below_half_median)],
+      ],
+      nota: 'Qual é o concelho maior não se diz: entre municípios da mesma CIM, uma tabela ordenada não é um instrumento de coesão.',
+    },
+    {
+      titulo: 'Cauda longa associativa',
+      linhas: [
+        ['Em espaço de coletividade', contar(p.association.in_association_venue)],
+        ['Em equipamento', contar(p.association.in_other_venue)],
+        ['Sem espaço do catálogo', contar(p.association.without_venue)],
+      ],
+      nota: 'As três somam o total. «Sem espaço do catálogo» é o evento que diz onde é por escrito e não está ligado a lado nenhum — hoje é a maior das três, e isso é o estado do catálogo e não das coletividades.',
+    },
+    {
+      titulo: 'Entrada',
+      linhas: [
+        ['Livre', contar(p.admission.free)],
+        ['Com preço', contar(p.admission.priced)],
+        ['Não diz', contar(p.admission.undeclared)],
+      ],
+      nota: '«Não diz» tem o mesmo peso das outras duas, de propósito: arrumá-lo numa delas era inventar o preço destes eventos.',
+    },
+    {
+      titulo: 'Acessibilidade declarada',
+      linhas: [
+        ['Declaram alguma condição', contar(p.accessibility.any)],
+        ['Não declaram nenhuma', contar(p.accessibility.none)],
+        ['Cadeira de rodas', contar(p.accessibility.wheelchair)],
+        ['Língua gestual', contar(p.accessibility.sign_language)],
+        ['Audiodescrição', contar(p.accessibility.audio_description)],
+        ['Sessão relaxada', contar(p.accessibility.relaxed)],
+      ],
+      nota: 'As duas primeiras somam o total; as quatro condições sobrepõem-se e não somam. Não declarar não quer dizer não ser acessível — quer dizer que ninguém escreveu que é.',
+    },
+    {
+      titulo: 'Programação em rede',
+      linhas: [
+        ['Eventos em série regional', contar(p.network.events)],
+        ['Concelhos tocados', contar(p.network.municipalities_touched)],
+      ],
+    },
+  ];
+
+  return (
+    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+      {familias.map((familia) => (
+        <section
+          key={familia.titulo}
+          className="rounded border border-border px-4 py-3"
+          aria-labelledby={`compromisso-${familia.titulo.replace(/\s/g, '-')}`}
+        >
+          <h3 id={`compromisso-${familia.titulo.replace(/\s/g, '-')}`} className="font-semibold">
+            {familia.titulo}
+          </h3>
+          <dl className="mt-2 space-y-1 text-sm">
+            {familia.linhas.map(([rotulo, valor]) => (
+              <div key={rotulo} className="flex justify-between gap-4">
+                <dt className="text-muted">{rotulo}</dt>
+                <dd className="tabular-nums">{valor}</dd>
+              </div>
+            ))}
+          </dl>
+          {familia.nota ? (
+            <p className="mt-2 max-w-prose text-xs text-muted">{familia.nota}</p>
+          ) : null}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   searchParams: Promise<{ regiao?: string; mes?: string }>;
 }
@@ -214,7 +443,8 @@ interface Props {
  *
  * Tudo o que se mostra vem de `monthly_report` (0120), numa ida só à base;
  * o que não se sabe diz-se — as visitas de um mês sem duas fotografias são
- * «sem histórico», e a qualidade é a de hoje, porque não tem outra.
+ * «sem histórico», e a qualidade de um mês sem fotografia é a de hoje, com a
+ * ressalva escrita por cima da tabela em vez de deixada ao leitor.
  */
 export default async function Relatorios({ searchParams }: Props) {
   if (!hasServiceRole) {
@@ -350,6 +580,26 @@ export default async function Relatorios({ searchParams }: Props) {
             </Seccao>
 
             <Seccao
+              id="comparacoes"
+              titulo="Comparações"
+              legenda={
+                relatorio.comparison.observed_since
+                  ? `As mesmas medidas noutras janelas. Esta região é observada desde ${relatorio.comparison.observed_since}: um mês que tenha começado antes disso foi visto em parte, e não se compara — escreve-se «sem comparação» em vez de um zero que se lê como uma medição. As sessões vão ao lado dos eventos porque é a unidade que o INE usa em espetáculos ao vivo: um festival de três dias é um evento e três sessões.`
+                  : 'Esta região ainda não tem registo nenhum, e por isso não há nada a comparar.'
+              }
+            >
+              <Comparacoes comparacao={relatorio.comparison} />
+            </Seccao>
+
+            <Seccao
+              id="compromissos"
+              titulo="O que a casa promete"
+              legenda={`Cinco famílias sobre os ${contar(relatorio.promises.total)} eventos programados no mês — canónicos, nem rascunho nem escondidos, arquivados incluídos. Não é o mesmo número que «eventos a decorrer» acima, e os dois não se somam: um conta o que foi programado, o outro o que estava publicado. Tudo isto mede o que a agenda conseguiu recolher, e não o que aconteceu no território.`}
+            >
+              <Compromissos p={relatorio.promises} />
+            </Seccao>
+
+            <Seccao
               id="fontes"
               titulo="Fontes"
               legenda="As execuções da recolha começadas no mês, fonte a fonte. Uma falha é uma execução que acabou em erro; uma execução parcial — a fonte respondeu, mas com menos do que o costume — não conta como falha."
@@ -361,6 +611,41 @@ export default async function Relatorios({ searchParams }: Props) {
                 rowKey={(f) => f.id}
                 emptyMessage="Esta região não tem fontes de recolha."
               />
+            </Seccao>
+
+            <Seccao
+              id="territorio"
+              titulo="Território"
+              legenda="Quanto do território publica agenda própria. As juntas ligadas são o numerador; as freguesias da região, o denominador. A fração fica por fazer de propósito: uma percentagem é uma leitura, e quem escreve o relatório anual faz a sua."
+            >
+              <StatTable
+                caption="Concelhos, freguesias e fontes institucionais ligadas."
+                columns={CONTAGENS}
+                rows={[
+                  {
+                    chave: 'concelhos',
+                    rotulo: 'Concelhos',
+                    valor: relatorio.territory.municipalities,
+                  },
+                  {
+                    chave: 'camaras',
+                    rotulo: 'Câmaras com agenda lida',
+                    valor: relatorio.territory.municipal_sources_enabled,
+                  },
+                  {
+                    chave: 'juntas',
+                    rotulo: 'Juntas de freguesia com agenda lida',
+                    valor: relatorio.territory.parish_sources_enabled,
+                  },
+                ]}
+                rowKey={(c) => c.chave}
+                emptyMessage="A região não tem concelhos."
+              />
+              <p className="mt-3 text-sm text-muted">
+                {relatorio.territory.parishes === null
+                  ? 'Falta contar as freguesias de pelo menos um concelho desta região, por isso o denominador não aparece: «26 em 72» e «26 em 84» leem-se de maneiras diferentes, e publicar o primeiro por o segundo estar incompleto seria dizer mais do que se sabe.'
+                  : `A região tem ${contar(relatorio.territory.parishes)} freguesias.`}
+              </p>
             </Seccao>
 
             <Seccao
@@ -404,13 +689,28 @@ export default async function Relatorios({ searchParams }: Props) {
               </div>
             </Seccao>
 
+            {/*
+              Duas legendas, porque são dois factos diferentes e a diferença
+              importa a quem lê. Com fotografia, isto é o estado com que o mês
+              fechou; sem ela, é o catálogo de hoje com a etiqueta de um mês
+              passado — que era o único caso possível antes da 0144, e que fica
+              a ser o caso dos meses anteriores para sempre.
+            */}
             <Seccao
               id="qualidade"
               titulo="Qualidade do catálogo"
-              legenda="Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. É o catálogo tal como está hoje, e não como estava no fim do mês: a medida de qualidade não guarda histórico, e o relatório prefere dizê-lo a fingir."
+              legenda={
+                relatorio.quality_as_of
+                  ? `Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. É a fotografia de ${relatorio.quality_as_of}, a última tirada dentro do mês: o estado com que o mês fechou, e não o de hoje.`
+                  : 'Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. Este mês não tem fotografia nenhuma, e por isso é o catálogo tal como está hoje — não como estava no fim do mês. A medida só passou a guardar memória a partir de setembro de 2026, e o relatório prefere dizê-lo a fingir.'
+              }
             >
               <StatTable
-                caption="A qualidade do catálogo por concelho, tal como está hoje."
+                caption={
+                  relatorio.quality_as_of
+                    ? `A qualidade do catálogo por concelho, no dia ${relatorio.quality_as_of}.`
+                    : 'A qualidade do catálogo por concelho, tal como está hoje.'
+                }
                 columns={QUALIDADE}
                 rows={relatorio.quality}
                 rowKey={(q) => q.municipality_id}
@@ -429,7 +729,19 @@ export default async function Relatorios({ searchParams }: Props) {
                   <p className="mt-2 text-sm text-muted">
                     Contadas entre a fotografia de{' '}
                     <span className="tabular-nums">{relatorio.visits.from}</span> e a de{' '}
-                    <span className="tabular-nums">{relatorio.visits.to}</span>.
+                    <span className="tabular-nums">{relatorio.visits.to}</span>.{' '}
+                    {relatorio.visits.clicks_since ? (
+                      <>
+                        «Página oficial» e «como chegar» só se contam a partir de{' '}
+                        <span className="tabular-nums">{relatorio.visits.clicks_since}</span>; um
+                        travessão é um mês sem as duas pontas medidas, e não um mês sem cliques.
+                      </>
+                    ) : (
+                      <>
+                        «Página oficial» e «como chegar» ainda não têm uma única fotografia: os dois
+                        contadores nasceram agora e a primeira é a da próxima recolha noturna.
+                      </>
+                    )}
                   </p>
                   <StatTable
                     caption={`Visitas por concelho entre ${relatorio.visits.from} e ${relatorio.visits.to}, com o total da região na última linha.`}
@@ -471,6 +783,26 @@ export default async function Relatorios({ searchParams }: Props) {
                 </li>
                 <li>As fronteiras do mês são à meia-noite UTC.</li>
               </ul>
+              {/*
+                Estas quatro linhas são o resumo; a ficha técnica é a versão que
+                se anexa. Campo a campo, o que conta e o que não conta — porque
+                quase todos estes números respondem a uma pergunta ligeiramente
+                diferente da que o nome sugere, e somar colunas de blocos
+                diferentes dá um número que não quer dizer nada.
+              */}
+              <p className="mt-3">
+                A definição exata de cada campo — o que conta, o que não conta, sobre que universo,
+                e o enviesamento conhecido de cada contagem — está na{' '}
+                <a
+                  href="/indicadores"
+                  className="underline underline-offset-4"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ficha técnica dos indicadores (abre noutro separador)
+                </a>
+                , que é pública. O CI falha se um indicador novo aparecer sem lá ter entrada.
+              </p>
             </section>
           </article>
         </>

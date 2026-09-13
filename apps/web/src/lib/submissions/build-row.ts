@@ -11,6 +11,7 @@ import {
   type EventRow,
   type PublicSubmission,
   type SessionRow,
+  type CategorySource,
 } from '@coreto/core';
 
 /**
@@ -44,6 +45,7 @@ export type EventCandidate = Pick<
   | 'how_to_arrive'
   | 'category_slug'
   | 'category_confidence'
+  | 'category_source'
   | 'date_start'
   | 'date_end'
   | 'is_ongoing'
@@ -193,9 +195,19 @@ export function buildSubmissionRow(input: PublicSubmission, meta: SubmissionMeta
 
   // Sem aliases: quem submete escolhe a categoria numa lista fechada, e
   // quando a deixa em branco só as palavras inequívocas do título decidem.
-  const category = input.categorySlug
-    ? { categorySlug: input.categorySlug, confidence: 1 }
-    : resolveCategory({ aliases: new Map(), title, description });
+  // Quando é escolhida na lista, a categoria é de quem submete — uma pessoa, e
+  // é isso que `person` quer dizer (0138). Não é a máquina a ter a certeza.
+  const category: { categorySlug: string | null; confidence: number; source: CategorySource } =
+    input.categorySlug
+      ? { categorySlug: input.categorySlug, confidence: 1, source: 'person' }
+      : (() => {
+          const lido = resolveCategory({ aliases: new Map(), title, description });
+          return {
+            categorySlug: lido.categorySlug,
+            confidence: lido.confidence,
+            source: lido.source === 'none' ? null : lido.source,
+          };
+        })();
 
   const fingerprint = eventFingerprint(title, input.startDate, input.municipalityId);
 
@@ -211,6 +223,7 @@ export function buildSubmissionRow(input: PublicSubmission, meta: SubmissionMeta
     how_to_arrive: nullIfBlank(input.howToArrive),
     category_slug: category.categorySlug,
     category_confidence: category.categorySlug ? category.confidence : null,
+    category_source: category.categorySlug ? category.source : null,
     date_start: input.startDate,
     date_end: dateEnd,
     is_ongoing: isOngoing,
