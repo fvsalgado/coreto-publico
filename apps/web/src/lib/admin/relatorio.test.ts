@@ -7,6 +7,7 @@ import {
   nomeDoMes,
   paraCsv,
   porqueSemHistorico,
+  variacao,
   type RelatorioMensal,
 } from './relatorio';
 
@@ -67,6 +68,12 @@ const RELATORIO: RelatorioMensal = {
       items_new_in_month: 0,
     },
   ],
+  territory: {
+    municipalities: 2,
+    parishes: 8,
+    municipal_sources_enabled: 2,
+    parish_sources_enabled: 1,
+  },
   submissions: {
     received_by_channel: { scraper: 40, email: 3, form: 0 },
     received: 43,
@@ -87,10 +94,70 @@ const RELATORIO: RelatorioMensal = {
       with_coordinates: 20,
     },
   ],
+  quality_as_of: '2026-08-31',
+  promises: {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    total: 20,
+    cohesion: {
+      municipalities: 2,
+      municipalities_with_programming: 2,
+      top_share: 0.6,
+      median: 8,
+      below_half_median: 0,
+    },
+    association: {
+      in_association_venue: 3,
+      in_other_venue: 9,
+      without_venue: 8,
+    },
+    admission: { free: 7, priced: 4, undeclared: 9 },
+    accessibility: {
+      any: 5,
+      none: 15,
+      wheelchair: 4,
+      sign_language: 1,
+      audio_description: 2,
+      relaxed: 0,
+    },
+    network: { events: 6, municipalities_touched: 2 },
+  },
+  comparison: {
+    observed_since: '2026-06-01',
+    current: {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      events_published: 12,
+      events_happening: 30,
+      sessions_happening: 41,
+      submissions_received: 9,
+      submissions_approved: 7,
+    },
+    previous_month: {
+      from: '2026-08-01',
+      to: '2026-08-31',
+      events_published: 8,
+      events_happening: 24,
+      sessions_happening: 33,
+      submissions_received: 6,
+      submissions_approved: 5,
+    },
+    same_month_last_year: null,
+    year_to_date: {
+      from: '2026-06-01',
+      to: '2026-09-30',
+      events_published: 40,
+      events_happening: 70,
+      sessions_happening: 95,
+      submissions_received: 20,
+      submissions_approved: 16,
+    },
+  },
   visits: {
     available: true,
     from: '2026-08-01',
     to: '2026-09-01',
+    clicks_since: '2026-08-20',
     by_municipality: [
       {
         municipality_id: 'tomar',
@@ -100,6 +167,8 @@ const RELATORIO: RelatorioMensal = {
         ical_downloads: 9,
         shares: 4,
         clicks: 50,
+        source_clicks: 12,
+        directions_clicks: null,
       },
     ],
   },
@@ -173,7 +242,7 @@ describe('escolherRegiao', () => {
 });
 
 describe('porqueSemHistorico', () => {
-  const vazio = { available: false, by_municipality: [] };
+  const vazio = { available: false, clicks_since: null, by_municipality: [] };
 
   it('diz o que faltou, com as datas que há', () => {
     expect(porqueSemHistorico({ ...vazio, from: null, to: null })).toMatch(/nenhuma fotografia/);
@@ -211,14 +280,37 @@ describe('paraCsv', () => {
       'seccao;concelho_id;concelho;eventos',
       'seccao;chave;valor',
       'seccao;fonte_id;fonte;concelho_id;ligada;execucoes;falhas;ultimo_sucesso;itens_novos_no_mes',
+      'seccao;chave;valor',
       'seccao;canal;recebidas',
       'seccao;desfecho;revistas',
       'seccao;concelho_id;concelho;publicados;por_publicar;no_catalogo;com_hora;com_espaco;com_imagem;com_descricao;com_preco;com_coordenadas',
+      'seccao;janela;de;ate;eventos_publicados;eventos_a_decorrer;sessoes;submissoes_recebidas;submissoes_aprovadas',
       'seccao;chave;valor',
-      'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques',
+      'seccao;chave;valor',
+      'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques;pagina_oficial;como_chegar',
     ]);
     // Uma linha vazia entre blocos, e nunca duas.
     expect(csv).not.toContain('\r\n\r\n\r\n');
+  });
+
+  it('leva o numerador e o denominador do território, e não a percentagem', () => {
+    expect(linhas).toContain('territorio;concelhos;2');
+    expect(linhas).toContain('territorio;freguesias;8');
+    expect(linhas).toContain('territorio;camaras_ligadas;2');
+    expect(linhas).toContain('territorio;juntas_ligadas;1');
+    // A fração é de quem lê. Se um dia aparecer aqui uma percentagem, é porque
+    // alguém achou que a fazia melhor do que a técnica que recebe o ficheiro.
+    expect(csv).not.toMatch(/territorio;[^;]+;[\d.,]+%/);
+  });
+
+  it('deixa as freguesias em branco quando falta contar um concelho', () => {
+    // Nulo é «não consegui saber», e não zero: um zero num denominador é uma
+    // divisão por zero à espera, na folha de cálculo de quem abrir isto.
+    const semDenominador = paraCsv({
+      ...RELATORIO,
+      territory: { ...RELATORIO.territory, parishes: null },
+    });
+    expect(semDenominador.split('\r\n')).toContain('territorio;freguesias;');
   });
 
   it('escreve cada linha com o nome da secção à cabeça', () => {
@@ -231,7 +323,10 @@ describe('paraCsv', () => {
     expect(linhas).toContain('submissoes_revistas;Aprovadas;5');
     expect(linhas).toContain('qualidade;tomar;Tomar;40;3;43;30;20;35;41;22;20');
     expect(linhas).toContain('visitas;fotografia_de;2026-08-01');
-    expect(linhas).toContain('visitas_por_concelho;tomar;Tomar;412;37;9;4;50');
+    // `source_clicks` vem preenchido e `directions_clicks` a nulo: é o caso
+    // real de um mês em que só um dos dois contadores tinha as duas
+    // fotografias, e o vazio no fim é o que distingue «não medi» de «zero».
+    expect(linhas).toContain('visitas_por_concelho;tomar;Tomar;412;37;9;4;50;12;');
   });
 
   it('protege o separador e as aspas, e deixa o resto sem aspas', () => {
@@ -257,12 +352,168 @@ describe('paraCsv', () => {
   it('um mês sem fotografias diz que não tem visitas em vez de inventar zeros', () => {
     const semHistorico: RelatorioMensal = {
       ...RELATORIO,
-      visits: { available: false, from: null, to: '2026-09-01', by_municipality: [] },
+      visits: {
+        available: false,
+        from: null,
+        to: '2026-09-01',
+        clicks_since: null,
+        by_municipality: [],
+      },
     };
     const semVisitas = paraCsv(semHistorico).split('\r\n');
     expect(semVisitas).toContain('visitas;disponivel;não');
     expect(semVisitas).toContain('visitas;fotografia_de;');
     expect(semVisitas).toContain('visitas;fotografia_ate;2026-09-01');
     expect(semVisitas.filter((l) => l.startsWith('visitas_por_concelho;'))).toEqual([]);
+  });
+});
+
+/**
+ * A variação, por palavras e por sinal.
+ *
+ * O plano pede «valor absoluto e percentagem, por palavras e por sinal — a
+ * casa não tem cores de estado». A razão é que uma seta vermelha decide pelo
+ * leitor o que é bom: um mês com menos submissões pode ser um mês em que a
+ * recolha automática passou a trazer tudo, e o relatório não sabe qual dos
+ * dois é.
+ */
+describe('a variação entre duas janelas', () => {
+  it('diz quantos a mais e quanto por cento', () => {
+    const v = variacao(8, 12);
+    expect(v.absoluto).toBe(4);
+    expect(v.percentagem).toBe(50);
+    expect(v.palavras).toBe('4 mais, 50% acima');
+  });
+
+  it('a descer, diz «menos» e «abaixo» — e não um sinal negativo por palavras', () => {
+    const v = variacao(20, 15);
+    expect(v.absoluto).toBe(-5);
+    expect(v.percentagem).toBe(-25);
+    expect(v.palavras).toBe('5 menos, 25% abaixo');
+  });
+
+  /**
+   * De zero para cinco não são «mais infinito por cento» nem «mais 500%». São
+   * cinco onde não havia nenhum, e é isso que se escreve. Uma percentagem com
+   * denominador zero é a forma mais fácil de um relatório publicar um número
+   * que não quer dizer nada.
+   */
+  it('de zero não tira percentagem nenhuma', () => {
+    const v = variacao(0, 5);
+    expect(v.absoluto).toBe(5);
+    expect(v.percentagem).toBeNull();
+    expect(v.palavras).toBe('5 mais, de 0 para 5');
+  });
+
+  it('para zero é uma queda de cem por cento, que é verdade', () => {
+    const v = variacao(5, 0);
+    expect(v.absoluto).toBe(-5);
+    expect(v.percentagem).toBe(-100);
+    expect(v.palavras).toBe('5 menos, 100% abaixo');
+  });
+
+  it('igual escreve-se «igual», e não «0 mais, 0% acima»', () => {
+    expect(variacao(7, 7).palavras).toBe('igual');
+    expect(variacao(0, 0).palavras).toBe('igual');
+    expect(variacao(0, 0).percentagem).toBeNull();
+  });
+
+  it('arredonda ao ponto percentual, como o resto da casa', () => {
+    // 3 em 7 são 42,857…%
+    expect(variacao(7, 10).percentagem).toBe(43);
+  });
+});
+
+/**
+ * O CSV das comparações deixa de fora as janelas que não se podem comparar.
+ * Um zero num ficheiro entregue lê-se como uma medição, e ninguém mediu um
+ * mês que começou antes de a região passar a ser observada.
+ */
+describe('o bloco «comparacao» do CSV', () => {
+  it('leva uma linha por janela que existe, e nenhuma pelas que não', () => {
+    const linhas = paraCsv(RELATORIO)
+      .split('\n')
+      .filter((l) => l.startsWith('comparacao;') || l.startsWith('comparacao,'));
+    const janelas = linhas.map((l) => l.split(/[;,]/)[1]);
+    expect(janelas).toContain('mes');
+    expect(janelas).toContain('mes_anterior');
+    expect(janelas).toContain('acumulado_do_ano');
+    // O fixture não tem homólogo: a região não tinha um ano de registo.
+    expect(janelas).not.toContain('homologo');
+  });
+
+  it('leva as sessões, que é a unidade do INE', () => {
+    expect(paraCsv(RELATORIO)).toMatch(/sessoes/);
+  });
+});
+
+/**
+ * As famílias dos compromissos somam o total, e o teste está aqui e não só na
+ * migração porque o CSV é o que vai anexado: um leitor que some as três
+ * colunas da cauda longa e não chegue ao total conclui, com razão, que lhe
+ * falta uma linha.
+ */
+describe('o bloco «compromissos» do CSV', () => {
+  const linhas = paraCsv(RELATORIO)
+    .split('\n')
+    .filter((l) => l.startsWith('compromissos;'));
+  const valor = (chave: string) =>
+    Number(linhas.find((l) => l.startsWith(`compromissos;${chave};`))?.split(';')[2]);
+
+  it('a cauda longa associativa soma os programados', () => {
+    expect(
+      valor('em_espaco_de_coletividade') +
+        valor('em_equipamento') +
+        valor('sem_espaco_do_catalogo'),
+    ).toBe(valor('programados'));
+  });
+
+  it('a entrada soma os programados, com «não diz» incluído', () => {
+    expect(valor('entrada_livre') + valor('com_preco') + valor('sem_dizer_o_preco')).toBe(
+      valor('programados'),
+    );
+  });
+
+  it('a acessibilidade soma os programados pelas duas primeiras, e não pelas quatro', () => {
+    expect(valor('com_acesso_declarado') + valor('sem_acesso_declarado')).toBe(
+      valor('programados'),
+    );
+    // As quatro condições sobrepõem-se: somá-las dá mais do que «declaram
+    // alguma», e é isso que se está a verificar que continua a acontecer sem
+    // ninguém confundir as duas contas.
+    const quatro =
+      valor('cadeira_de_rodas') +
+      valor('lingua_gestual') +
+      valor('audiodescricao') +
+      valor('sessao_relaxada');
+    expect(quatro).toBeGreaterThanOrEqual(valor('com_acesso_declarado'));
+  });
+
+  it('os concelhos tocados em rede nunca são mais do que os eventos em rede', () => {
+    expect(valor('concelhos_tocados_em_rede')).toBeLessThanOrEqual(valor('em_serie_regional'));
+  });
+
+  it('a quota do maior fica entre 0 e 1', () => {
+    const quota = valor('quota_do_maior');
+    expect(quota).toBeGreaterThanOrEqual(0);
+    expect(quota).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * Sem programação nenhuma não há quota: a célula sai vazia, e não a zero.
+   * Um zero num CSV lê-se como «o maior concelho não tem nada», que é outra
+   * afirmação e é falsa.
+   */
+  it('sem programação, a quota sai vazia e não a zero', () => {
+    const csv = paraCsv({
+      ...RELATORIO,
+      promises: {
+        ...RELATORIO.promises,
+        total: 0,
+        cohesion: { ...RELATORIO.promises.cohesion, top_share: null, median: null },
+      },
+    });
+    expect(csv).toContain('compromissos;quota_do_maior;');
+    expect(csv).not.toMatch(/compromissos;quota_do_maior;0/);
   });
 });

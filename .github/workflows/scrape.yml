@@ -139,11 +139,15 @@ jobs:
             echo "::warning title=Cache não invalidada::POST ${SITE_URL}/api/revalidate falhou (curl ${codigo}). A agenda nova só aparece quando as etiquetas expirarem, ao fim de uma hora."
           fi
 
-      # A política de privacidade promete que os hashes de IP usados na
-      # limitação de tráfego são apagados ao fim de dois dias. `prune_rate_limits`
-      # faz isso, mas alguém tem de a chamar — e é esta a única coisa que corre
-      # todas as noites com a chave de serviço na mão. Um prazo de conservação
+      # Os quatro prazos de conservação que o `docs/RGPD.md` §5 promete e a
+      # `/privacidade` publica. Alguém tem de os executar, e isto é a única
+      # coisa que corre todas as noites com a chave de serviço na mão. Um prazo
       # publicado e não executado é uma promessa que não se cumpre.
+      #
+      # `prune_submissions` fica em ÚLTIMO de propósito: é a única que pode
+      # falhar por uma razão que não é uma avaria — um anexo caducado que ainda
+      # está no balde privado. O `run:` de uma action corre em `bash -e`, e com
+      # ela no meio do laço as duas seguintes ficavam por correr nessa noite.
       - name: Expurgo de retenção
         if: always()
         env:
@@ -154,22 +158,50 @@ jobs:
             echo "Sem credenciais — expurgo saltado."
             exit 0
           fi
-          curl --silent --show-error --fail \
-            --request POST "${SUPABASE_URL}/rest/v1/rpc/prune_rate_limits" \
-            --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            --header 'Content-Type: application/json' \
-            --data '{}'
-          echo
+          chamar() {
+            curl --silent --show-error --fail \
+              --request POST "${SUPABASE_URL}/rest/v1/rpc/$1" \
+              --header "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header 'Content-Type: application/json' \
+              --data '{}'
+          }
+          for funcao in prune_rate_limits prune_sender_quotas prune_admin_actions; do
+            printf '%s: ' "${funcao}"
+            chamar "${funcao}"
+            echo
+          done
 
-      # Duas funções mais, pela mesma porta e pela mesma razão — isto é o que
+          # Esta devolve duas contagens: quantas apagou e quantas ficaram por
+          # apagar porque os anexos ainda estão no balde `intake`. O SQL não
+          # apaga bytes do Storage; apagar só a linha de metadados deixava-os
+          # lá dentro sem ninguém que soubesse o caminho — que é exatamente o
+          # que o expurgo existe para evitar. Se ficar alguma retida, a noite
+          # fica vermelha até alguém tirar os ficheiros à mão.
+          resposta="$(chamar prune_submissions)"
+          echo "prune_submissions: ${resposta}"
+          retidas="$(printf '%s' "${resposta}" | sed -n 's/.*"retidas":[[:space:]]*\([0-9]*\).*/\1/p')"
+          if [ -n "${retidas}" ] && [ "${retidas}" != "0" ]; then
+            echo "::error::${retidas} submissão(ões) caducada(s) ficaram por apagar: os anexos ainda estão no balde intake. Correr expired_intake_objects() e apagar os ficheiros pela API do Storage."
+            exit 1
+          fi
+
+      # Três funções mais, pela mesma porta e pela mesma razão — isto é o que
       # corre todas as noites com a chave de serviço na mão. `renovar_montra`
       # (0119) empurra para o futuro o programa inventado da montra que já
       # acabou, para a demonstração nunca envelhecer; `snapshot_event_stats`
       # (0120) tira a fotografia diária dos contadores por concelho, que é o
-      # que deixa o relatório mensal contar as visitas de um mês. Nenhuma das
-      # duas toca no catálogo de uma região a sério; as duas devolvem quantas
-      # linhas escreveram, e o número fica no registo.
+      # que deixa o relatório mensal contar as visitas de um mês;
+      # `snapshot_event_quality` (0144) tira a da qualidade do catálogo, que é
+      # o que deixa o painel responder a «está a melhorar?» e o relatório
+      # levar a qualidade do mês em vez da de hoje.
+      #
+      # A ordem importa: a fotografia da qualidade vai **depois** da recolha,
+      # que é o passo que muda o catálogo. Tirá-la antes media a véspera e
+      # carimbava-a com a data de hoje.
+      #
+      # Nenhuma das três toca no catálogo de uma região a sério; as três
+      # devolvem quantas linhas escreveram, e o número fica no registo.
       - name: Renovar a montra e fotografar os contadores
         if: always()
         env:
@@ -180,7 +212,7 @@ jobs:
             echo "Sem credenciais — saltado."
             exit 0
           fi
-          for funcao in renovar_montra snapshot_event_stats; do
+          for funcao in renovar_montra snapshot_event_stats snapshot_event_quality; do
             printf '%s: ' "${funcao}"
             curl --silent --show-error --fail \
               --request POST "${SUPABASE_URL}/rest/v1/rpc/${funcao}" \

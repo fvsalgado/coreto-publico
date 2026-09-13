@@ -17,7 +17,23 @@
  * tudo o que o ficheiro importa, mesmo o que esse componente não usa. Um
  * ficheiro partilhado pelos dois lados não pode ter dependências.
  */
-export const STAT_KINDS = ['view', 'ticket_click', 'ical_download', 'share'] as const;
+export const STAT_KINDS = [
+  'view',
+  'ticket_click',
+  'ical_download',
+  'share',
+  /*
+   * Os dois da 0141, e são os dois que respondem a quem paga.
+   *
+   * «A agenda mandou 340 pessoas ao vosso portal em setembro» é a única prova
+   * de retorno que um agregador sem bilheteira consegue dar a quem organiza —
+   * e o «Página oficial» era, até aqui, o único botão daquela fila da ficha sem
+   * marca nenhuma. O «como chegar» é o sinal mais próximo de intenção de
+   * comparecer que este sítio consegue medir.
+   */
+  'source_click',
+  'directions_click',
+] as const;
 
 export type StatKind = (typeof STAT_KINDS)[number];
 

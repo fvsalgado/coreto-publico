@@ -73,6 +73,7 @@ const CONCELHOS: Municipality[] = [
     latitude: null,
     longitude: null,
     sort_order: 1,
+    parish_count: null,
   },
   {
     id: 'ferreira-do-zezere',
@@ -81,6 +82,7 @@ const CONCELHOS: Municipality[] = [
     latitude: null,
     longitude: null,
     sort_order: 2,
+    parish_count: null,
   },
 ];
 

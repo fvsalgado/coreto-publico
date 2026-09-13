@@ -1,0 +1,71 @@
+name: Resumo diário do que está por rever
+
+# O painel responde a tudo isto, e responde bem. O problema é que responde a
+# quem lá vai. Uma submissão de um evento que acontece amanhã fica na fila
+# exatamente igual a uma de um evento de dezembro, e a diferença entre as duas
+# é que uma delas deixa de valer alguma coisa depois de amanhã.
+#
+# **Não envia nada quando não há nada a fazer**, e é a única razão por que isto
+# pode ser diário em vez de semanal. Um aviso diário sobre uma fila vazia
+# aprende-se a ignorar em duas semanas, e aí deixa de servir também nos dias em
+# que havia alguma coisa — é o argumento que a `agenda-semanal.yml` escreve
+# para si própria, e é o mesmo.
+#
+# E não abre issue nenhum, ao contrário da `agenda-semanal.yml` e da
+# `vigilancia.yml`. O que aqui vai não é uma avaria: é uma lista de trabalho, e
+# uma lista de trabalho num issue que se fecha e reabre todos os dias é ruído
+# no repositório. O sítio dela é o telemóvel de quem modera, e o registo fica
+# no artefacto da execução.
+on:
+  schedule:
+    # 07:40 UTC — 08:40 no inverno, 09:40 no verão, em Lisboa. Antes do
+    # expediente e depois da recolha noturna (`scrape.yml` corre de
+    # madrugada), para que o que chegou esta noite já conte.
+    - cron: '40 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resumo-diario
+  cancel-in-progress: false
+
+jobs:
+  resumir:
+    name: Resumir por região
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      REGIOES: ${{ vars.REGIOES_DO_RESUMO || 'medio-tejo' }}
+      DIAS_NA_FILA: ${{ vars.DIAS_NA_FILA || '3' }}
+      DIAS_DE_PRAZO: ${{ vars.DIAS_DE_PRAZO || '30' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # A versão vem do `.nvmrc`, como no `scrape.yml` e no `ci.yml`: uma
+      # versão escrita à mão num workflow é a que fica para trás sozinha.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Ler e enviar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: bash scripts/resumo-diario.sh
+
+      # O que se leu fica guardado, mesmo nos dias em que não se enviou nada.
+      # É o que permite, daqui a um mês, responder a «desde quando é que
+      # aquela fonte está calada?» sem ter de adivinhar.
+      - name: Guardar o que se leu
+        if: always() && hashFiles('resumo-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: resumo-${{ github.run_id }}
+          path: resumo-*.json
+          retention-days: 30

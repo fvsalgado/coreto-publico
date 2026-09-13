@@ -137,3 +137,113 @@ describe('HttpClient', () => {
     expect(recorder.sleeps).toEqual([1_000]);
   });
 });
+
+/**
+ * O agente identifica-se com uma morada que responde, e não com uma que só
+ * parece educada.
+ *
+ * Já falhou duas vezes. A primeira apontava para um domínio que nunca
+ * existiu; a segunda para `github.com/fvsalgado/coreto`, que devolve 404
+ * porque o repositório é privado — e quem segue este endereço é exatamente
+ * quem não tem acesso: o administrador de sistemas que nos vê nos registos
+ * dele. Um agente que se identifica com uma morada morta não é identificável,
+ * é só educado na aparência.
+ *
+ * Este teste não consegue medir se o endereço responde — isso é rede, e um
+ * teste não vai à rede. O que ele prende é o que se aprendeu: nada de
+ * repositórios privados, e uma página do sítio público.
+ */
+describe('o endereço com que o agente se apresenta', () => {
+  it('não é um repositório privado', () => {
+    expect(
+      USER_AGENT,
+      'O endereço do repositório devolve 404 a quem não tem acesso, e é a quem não tem ' +
+        'acesso que este endereço se destina. Use uma página do sítio público.',
+    ).not.toContain('github.com');
+  });
+
+  it('é uma página pública do sítio, e traz o «+» que a convenção pede', () => {
+    const url = /\+(https:\/\/[^\s;)]+)/.exec(USER_AGENT)?.[1];
+    expect(url, 'o agente tem de trazer um endereço prefixado por «+»').toBeTruthy();
+    expect(url).toMatch(/^https:\/\/[a-z.-]+coreto\.org\//);
+  });
+
+  it('diz o que é, em português, para quem lê um registo de servidor', () => {
+    expect(USER_AGENT).toContain('agenda cultural');
+    expect(USER_AGENT).toContain('Portugal');
+  });
+});
+
+/**
+ * O que correu mal tem de chegar à base com o detalhe que serve para agir.
+ *
+ * O `fetch` do Node põe `fetch failed` em todos os erros de rede. DNS que não
+ * resolve, ligação recusada, ligação cortada a meio do TLS e certificado
+ * expirado são quatro avarias diferentes, com quatro respostas diferentes, e
+ * chegavam todas à base com a mesma frase — porque o `describeError` deitava
+ * fora o `error.cause`, que é onde vive o código do sistema.
+ *
+ * Custou uma noite a descobrir à mão o que estava lá dentro o tempo todo.
+ */
+describe('a descrição de um erro de rede', () => {
+  /** Um erro como o `undici` o entrega: genérico por fora, com a causa dentro. */
+  function comoOUndici(code: string, mensagem = 'fetch failed'): Error {
+    const fora = new Error(mensagem);
+    const dentro = new Error(`${code} ao ligar`) as Error & { code: string };
+    dentro.code = code;
+    (fora as Error & { cause?: unknown }).cause = dentro;
+    return fora;
+  }
+
+  /** O que fica no `error` da resposta quando a rede rejeita com este erro. */
+  async function descricaoDe(erro: Error): Promise<string> {
+    const { client } = makeClient([erro]);
+    const resposta = await client.get('https://exemplo.pt/');
+    expect(resposta.ok).toBe(false);
+    return resposta.error ?? '';
+  }
+
+  it('leva o código do sistema à frente, que é o que se procura', async () => {
+    expect(await descricaoDe(comoOUndici('ECONNRESET'))).toContain('ECONNRESET');
+    expect(await descricaoDe(comoOUndici('ENOTFOUND'))).toContain('ENOTFOUND');
+    expect(await descricaoDe(comoOUndici('CERT_HAS_EXPIRED'))).toContain('CERT_HAS_EXPIRED');
+  });
+
+  /**
+   * O caso exato de 12 e 13 de setembro de 2026: oito fontes do Médio Tejo,
+   * duas noites, `fetch failed` e mais nada. Com esta correção, a mesma noite
+   * teria gravado o código — e ninguém teria precisado de ir bater aos
+   * domínios à mão para saber que a ligação morria no aperto de mão TLS.
+   */
+  it('já não deixa «fetch failed» sozinho quando há causa', async () => {
+    const descricao = await descricaoDe(comoOUndici('ECONNRESET'));
+    expect(descricao).not.toBe('fetch failed');
+    expect(descricao).toMatch(/^ECONNRESET: /);
+  });
+
+  it('sem causa nenhuma, diz o que há, e não inventa', async () => {
+    expect(await descricaoDe(new Error('fetch failed'))).toBe('fetch failed');
+  });
+
+  it('o tempo esgotado continua a ser dito por palavras', async () => {
+    const abortado = new Error('The operation was aborted');
+    abortado.name = 'AbortError';
+    expect(await descricaoDe(abortado)).toBe('tempo de resposta esgotado');
+  });
+
+  it('não entra em ciclo com uma causa que aponta para si própria', async () => {
+    const erro = new Error('fetch failed') as Error & { cause?: unknown };
+    erro.cause = erro;
+    expect(await descricaoDe(erro as Error)).toBeTruthy();
+  });
+
+  it('atravessa dois níveis de embrulho', async () => {
+    const fundo = new Error('EPROTO no aperto de mão') as Error & { code: string };
+    fundo.code = 'EPROTO';
+    const meio = new Error('socket hang up') as Error & { cause?: unknown };
+    meio.cause = fundo;
+    const fora = new Error('fetch failed') as Error & { cause?: unknown };
+    fora.cause = meio;
+    expect(await descricaoDe(fora)).toContain('EPROTO');
+  });
+});

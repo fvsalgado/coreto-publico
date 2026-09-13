@@ -45,13 +45,62 @@ const RELATORIO: RelatorioMensal = {
     totals: { published_in_month: 0, happening_in_month: 3, published_now: 40 },
   },
   sources: [],
+  territory: {
+    municipalities: 2,
+    parishes: 8,
+    municipal_sources_enabled: 2,
+    parish_sources_enabled: 1,
+  },
   submissions: {
     received_by_channel: { scraper: 0, email: 1, form: 0 },
     received: 1,
     reviewed: { approved: 0, rejected: 0, other: 0 },
   },
   quality: [],
-  visits: { available: false, from: null, to: null, by_municipality: [] },
+  quality_as_of: null,
+  promises: {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    total: 0,
+    cohesion: {
+      municipalities: 2,
+      municipalities_with_programming: 0,
+      top_share: null,
+      median: 0,
+      below_half_median: 0,
+    },
+    association: {
+      in_association_venue: 0,
+      in_other_venue: 0,
+      without_venue: 0,
+    },
+    admission: { free: 0, priced: 0, undeclared: 0 },
+    accessibility: {
+      any: 0,
+      none: 0,
+      wheelchair: 0,
+      sign_language: 0,
+      audio_description: 0,
+      relaxed: 0,
+    },
+    network: { events: 0, municipalities_touched: 0 },
+  },
+  comparison: {
+    observed_since: null,
+    current: {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      events_published: 0,
+      events_happening: 0,
+      sessions_happening: 0,
+      submissions_received: 0,
+      submissions_approved: 0,
+    },
+    previous_month: null,
+    same_month_last_year: null,
+    year_to_date: null,
+  },
+  visits: { available: false, from: null, to: null, clicks_since: null, by_municipality: [] },
 };
 
 function pedido(query = ''): Request {

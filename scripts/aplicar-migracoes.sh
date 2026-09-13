@@ -59,6 +59,14 @@ comment on table public.migration_checksums is
   'O resumo de cada ficheiro de migração no momento em que foi aplicado. As '
   'migrações são história e não se reescrevem: uma linha aqui a discordar do '
   'ficheiro quer dizer que alguém o editou depois de aplicado.';
+
+-- Esta tabela nasce aqui e não numa migração, e por isso escapou durante muito
+-- tempo à regra das outras tabelas de serviço: ficou no esquema `public` — que
+-- é o que o PostgREST serve — sem RLS e com `select` concedido ao `anon`. A
+-- 0134 endireitou-a na base que já existe; isto endireita-a no minuto zero de
+-- uma base nova, que é antes de a 0134 sequer correr.
+alter table public.migration_checksums enable row level security;
+revoke all on table public.migration_checksums from anon, authenticated;
 SQL
 
 soma() {

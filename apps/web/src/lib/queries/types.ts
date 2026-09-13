@@ -1,3 +1,5 @@
+import type { CategorySource } from '@coreto/core';
+
 import type { EventAudience, VenueKind } from '@coreto/core';
 
 /** Um evento tal como aparece num cartão de listagem. */
@@ -10,6 +12,15 @@ export interface EventCard {
   venue_id: string | null;
   location_name: string | null;
   category_slug: string | null;
+  /**
+   * O quanto se confia na categoria, e de onde ela veio (0138).
+   *
+   * Viajam no cartão porque o `/api/events` serve o cartão; **o cartão não as
+   * desenha**. A ficha é que o faz: abaixo de 0,7 escreve «provavelmente», e
+   * diz porquê. `person` ganha sempre, e vem com 1,0.
+   */
+  category_confidence: number | null;
+  category_source: CategorySource;
   date_start: string | null;
   date_end: string | null;
   /**
@@ -120,6 +131,13 @@ export interface Municipality {
   latitude: number | null;
   longitude: number | null;
   sort_order: number;
+  /**
+   * Quantas freguesias tem o concelho (0136), ou `null` enquanto ninguém as
+   * tiver contado. É o denominador de «X das Y juntas já publicam na agenda
+   * regional» — e o nulo é a diferença entre «este concelho não tem juntas
+   * ligadas» e «ninguém contou as freguesias deste concelho».
+   */
+  parish_count: number | null;
 }
 
 export interface Venue {
@@ -199,6 +217,8 @@ export interface PublicSource {
   id: string;
   name: string;
   kind: string;
+  /** O leitor que sabe ler esta fonte (0139). O `config` dele não é público. */
+  adapter: string | null;
   municipality_id: string | null;
   /** A região de uma fonte sem concelho; nula quando o concelho a deriva. */
   region_id: string | null;

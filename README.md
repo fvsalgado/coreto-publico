@@ -80,16 +80,18 @@ corrigida para o número errado por quem só olhe para ela.
 | Medição             | contadores agregados em Postgres; PostHog na UE, sem cookies, facultativo |
 | Integração contínua | GitHub Actions                                                            |
 
-| Documento                                              | Para quê                                                                     |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)           | As decisões e os invariantes, com a razão de cada um                         |
-| [`docs/OPERACAO.md`](docs/OPERACAO.md)                 | O que fazer quando alguma coisa corre mal                                    |
-| [`docs/BACKUPS.md`](docs/BACKUPS.md)                   | Cópias de segurança e como testar um restauro                                |
-| [`docs/RGPD.md`](docs/RGPD.md)                         | Registo de tratamento de dados pessoais                                      |
-| [`docs/EMAIL.md`](docs/EMAIL.md)                       | O canal de entrada por email                                                 |
-| [`docs/DNS.md`](docs/DNS.md)                           | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)    |
-| [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                 | Como nasce uma região nova — sem um commit                                   |
-| [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/) | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário) |
+| Documento                                                    | Para quê                                                                     |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)                 | As decisões e os invariantes, com a razão de cada um                         |
+| [`docs/OPERACAO.md`](docs/OPERACAO.md)                       | O que fazer quando alguma coisa corre mal                                    |
+| [`docs/BACKUPS.md`](docs/BACKUPS.md)                         | Cópias de segurança e como testar um restauro                                |
+| [`docs/RGPD.md`](docs/RGPD.md)                               | Registo de tratamento de dados pessoais                                      |
+| [`docs/INDICADORES.md`](docs/INDICADORES.md)                 | O que cada número do relatório mensal conta, e o que não conta               |
+| [`docs/O-QUE-FALTA-AO-DONO.md`](docs/O-QUE-FALTA-AO-DONO.md) | O que não se resolve com código: avarias do lado de lá e decisões            |
+| [`docs/EMAIL.md`](docs/EMAIL.md)                             | O canal de entrada por email                                                 |
+| [`docs/DNS.md`](docs/DNS.md)                                 | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)    |
+| [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                       | Como nasce uma região nova — sem um commit                                   |
+| [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/)       | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário) |
 
 Porque é que a impressão digital tem de ser idêntica dos dois lados, porque é
 que quase-duplicados não se fundem sozinhos, o que impede uma recolha vazia de
