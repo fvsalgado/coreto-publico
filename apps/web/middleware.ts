@@ -173,6 +173,32 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     return response;
   }
 
+  /*
+   * O balanço é a segunda porta da casa, e vive fora do segmento como a
+   * primeira: a região que ele mostra vem do **segredo**, e não do domínio
+   * por onde se entrou.
+   *
+   * Não passa pela `guardAdmin`, de propósito — esta porta não é a do
+   * painel, e quem tem a chave de leitura não pode ser levado a um sítio onde
+   * se escreve. A guarda dela é a `quemAbre`, dentro da página, que confirma
+   * o segredo contra a base.
+   *
+   * Os dois cabeçalhos são a mesma defesa em dois sítios: o endereço traz um
+   * segredo na barra, e um motor de busca que o siga põe-no num índice, uma
+   * cache partilhada põe-no ao alcance de quem pedir a seguir. A página
+   * também o diz no seu `metadata`; são duas redes porque uma esquece-se.
+   */
+  if (pathname.startsWith('/balanco')) {
+    const resposta = NextResponse.next();
+    resposta.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    resposta.headers.set('Cache-Control', 'no-store, must-revalidate');
+    // O endereço de onde se vem não sai daqui: com o segredo na barra, um
+    // `Referer` completo entregava-o ao primeiro sítio para onde alguém
+    // seguisse a partir desta página.
+    resposta.headers.set('Referrer-Policy', 'no-referrer');
+    return resposta;
+  }
+
   // Da API só `/api/events` é da região — é o feed público filtrado. O resto
   // (revalidate, intake, stats, submissions, regioes) é do produto: uma
   // recolha, um webhook e um painel servem todas as regiões.
