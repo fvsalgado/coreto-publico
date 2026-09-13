@@ -734,6 +734,58 @@ presente(
   },
 );
 /*
+ * O exemplo de resposta de `/levar` contra as colunas que a API serve.
+ *
+ * A página `/levar` publica um JSON de exemplo com o cabeçalho «a resposta».
+ * Quem integra lê aquilo e escreve o seu leitor a partir dali — e o exemplo
+ * não tinha como saber que a rota tinha mudado. Estava a **menos de cinco
+ * campos** que a API devolve há meses (`is_ongoing`, `municipality_name`,
+ * `category_name`, `venue_name`, `updated_at`, `sessions`), e um exemplo que
+ * omite metade da resposta ensina a integração errada com toda a calma.
+ *
+ * A rota faz `{...event}` sobre uma linha de `CARD_EVENT_FIELDS` e acrescenta
+ * os campos resolvidos. É esse par que aqui se prende: nenhuma coluna do cartão
+ * pode faltar ao exemplo, e nenhum campo do exemplo pode ser inventado.
+ */
+{
+  const campos = ler('apps/web/src/lib/queries/fields.ts');
+  const bloco = campos.split('export const CARD_EVENT_FIELDS = [')[1]?.split('].join(')[0] ?? '';
+  // `'wheelchair_accessible:wheelchair_accessible_resolved'` sai com o nome de
+  // fora, que é o que o contrato publicado promete desde sempre.
+  const colunas = [...bloco.matchAll(/'([a-z_]+)(?::[a-z_]+)?'/g)].map((e) => e[1]);
+
+  // Os campos que a rota acrescenta por cima da linha, lidos da própria rota.
+  const rota = ler('apps/web/app/[regiao]/api/events/route.ts');
+  const resposta = rota.split('events: events.map((event) => ({')[1]?.split('      })),')[0] ?? '';
+  const acrescentados = [...resposta.matchAll(/^\s{8}([a-z_]+):/gm)].map((e) => e[1]);
+
+  const pagina = ler('apps/web/app/[regiao]/levar/page.tsx');
+  const exemplo = pagina.split('const exemploDeResposta')[1]?.split('\n}`;')[0] ?? '';
+  const documentados = new Set([...exemplo.matchAll(/^\s{6}"([a-z_]+)":/gm)].map((e) => e[1]));
+
+  const esperados = [...new Set([...colunas, ...acrescentados])];
+  const emFalta = esperados.filter((campo) => !documentados.has(campo));
+  const aMais = [...documentados].filter((campo) => !esperados.includes(campo));
+
+  afirmar({
+    afirmacao: 'o exemplo de resposta em /levar tem os campos que a API devolve, e só esses',
+    porque:
+      'quem integra escreve o leitor a partir daquele exemplo; um exemplo a menos de cinco campos ensina a integração errada com toda a calma, e um campo a mais promete o que não chega',
+    onde: `${origem('apps/web/app/[regiao]/levar/page.tsx', /const exemploDeResposta/)} contra apps/web/src/lib/queries/fields.ts`,
+    ok:
+      colunas.length > 0 && acrescentados.length > 0 && emFalta.length === 0 && aMais.length === 0,
+    esperava: esperados.join(', ') || 'não consegui ler as colunas do cartão',
+    encontrei:
+      [
+        emFalta.length ? `em falta: ${emFalta.join(', ')}` : '',
+        aMais.length ? `a mais: ${aMais.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
  * Os prazos de conservação: três coisas que só valem juntas.
  *
  * O `docs/RGPD.md` §5 promete apagar, a `/privacidade` publica a promessa sem

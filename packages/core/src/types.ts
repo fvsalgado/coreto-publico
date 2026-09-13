@@ -97,6 +97,15 @@ export interface RawEvent {
 }
 
 /** Uma linha de `public.events`. */
+/**
+ * Como se chegou à categoria de um evento (0138).
+ *
+ * As três primeiras são as vias do `resolveCategory`, por ordem de confiança;
+ * `person` é alguém a decidir, e ganha sempre. `null` quando não há categoria —
+ * «não consegui saber» não é uma via, é a ausência de uma.
+ */
+export type CategorySource = 'alias' | 'keyword' | 'venue_kind' | 'person' | null;
+
 export interface EventRow {
   id: string;
   slug: string;
@@ -116,6 +125,11 @@ export interface EventRow {
   series_id: string | null;
   category_slug: string | null;
   category_confidence: number | null;
+  /**
+   * Como se chegou à categoria (0138). `person` não vem do `resolveCategory`:
+   * é a base que o escreve quando alguém trava o campo, e é ela que ganha.
+   */
+  category_source: CategorySource;
   categories_raw: string[];
   tags: string[];
   audience: EventAudience | null;

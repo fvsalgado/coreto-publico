@@ -235,6 +235,9 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
     series_id: raw.seriesId ?? null,
     category_slug: category.categorySlug,
     category_confidence: category.categorySlug ? category.confidence : null,
+    // `none` não é uma origem: é a ausência de categoria, e o nulo diz isso
+    // melhor do que uma palavra. A restrição da 0138 recusa-o de qualquer modo.
+    category_source: category.categorySlug && category.source !== 'none' ? category.source : null,
     categories_raw: raw.categoriesRaw ?? [],
     tags: [],
     audience: audience.audience ?? null,

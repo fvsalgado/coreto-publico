@@ -61,6 +61,8 @@ const EVENTO: EventCard = {
   venue_id: 'cine-teatro',
   location_name: null,
   category_slug: 'musica',
+  category_confidence: 0.95,
+  category_source: 'alias',
   date_start: '2027-01-01',
   date_end: null,
   is_ongoing: false,
