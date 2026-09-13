@@ -1514,6 +1514,42 @@ begin
      and p.tablename = 'event_stats_snapshots';
   assert n = 0, 'há uma policy em event_stats_snapshots: as fotografias são só do painel';
 
+  -- A fotografia da qualidade (0144) tem de ficar tão fechada como a dos
+  -- contadores. Não guarda nada de pessoal — são contagens de eventos de um
+  -- catálogo público — mas é memória de operação, e uma tabela de memória
+  -- aberta à chave pública é um histórico que ninguém decidiu publicar.
+  select count(*) into n
+    from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relname = 'event_quality_snapshots' and c.relrowsecurity;
+  assert n = 1, 'event_quality_snapshots está sem RLS';
+
+  select count(*) into n
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'event_quality_snapshots';
+  assert n = 0, 'há uma policy em event_quality_snapshots: as fotografias são só do painel';
+
+  -- E não ganha uma coluna que identifique ninguém. A fotografia conta
+  -- eventos; o dia em que alguém lhe acrescentar uma coluna de pessoa, a
+  -- secção 4 do RGPD.md deixa de ser verdade sem ninguém a reler.
+  select count(*), coalesce(string_agg(column_name, ', '), '')
+    into n, v_cols
+    from information_schema.columns
+   where table_schema = 'public'
+     and table_name = 'event_quality_snapshots'
+     and column_name not in ('municipality_id', 'taken_on', 'published', 'pending',
+                             'in_catalogue', 'with_time', 'with_venue', 'with_image',
+                             'with_description', 'with_price', 'with_coordinates');
+  assert n = 0, format('event_quality_snapshots ganhou colunas fora das contagens: %s', v_cols);
+
+  -- A restrição que recusa uma lacuna maior do que o catálogo, e que é o que
+  -- impede o painel de mostrar uma percentagem acima de cem.
+  select count(*) into n
+    from pg_constraint
+   where conrelid = 'public.event_quality_snapshots'::regclass
+     and conname = 'event_quality_snapshots_dentro_do_catalogo';
+  assert n = 1, 'a restrição que trava percentagens acima de cem nas fotografias desapareceu';
+
   -- Os contadores são legíveis pelo público de propósito; escrevê-los, não.
   select count(*) into n
     from pg_policies p

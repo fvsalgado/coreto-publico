@@ -3,10 +3,12 @@ import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
 import { LACUNAS_COM_COLUNA, listaDeTrabalho } from '@/src/lib/admin/lacunas';
+import { compararQualidade, fimDoMesPassado, type MedidaComparada } from '@/src/lib/admin/memoria';
 import {
   listEventsWithoutTime,
   qualityByMunicipality,
   qualityBySource,
+  qualitySnapshotAte,
   type EventWithoutTimeRow,
   type QualityRow,
 } from '@/src/lib/admin/queries';
@@ -196,6 +198,66 @@ function Tabela({
 }
 
 /**
+ * Como estava no fim do mês passado, e como está hoje.
+ *
+ * A percentagem sozinha não responde a «está a melhorar?»: 62% só quer dizer
+ * alguma coisa contra o 62% anterior, e antes da 0144 não havia anterior
+ * nenhum. Agora há uma fotografia por noite, e esta secção compara a última
+ * do mês passado com o catálogo de hoje.
+ *
+ * **Os dois números vão sempre juntos, e é o que faz isto ser honesto.** Uma
+ * proporção a descer com o absoluto a subir é um catálogo a crescer mais
+ * depressa do que o trabalho de o preencher — não é uma queda, e uma seta
+ * vermelha sozinha chamava-lhe uma. Quem lê precisa dos dois para saber o que
+ * aconteceu.
+ */
+function Memoria({ medidas, desde }: { medidas: MedidaComparada[]; desde: string }) {
+  return (
+    <section aria-labelledby="memoria" className="mt-8">
+      <h2 id="memoria" className="text-lg font-semibold">
+        Desde o fim do mês passado
+      </h2>
+      <p className="mt-1 max-w-prose text-muted">
+        A fotografia de <span className="tabular-nums">{desde}</span> ao lado do catálogo de hoje. O
+        catálogo passou de <span className="tabular-nums">{medidas[0]?.catalogoAntes ?? 0}</span>{' '}
+        para <span className="tabular-nums">{medidas[0]?.catalogoAgora ?? 0}</span> eventos — e é
+        por isso que a percentagem pode descer sem nada ter piorado.
+      </p>
+
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {medidas.map((medida) => (
+          <li key={medida.chave} className="rounded border border-border px-3 py-2 text-sm">
+            <span className="font-medium">{medida.rotulo}</span>{' '}
+            <span className="tabular-nums">
+              {medida.antes} → {medida.agora}
+            </span>
+            {medida.pcAntes === null || medida.pcAgora === null || medida.pontos === null ? null : (
+              <>
+                {/*
+                  As duas percentagens à vista, e não só a diferença: quem faz
+                  a conta de cabeça tem de chegar ao número que está escrito.
+                  A diferença sai destas duas já arredondadas, pela mesma
+                  razão — 62,5% escreve-se 63%, e −17 é o que se lê aqui.
+                */}
+                <span className="ml-2 text-muted tabular-nums">
+                  {medida.pcAntes}% → {medida.pcAgora}%
+                </span>
+                <span className="ml-2 tabular-nums">
+                  {/* O sinal escrito, e não uma seta: uma seta a vermelho num
+                      número que subiu em absoluto lê-se como avaria. */}
+                  {medida.pontos > 0 ? '+' : ''}
+                  {medida.pontos} p.p.
+                </span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * A percentagem diz se a agenda está a melhorar; não diz quais são os eventos
  * que faltam. Este é o número absoluto — só dos que ainda vão acontecer,
  * porque corrigir a hora de um que já passou não leva ninguém a lado nenhum —
@@ -246,11 +308,18 @@ function SemHora({ linhas, nomes }: { linhas: EventWithoutTimeRow[]; nomes: Map<
 export default async function Qualidade() {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Qualidade" />;
 
-  const [porConcelho, porFonte, semHora] = await Promise.all([
+  const fimDoPassado = fimDoMesPassado(new Date());
+  const [porConcelho, porFonte, semHora, fotografia] = await Promise.all([
     qualityByMunicipality(),
     qualityBySource(),
     listEventsWithoutTime(),
+    qualitySnapshotAte(fimDoPassado),
   ]);
+
+  // Sem fotografia não há secção. Um mês sem memória escreve-se com a data da
+  // primeira noite que a tirou, mais abaixo, em vez de aqui um zero que se
+  // lia como «não mudou nada».
+  const memoria = fotografia.length > 0 ? compararQualidade(fotografia, porConcelho) : null;
 
   return (
     <>
@@ -279,6 +348,21 @@ export default async function Qualidade() {
         linhas={porFonte}
         recorte="fonte"
       />
+
+      {memoria ? (
+        <Memoria medidas={memoria} desde={fotografia[0]?.taken_on ?? fimDoPassado} />
+      ) : (
+        <section aria-labelledby="memoria" className="mt-8">
+          <h2 id="memoria" className="text-lg font-semibold">
+            Desde o fim do mês passado
+          </h2>
+          <p className="mt-1 max-w-prose text-muted">
+            Ainda não há fotografia nenhuma até {fimDoPassado}. A medida de qualidade passou a
+            guardar uma por noite a partir da migração 0144; os meses anteriores ficam sem memória,
+            e recuar a de hoje para eles era escrever sobre um mês um número que ninguém leu nele.
+          </p>
+        </section>
+      )}
 
       <SemHora
         linhas={semHora}

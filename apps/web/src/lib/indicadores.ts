@@ -53,6 +53,13 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
         naoConta:
           'Dois relatórios do mesmo mês gerados em dias diferentes podem divergir — o catálogo mexe-se.',
       },
+      {
+        campo: 'relatorio.qualidade_de',
+        conta:
+          'O dia da fotografia que o bloco «qualidade» traz: o último do mês em que foi medida.',
+        naoConta:
+          'Vazio quando não houve fotografia nesse mês — e aí a qualidade é a de hoje, não a do mês. Meses anteriores a setembro de 2026 ficam sempre vazios: a medida só passou a guardar memória então, e recuar a de hoje seria escrever sobre um mês um número que ninguém leu nele.',
+      },
     ],
   },
   {

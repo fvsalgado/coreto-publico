@@ -934,6 +934,40 @@ presente(
       ? `sem quem as chame: ${porChamar.join(', ')}`
       : 'nenhuma função de expurgo escrita',
   });
+
+  // (c) o mesmo para as fotografias, e pela mesma razão
+  //
+  // Uma fotografia é memória: só existe se alguém a tirar, e uma noite que
+  // não a tira não dá erro nenhum — deixa um buraco no histórico que só se
+  // descobre meses depois, ao abrir o relatório de um mês que não tem
+  // qualidade nenhuma para mostrar. A 0120 escreveu a dos contadores e a
+  // 0144 a da qualidade; as duas valem zero sem a linha do trabalho noturno.
+  const fotografias = [
+    ...new Set(
+      migracoes.flatMap((f) =>
+        [
+          ...sqlPorFicheiro
+            .get(f)
+            .matchAll(/create (?:or replace )?function public\.(snapshot_\w+)\(/g),
+        ].map((m) => m[1]),
+      ),
+    ),
+  ].sort();
+  const fotosPorTirar = fotografias.filter((nome) => !noturno.includes(nome));
+
+  afirmar({
+    afirmacao: 'todas as fotografias escritas são tiradas todas as noites',
+    porque:
+      'uma fotografia que ninguém agenda deixa um buraco no histórico que só se descobre meses depois, ao abrir o relatório de um mês que não tem qualidade nenhuma para mostrar',
+    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+    ok: fotografias.length > 0 && fotosPorTirar.length === 0,
+    esperava: fotografias.length
+      ? `${fotografias.join(', ')} no trabalho noturno`
+      : 'pelo menos uma fotografia',
+    encontrei: fotosPorTirar.length
+      ? `sem quem as tire: ${fotosPorTirar.join(', ')}`
+      : 'nenhuma fotografia escrita',
+  });
 }
 
 /*
