@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { LISBON_TIME_ZONE, formatPrice, todayInLisbon, truncate } from '@coreto/core';
+import {
+  LISBON_TIME_ZONE,
+  formatPrice,
+  ressalvaDaCategoria,
+  todayInLisbon,
+  truncate,
+} from '@coreto/core';
 import { listSitemapEvents } from '@/src/lib/feeds/data';
 import { AnalyticsEventTracker } from '@/src/components/AnalyticsEventTracker';
 import { AnalyticsShareButton } from '@/src/components/AnalyticsShareButton';
@@ -200,6 +206,19 @@ export default async function EventPage({ params }: Props) {
   const municipality = municipalities.find((item) => item.id === event.municipality_id) ?? null;
   const category = categories.find((item) => item.slug === event.category_slug) ?? null;
   /*
+   * A ressalva da categoria (0138), e `null` quando não há nenhuma.
+   *
+   * Uma categoria atribuída pelo tipo do espaço é um palpite — o CIRA é um
+   * museu, logo aquilo seria uma exposição — e publicá-la calada é afirmar o
+   * que não se sabe. Fica ao lado do que se sabe, que é a doutrina desta casa
+   * aplicada a um campo. Quem decidiu foi uma pessoa nunca leva ressalva.
+   */
+  const ressalva = ressalvaDaCategoria(
+    category?.name ?? null,
+    event.category_confidence,
+    event.category_source,
+  );
+  /*
    * Com a secção dos ciclos desligada, o nome do ciclo fica — é um facto sobre
    * este evento — e o que sai é a ligação. O que também sai é o `superEvent`
    * dos dados estruturados: é uma promessa a uma máquina de que há uma página
@@ -285,7 +304,9 @@ export default async function EventPage({ params }: Props) {
           lista que os dados estruturados publicam. */}
       <header className="mb-6">
         <Migalhas trilha={migalhasDoEvento(event, municipality)} />
-        {category ? <p className="ct-eyebrow mb-2.5">{category.name}</p> : null}
+        {category ? (
+          <p className="ct-eyebrow mb-2.5">{ressalva ? ressalva.rotulo : category.name}</p>
+        ) : null}
         <h1 className="ct-display-sm max-w-3xl">{event.title}</h1>
         {event.subtitle ? <p className="mt-2 text-lg text-muted">{event.subtitle}</p> : null}
 
@@ -624,12 +645,14 @@ export default async function EventPage({ params }: Props) {
               ))}
               {category ? (
                 <SinalLink href={`/agenda?category=${category.slug}`} icone="etiqueta">
-                  {category.name}
+                  {ressalva ? ressalva.rotulo : category.name}
                 </SinalLink>
               ) : null}
             </Sinais>
           </div>
         ) : null}
+
+        {ressalva ? <p className="mt-3 max-w-2xl text-sm text-muted">{ressalva.porque}</p> : null}
 
         {event.tags.length > 0 ? (
           <ul className="mt-4 flex flex-wrap gap-2 text-xs">

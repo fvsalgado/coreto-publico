@@ -1,3 +1,5 @@
+import type { CategorySource } from '@coreto/core';
+
 import type { EventAudience, VenueKind } from '@coreto/core';
 
 /** Um evento tal como aparece num cartão de listagem. */
@@ -10,6 +12,15 @@ export interface EventCard {
   venue_id: string | null;
   location_name: string | null;
   category_slug: string | null;
+  /**
+   * O quanto se confia na categoria, e de onde ela veio (0138).
+   *
+   * Viajam no cartão porque o `/api/events` serve o cartão; **o cartão não as
+   * desenha**. A ficha é que o faz: abaixo de 0,7 escreve «provavelmente», e
+   * diz porquê. `person` ganha sempre, e vem com 1,0.
+   */
+  category_confidence: number | null;
+  category_source: CategorySource;
   date_start: string | null;
   date_end: string | null;
   /**
