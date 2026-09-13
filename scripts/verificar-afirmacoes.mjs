@@ -1082,6 +1082,154 @@ presente(
 }
 
 /*
+ * A linha do agente é mostrada, e não recontada.
+ *
+ * O `USER_AGENT` traz dentro de si o endereço da `/fontes`, e essa página
+ * passou a ter uma secção para quem nos encontra nos registos do servidor
+ * dele. A secção mostra a linha para que ele a possa confrontar com o que tem
+ * à frente — e uma linha recontada à mão nessa página seria pior do que não a
+ * ter: dava a um administrador de sistemas uma cadeia que não casa com a dos
+ * registos, e ensinava-o a desconfiar da página inteira.
+ *
+ * Este endereço já morreu duas vezes — `coreto.pt/sobre`, que nunca existiu, e
+ * `github.com/fvsalgado/coreto`, que devolve 404 a quem não tem acesso, que é
+ * precisamente quem o segue. Ambos duraram porque nada ligava a linha ao sítio
+ * que a devia justificar. Agora há uma constante só, em `@coreto/core`, lida
+ * pelos dois lados; esta asserção é o que impede alguém de voltar a escrever
+ * o texto à mão na página.
+ */
+{
+  const pagina = ler('apps/web/app/[regiao]/fontes/page.tsx');
+  const semProsa = semComentarios(pagina);
+
+  const leDoCore = /import\s*\{[^}]*\bUSER_AGENT\b[^}]*\}\s*from\s*'@coreto\/core'/.test(semProsa);
+  const mostra = /\{USER_AGENT\}/.test(semProsa);
+
+  // Uma cópia à mão reconhece-se pelo prefixo do produto em texto literal.
+  const copiada = /['"`]Coreto\/[0-9]/.test(semProsa);
+
+  afirmar({
+    afirmacao: 'a /fontes mostra a linha do agente lendo-a do código, e não recontada à mão',
+    porque:
+      'a página é o endereço que o próprio agente traz dentro de si, e quem lá chega vem de um registo de acessos para confrontar a linha — uma cópia que envelheça um dia desmente a página toda a quem a foi verificar',
+    onde: 'apps/web/app/[regiao]/fontes/page.tsx e packages/core/src/recolha.ts',
+    ok: leDoCore && mostra && !copiada,
+    esperava: "importar USER_AGENT de '@coreto/core' e render{USER_AGENT}, sem literal",
+    encontrei:
+      [
+        leDoCore ? '' : "não importa USER_AGENT de '@coreto/core'",
+        mostra ? '' : 'não mostra {USER_AGENT} em lado nenhum',
+        copiada ? 'tem a linha escrita à mão («Coreto/…» em literal)' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'lida do código e mostrada',
+  });
+}
+
+/*
+ * A recolha não promete cumprir um `robots.txt` que não lê.
+ *
+ * A `/fontes` diz por escrito, a quem administra o servidor do outro lado, que
+ * **ainda não lemos o `robots.txt`** — e diz-lho porque é verdade: não há uma
+ * linha sobre isso em `@coreto/ingest`. É a frase mais fácil de deixar
+ * envelhecer de toda a página: no dia em que alguém ligar o cumprimento do
+ * `robots.txt`, a página passa a dizer menos do que a casa faz, e um portal
+ * que nos quisesse travar por aí continuaria a ser mandado escrever um email.
+ *
+ * Ao contrário quase todas as asserções desta casa, esta protege uma frase
+ * que confessa uma falta. Quando ela falhar, é boa notícia — e o que se muda
+ * é a página.
+ */
+{
+  const pasta = 'packages/ingest/src';
+  const recolha = readdirSync(join(RAIZ, pasta), { recursive: true })
+    .map(String)
+    .filter((nome) => nome.endsWith('.ts') && !nome.endsWith('.test.ts'));
+
+  // Sem comentários: esta secção da página existe *por causa* do robots.txt,
+  // e a recolha há-de ganhar prosa a explicar porque é que não o lê. Uma
+  // guarda que dispare com a explicação da ausência é uma guarda que se
+  // aprende a ignorar.
+  const leRobots = recolha.filter((nome) =>
+    /robots\.txt/i.test(semComentarios(ler(`${pasta}/${nome}`))),
+  );
+
+  const pagina = semComentarios(ler('apps/web/app/[regiao]/fontes/page.tsx'));
+  const confessa = /Ainda não lemos o seu/.test(pagina);
+
+  afirmar({
+    afirmacao:
+      'a página confessa que a recolha não lê o robots.txt, e a recolha continua a não o ler',
+    porque:
+      'é uma frase que promete de menos de propósito; no dia em que a recolha passar a cumpri-lo, esta frase passa a esconder o que a casa faz de bem, e quem quisesse travar-nos por aí continuaria a ser mandado escrever um email',
+    onde: 'packages/ingest/src/** e apps/web/app/[regiao]/fontes/page.tsx',
+    ok: confessa && leRobots.length === 0,
+    esperava: 'a confissão na página, e nenhuma leitura de robots.txt na recolha',
+    encontrei:
+      [
+        confessa ? '' : 'a página já não confessa a falta',
+        leRobots.length
+          ? `a recolha passou a mexer em robots.txt: ${leRobots.join(', ')} — actualiza a página`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'confessada e por ligar',
+  });
+}
+
+/*
+ * A carta que sai desta casa não afirma conformidade que a casa não tem.
+ *
+ * **Esta guarda nasceu de uma frase que ia mesmo sair.** A carta à CIM do
+ * Médio Tejo, escrita para pedir que desfizessem um bloqueio, dizia que a
+ * recolha «respeita o `robots.txt`». Não respeita: não o lê. Ia a caminho de
+ * uma comunidade intermunicipal e, em segunda instância, do contacto de abuso
+ * do operador — a afirmar a terceiros, por escrito, uma conformidade técnica
+ * inexistente, para obter deles uma autorização.
+ *
+ * O que a deixou passar foi a companhia: as três frases à volta eram
+ * verdadeiras e medidas, e esta é a que se recita a seguir a elas. Uma frase
+ * falsa raramente entra sozinha — entra encostada a verdadeiras.
+ *
+ * A guarda é de propósito estreita: só o corpo da carta, e só afirmações de
+ * cumprimento. O resto do documento fala de `robots.txt` à vontade, incluindo
+ * para citar esta mesma frase enquanto erro, e assim deve ser.
+ */
+{
+  const doc = 'docs/O-QUE-FALTA-AO-DONO.md';
+  const texto = ler(doc);
+
+  // Só o corpo da carta: do cabeçalho dela até ao `###` seguinte.
+  const inicio = texto.indexOf('### A carta, pronta a enviar');
+  const resto = inicio === -1 ? '' : texto.slice(inicio + 1);
+  const fim = resto.indexOf('\n### ');
+  const carta = inicio === -1 ? '' : resto.slice(0, fim === -1 ? undefined : fim);
+
+  // «respeita/cumpre/segue/obedece … robots.txt», com ou sem crase, até uma
+  // dúzia de palavras de intervalo — que é o que separa o verbo do objeto em
+  // «respeita o robots.txt de cada sítio».
+  const afirmaCumprir =
+    /\b(respeit|cumpr|segue|seguimos|obedec|honra|acata)\w*\b(?:[^.\n]{0,80}?)`?robots\.txt`?/i.test(
+      carta,
+    );
+
+  afirmar({
+    afirmacao: 'a carta à CIM não afirma que a recolha cumpre o robots.txt',
+    porque:
+      'a recolha não lê o robots.txt, e esta carta vai para fora de casa pedir a terceiros que desfaçam um bloqueio — uma conformidade inventada perante quem a sabe verificar não custa a frase, custa a carta inteira',
+    onde: `${doc} · secção «A carta, pronta a enviar»`,
+    ok: carta.length > 0 && !afirmaCumprir,
+    esperava: 'nenhuma afirmação de cumprimento do robots.txt no corpo da carta',
+    encontrei:
+      carta.length === 0
+        ? 'não encontrei a secção da carta — se lhe mudaste o título, muda também esta asserção'
+        : afirmaCumprir
+          ? 'a carta voltou a dizer que a recolha respeita o robots.txt'
+          : 'nenhuma',
+  });
+}
+
+/*
  * A porta de quem decide não pode ser um caminho para o painel.
  *
  * O `/balanco` abre com um segredo de leitura e existe porque dar o relatório

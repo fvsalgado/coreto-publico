@@ -13,39 +13,16 @@
 /**
  * Quem bate à porta, e onde se lhe responde.
  *
- * O endereço aqui dentro tem de existir: é por ele que um administrador de
- * sistemas nos encontra, para pedir que abrandemos ou que paremos. O anterior
- * apontava para `coreto.pt/sobre`, domínio que nunca chegou a existir — e um
- * agente que se identifica com uma morada morta não é identificável, é só
- * educado na aparência. O endereço do repositório é o que responde sempre,
- * seja qual for o domínio de cada região.
- *
- * A frase é do produto e não de uma região, de propósito: a mesma recolha
- * serve todas as regiões, e um agente que dissesse «do Médio Tejo» a bater à
- * porta de uma câmara de outra CIM estaria a apresentar-se como quem não é.
- *
- * E não era só uma questão de boas maneiras. O sítio do Teatro Virgínia
- * respondia em dois segundos à sondagem (que usa esta forma, com o endereço do
- * repositório) e deixava a recolha esperar até esgotar o tempo, três noites
- * seguidas, do mesmo executor e no mesmo minuto. A única variável entre as
- * duas era esta linha.
+ * A linha vive em `@coreto/core`, ao lado das outras regras da recolha que o
+ * sítio publica por escrito, e é reexportada aqui porque é daqui que ela sai
+ * para a rede. A razão da mudança de casa está escrita lá: a página `/fontes`
+ * — que é o endereço que esta linha traz dentro — passou a mostrar ao
+ * administrador de sistemas do outro lado exatamente o que lhe vai aparecer
+ * nos registos, e duas cópias da mesma frase divergem sempre.
  */
-/*
- * **O endereço mudou outra vez, e desta vez foi medido.**
- *
- * O comentário acima diz que «o endereço do repositório é o que responde
- * sempre». Não responde: `https://github.com/fvsalgado/coreto` devolve **404**
- * a quem não tem acesso, porque o repositório é privado — e é justamente um
- * estranho, o administrador de sistemas que nos vê nos registos dele, quem vai
- * seguir este endereço. A correção anterior trocou uma morada morta por outra.
- *
- * `https://mediotejo.coreto.org/fontes` responde 200 sem sessão de ninguém
- * (medido), e publica exatamente o que esse administrador quer ver: que fontes
- * se leem, com que endereços e com que frequência. É a página que justifica o
- * pedido que ele tem nos registos à frente.
- */
-export const USER_AGENT =
-  'Coreto/1.0 (+https://mediotejo.coreto.org/fontes; agenda cultural, Portugal)';
+import { USER_AGENT } from '@coreto/core';
+
+export { USER_AGENT };
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const DEFAULT_MAX_ATTEMPTS = 3;
