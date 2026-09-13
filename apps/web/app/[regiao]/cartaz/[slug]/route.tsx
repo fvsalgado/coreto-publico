@@ -71,7 +71,25 @@ export async function GET(
   const concelho = concelhos.find((item) => item.id === evento.municipality_id);
 
   const titulo = encurtar(evento.title, LIMITE_DO_TITULO);
-  const quando = formatDateRange(evento.date_start, evento.date_end);
+  /*
+   * O cartaz de um evento que já aconteceu tem de dizer que já aconteceu — e
+   * tem de dizer o ano.
+   *
+   * Isto não é um pormenor de canto: das 33 fichas que a 0132 abriu, **23 não
+   * têm cartaz do organizador**, e para essas é este desenho que serve de
+   * `og:image` da ficha. Sem a marca, partilhar o registo de um espetáculo de
+   * abril produzia um cartão indistinguível de um convite.
+   *
+   * O ano entra à mão porque o `formatDateRange` nunca o escreve quando as
+   * duas datas caem no mesmo ano, e não recebe a data de hoje para o decidir —
+   * a ficha resolve isso com o `comAnoQuandoPreciso`, que aqui não existe.
+   * «18 abr – 24 mai» num cartão partilhado em setembro não diz nada a ninguém.
+   */
+  const jaAconteceu = evento.status !== 'published';
+  const ano = (evento.date_start ?? '').slice(0, 4);
+  const quando = jaAconteceu
+    ? `${formatDateRange(evento.date_start, evento.date_end)} ${ano}`.trim()
+    : formatDateRange(evento.date_start, evento.date_end);
   const onde = evento.location_name ?? concelho?.name ?? regiao.nome;
   const toldo = CORES_DO_TOLDO[regiao.tipo];
 
@@ -122,6 +140,7 @@ export async function GET(
           }}
         >
           Coreto · {regiao.nome}
+          {jaAconteceu ? ' · Já aconteceu' : ''}
         </div>
       </div>
 

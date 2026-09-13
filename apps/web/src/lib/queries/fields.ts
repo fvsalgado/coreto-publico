@@ -90,9 +90,13 @@ export const MAP_EVENT_FIELDS = [
  *
  * É quase o cartão, mais o `status` e o `source_url`. O `status` porque a
  * página mostra o que já passou ao lado do que vem aí e tem de saber
- * distinguir; o `source_url` porque um evento arquivado não tem ficha própria
- * no Coreto — a ligação que se dá a quem quer saber mais é a da página oficial
- * de onde ele veio.
+ * distinguir.
+ *
+ * O `source_url` tinha aqui outra justificação, e ela caiu: dizia que «um
+ * evento arquivado não tem ficha própria no Coreto». Desde a 0132 tem — o
+ * registo do que aconteceu abre, com o seu endereço de sempre. O cartão do
+ * ciclo continua a ligar à página oficial, e essa é agora uma escolha
+ * editorial por rever, e não uma consequência de não haver para onde ligar.
  */
 export const SERIES_EVENT_FIELDS = [CARD_EVENT_FIELDS, 'status', 'source_url', 'series_id'].join(
   ', ',
@@ -100,6 +104,20 @@ export const SERIES_EVENT_FIELDS = [CARD_EVENT_FIELDS, 'status', 'source_url', '
 
 export const DETAIL_EVENT_FIELDS = [
   CARD_EVENT_FIELDS,
+  /*
+   * O estado, porque a ficha passou a desenhar duas coisas diferentes.
+   *
+   * Até à 0132 a ficha só existia para o que vem aí, e o `status` era uma
+   * pergunta sem sentido: a consulta filtrava `published` e mais nada chegava
+   * cá. Agora chega o arquivo do que aconteceu, e a página tem de saber qual
+   * dos dois tem à frente — para não oferecer um calendário para abril nem
+   * anunciar bilhetes de um concerto que já se fez.
+   *
+   * Só o `status`: a política garante que arquivado implica
+   * `archived_reason = 'passado'`, por isso pedir também a razão era pedir uma
+   * coluna que ninguém lê.
+   */
+  'status',
   'subtitle',
   'description',
   'location_address',
