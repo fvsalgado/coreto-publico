@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
+import { LACUNAS_COM_COLUNA, listaDeTrabalho } from '@/src/lib/admin/lacunas';
 import {
   listEventsWithoutTime,
   qualityByMunicipality,
@@ -27,37 +28,65 @@ function percentagem(parte: number, total: number): string {
   return `${Math.round((parte / total) * 100)}%`;
 }
 
-const COLUNAS = [
-  {
-    chave: 'with_time',
-    rotulo: 'Hora',
-    ajuda: 'Eventos com hora de início em pelo menos uma sessão',
-  },
-  {
-    chave: 'with_venue',
-    rotulo: 'Espaço',
-    ajuda: 'Eventos ligados a um espaço do catálogo, e não a texto solto',
-  },
-  { chave: 'with_description', rotulo: 'Descrição', ajuda: 'Eventos com texto além do título' },
-  { chave: 'with_image', rotulo: 'Imagem', ajuda: 'Eventos com cartaz ou fotografia' },
-  { chave: 'with_price', rotulo: 'Preço', ajuda: 'Eventos que dizem se é pago ou gratuito' },
-  { chave: 'with_coordinates', rotulo: 'Mapa', ajuda: 'Eventos com coordenadas' },
-] as const satisfies ReadonlyArray<{
-  chave: keyof Omit<QualityRow, 'id' | 'name' | 'published' | 'pending' | 'in_catalogue'>;
-  rotulo: string;
-  ajuda: string;
-}>;
+/**
+ * Uma célula que se pode carregar.
+ *
+ * A percentagem respondia a «como está?» e ficava por aí; a pergunta seguinte,
+ * «então quais são os outros 38%?», não tinha resposta sem percorrer o
+ * catálogo à mão. Agora a percentagem é a porta: leva à lista daqueles que
+ * faltam, já recortada pelo concelho ou pela fonte da linha.
+ *
+ * Três casos, e nenhum deles é uma ligação:
+ *
+ * - **Sem catálogo** — a linha não tem eventos nenhuns. `—`, como antes.
+ * - **Sem lacuna** — está tudo preenchido. Uma ligação para uma lista vazia
+ *   parece uma avaria; sem ela, 100% lê-se como o que é.
+ * - **Sem coluna de destino** — não acontece hoje, e o tipo garante que não
+ *   passa a acontecer sem alguém dar por isso.
+ *
+ * O nome acessível não é «62%»: é «Hora, Tomar: 12 por corrigir de 32». Quem
+ * navega por teclado ou lê a tabela com um leitor de ecrã recebe uma lista de
+ * ligações, e uma lista de percentagens soltas não diz para onde nenhuma vai.
+ */
+function Celula({
+  linha,
+  lacuna,
+  recorte,
+}: {
+  linha: QualityRow;
+  lacuna: (typeof LACUNAS_COM_COLUNA)[number];
+  recorte: 'concelho' | 'fonte';
+}) {
+  if (linha.in_catalogue === 0) return <span className="text-muted">—</span>;
+
+  const tem = linha[lacuna.coluna];
+  const falta = linha.in_catalogue - tem;
+  const texto = percentagem(tem, linha.in_catalogue);
+  if (falta <= 0) return <span className="text-muted">{texto}</span>;
+
+  return (
+    <Link
+      href={listaDeTrabalho(lacuna.chave, { [recorte]: linha.id })}
+      className="underline underline-offset-4"
+      aria-label={`${lacuna.rotulo}, ${linha.name}: ${falta} por corrigir de ${linha.in_catalogue}`}
+    >
+      {texto}
+    </Link>
+  );
+}
 
 function Tabela({
   id,
   titulo,
   legenda,
   linhas,
+  recorte,
 }: {
   id: string;
   titulo: string;
   legenda: string;
   linhas: QualityRow[];
+  recorte: 'concelho' | 'fonte';
 }) {
   const total = linhas.reduce((soma, linha) => soma + linha.in_catalogue, 0);
 
@@ -94,7 +123,7 @@ function Tabela({
                   Por publicar
                 </abbr>
               </th>
-              {COLUNAS.map((coluna) => (
+              {LACUNAS_COM_COLUNA.map((coluna) => (
                 <th key={coluna.chave} scope="col" className="py-2 pr-4">
                   <abbr title={coluna.ajuda} className="no-underline">
                     {coluna.rotulo}
@@ -111,9 +140,9 @@ function Tabela({
                 </th>
                 <td className="py-2 pr-4 tabular-nums">{linha.published}</td>
                 <td className="py-2 pr-4 tabular-nums">{linha.pending}</td>
-                {COLUNAS.map((coluna) => (
-                  <td key={coluna.chave} className="py-2 pr-4 tabular-nums text-muted">
-                    {percentagem(linha[coluna.chave], linha.in_catalogue)}
+                {LACUNAS_COM_COLUNA.map((coluna) => (
+                  <td key={coluna.chave} className="py-2 pr-4 tabular-nums">
+                    <Celula linha={linha} lacuna={coluna} recorte={recorte} />
                   </td>
                 ))}
               </tr>
@@ -130,10 +159,18 @@ function Tabela({
               <td className="py-2 pr-4 font-semibold tabular-nums">
                 {linhas.reduce((soma, linha) => soma + linha.pending, 0)}
               </td>
-              {COLUNAS.map((coluna) => (
+              {/*
+                O total não liga a lado nenhum, de propósito. Na tabela por
+                fonte a soma deixa de fora os eventos sem fonte — a submissão
+                por formulário não tem adaptador por trás —, e uma lista sem
+                recorte traria esses também: mais linhas do que o número
+                prometia, que é exatamente o defeito que estas ligações vieram
+                fechar.
+              */}
+              {LACUNAS_COM_COLUNA.map((coluna) => (
                 <td key={coluna.chave} className="py-2 pr-4 font-semibold tabular-nums">
                   {percentagem(
-                    linhas.reduce((soma, linha) => soma + linha[coluna.chave], 0),
+                    linhas.reduce((soma, linha) => soma + linha[coluna.coluna], 0),
                     total,
                   )}
                 </td>
@@ -142,6 +179,18 @@ function Tabela({
           </tfoot>
         </table>
       </div>
+
+      {/*
+        A única coluna cuja lista não abre o que a percentagem conta. Dizer a
+        diferença aqui é mais barato do que fazer quem clica descobri-la a
+        contar linhas — e a `ressalva` vem de `lacunas.ts`, pelo que uma
+        divergência nova tem de ser escrita antes de existir.
+      */}
+      {LACUNAS_COM_COLUNA.filter((coluna) => coluna.ressalva).map((coluna) => (
+        <p key={coluna.chave} className="mt-2 max-w-prose text-sm text-muted">
+          <strong className="font-medium">{coluna.rotulo}:</strong> {coluna.ressalva}
+        </p>
+      ))}
     </section>
   );
 }
@@ -218,15 +267,17 @@ export default async function Qualidade() {
       <Tabela
         id="por-concelho"
         titulo="Por concelho"
-        legenda="O que está preenchido no catálogo, concelho a concelho — publicado e por publicar, porque a recolha escreve rascunhos e é uma pessoa que os aprova. Um concelho a zero não é um defeito escondido: é o que ainda não entrou."
+        legenda="O que está preenchido no catálogo, concelho a concelho — publicado e por publicar, porque a recolha escreve rascunhos e é uma pessoa que os aprova. Um concelho a zero não é um defeito escondido: é o que ainda não entrou. Cada percentagem abre a lista dos que faltam nesse concelho."
         linhas={porConcelho}
+        recorte="concelho"
       />
 
       <Tabela
         id="por-fonte"
         titulo="Por fonte"
-        legenda="A mesma medida por fonte. É por aqui que se vê qual adaptador está a deixar por trazer um campo que a página do lado de lá tem — e por isso conta o catálogo todo: um adaptador não aprova nada."
+        legenda="A mesma medida por fonte. É por aqui que se vê qual adaptador está a deixar por trazer um campo que a página do lado de lá tem — e por isso conta o catálogo todo: um adaptador não aprova nada. Cada percentagem abre a lista dos que faltam nessa fonte."
         linhas={porFonte}
+        recorte="fonte"
       />
 
       <SemHora

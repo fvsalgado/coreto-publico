@@ -4,9 +4,11 @@ import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
 import { bulkSetEventStatus } from '@/src/lib/admin/actions';
 import { LOTE_MAX } from '@/src/lib/admin/fields';
+import { LACUNAS } from '@/src/lib/admin/lacunas';
 import {
   countEventsByStatus,
   listEvents,
+  listSourcesParaFiltro,
   EVENTS_PAGE_SIZE,
   type AdminEventRow,
 } from '@/src/lib/admin/queries';
@@ -24,6 +26,11 @@ const ROTULO = 'block text-sm font-medium';
 
 const ESTADOS = [
   { value: 'todos', label: 'Todos' },
+  // A população que `/admin/qualidade` mede, e o destino de todas as ligações
+  // que de lá vêm. `todos` traz escondidos, cancelados e arquivados, que são
+  // decisões de uma pessoa sobre um evento e não lacunas de recolha — abrir a
+  // lista por aí mostrava mais linhas do que a percentagem prometia.
+  { value: 'catalogo', label: 'No catálogo (publicados e por publicar)' },
   { value: 'draft', label: 'Por publicar' },
   { value: 'published', label: 'Publicados' },
   { value: 'hidden', label: 'Escondidos' },
@@ -32,21 +39,17 @@ const ESTADOS = [
 ];
 
 /**
- * As lacunas que valem uma fila de trabalho própria.
+ * As opções do selector «Falta».
  *
- * São as mesmas colunas que `/admin/qualidade` mede. A diferença é que ali
- * dizem-se em percentagem e aqui abrem a lista dos que faltam, prontos a
- * corrigir — que é o passo que faltava entre saber e resolver.
+ * Vêm de `lacunas.ts`, que é a mesma lista que `/admin/qualidade` usa para as
+ * colunas: ali dizem-se em percentagem, aqui abrem os que faltam, prontos a
+ * corrigir. Eram duas listas escritas à mão, e divergiram — o painel media
+ * «Preço» e «Mapa» e o selector não os conhecia, pelo que a percentagem não
+ * tinha para onde clicar. Um teste recusa agora que voltem a divergir.
  */
-const LACUNAS = [
+const OPCOES_DE_FALTA = [
   { value: '', label: 'Tudo' },
-  // Só os que ainda vão acontecer, de propósito: a hora de um evento que já
-  // passou não leva ninguém a lado nenhum. Ver `listEvents` e a vista da 0118.
-  { value: 'hora', label: 'Sem hora, dos que estão para vir' },
-  { value: 'sitio', label: 'Sem sítio nenhum' },
-  { value: 'espaco', label: 'Sem espaço do catálogo' },
-  { value: 'imagem', label: 'Sem imagem' },
-  { value: 'descricao', label: 'Sem descrição' },
+  ...LACUNAS.map((l) => ({ value: l.chave, label: l.filtro })),
 ];
 
 function Estado({ status }: { status: string }) {
@@ -82,15 +85,17 @@ export default async function Eventos({ searchParams }: Props) {
     q: (params.q ?? '').trim(),
     municipality: params.concelho ?? '',
     status: params.estado ?? 'draft',
+    fonte: params.fonte ?? '',
     janela: params.janela ?? '',
     falta: params.falta ?? '',
     antes: params.antes ?? '',
   };
 
-  const [linhas, contagens, concelhos] = await Promise.all([
+  const [linhas, contagens, concelhos, fontes] = await Promise.all([
     listEvents(filtro),
     countEventsByStatus(),
     listMunicipalitiesDeTodas(),
+    listSourcesParaFiltro(),
   ]);
 
   // O cursor da página seguinte é a última linha desta. Ver `listEvents`: a
@@ -167,11 +172,24 @@ export default async function Eventos({ searchParams }: Props) {
           </select>
         </div>
         <div>
+          <label htmlFor="fonte" className={ROTULO}>
+            Fonte
+          </label>
+          <select id="fonte" name="fonte" defaultValue={filtro.fonte} className={CAMPO}>
+            <option value="">Todas</option>
+            {fontes.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label htmlFor="falta" className={ROTULO}>
             Falta
           </label>
           <select id="falta" name="falta" defaultValue={filtro.falta} className={CAMPO}>
-            {LACUNAS.map((l) => (
+            {OPCOES_DE_FALTA.map((l) => (
               <option key={l.value} value={l.value}>
                 {l.label}
               </option>
