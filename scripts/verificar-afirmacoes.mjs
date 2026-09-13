@@ -1003,6 +1003,85 @@ presente(
 }
 
 /*
+ * Os tipos de fonte da base e os do código são a mesma lista.
+ *
+ * **Divergiram uma vez, e o custo era total.** A migração 0135 acrescentou
+ * `parish_site` ao tipo `source_kind` da base e a 0136 pôs lá 26 das 40 fontes
+ * ativas. O `SourceKind` do `packages/core` e o `sourceKindSchema` do
+ * `packages/ingest` ficaram com cinco valores.
+ *
+ * Não dava um erro por fonte: `loadSources` faz `z.array(...).safeParse()` sobre
+ * o lote **todo**, e um array rebenta inteiro na primeira linha má. A recolha
+ * seguinte não teria carregado 26 fontes de 40 — teria carregado **zero de
+ * 40**. E as 26 rejeitadas eram exatamente as únicas que naquela noite ainda
+ * respondiam.
+ *
+ * Uma migração que acrescente um valor e não toque no código não falha em lado
+ * nenhum: passa no `verify-migrations.sh`, passa nos testes, passa no `build`.
+ * Só falha de noite, uma vez, e em silêncio. Esta asserção é o sítio onde tem
+ * de falhar.
+ */
+{
+  const PASTA = 'supabase/migrations';
+  const migracoes = readdirSync(join(RAIZ, PASTA))
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
+  // O tipo nasce num `create type` e cresce com `alter type … add value`. A
+  // lista em vigor é a união dos dois, por ordem de migração.
+  const naBase = [];
+  for (const ficheiro of migracoes) {
+    const sql = ler(`${PASTA}/${ficheiro}`);
+    const criacao = /create type public\.source_kind as enum\s*\(([^)]*)\)/i.exec(sql);
+    if (criacao) {
+      for (const v of criacao[1].matchAll(/'([a-z_]+)'/g)) naBase.push(v[1]);
+    }
+    for (const v of sql.matchAll(
+      /alter type public\.source_kind\s+add value(?:\s+if not exists)?\s+'([a-z_]+)'/gi,
+    )) {
+      if (!naBase.includes(v[1])) naBase.push(v[1]);
+    }
+  }
+
+  const tipos = semComentarios(ler('packages/core/src/types.ts'));
+  const bloco = /export type SourceKind\s*=([^;]*);/.exec(tipos)?.[1] ?? '';
+  const noCodigo = [...bloco.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+
+  const validador = semComentarios(ler('packages/ingest/src/adapter.ts'));
+  const esquema =
+    /const sourceKindSchema[^=]*=\s*z\.enum\(\[([^\]]*)\]\)/.exec(validador)?.[1] ?? '';
+  const noValidador = [...esquema.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+
+  const faltamNoCodigo = naBase.filter((v) => !noCodigo.includes(v));
+  const faltamNoValidador = naBase.filter((v) => !noValidador.includes(v));
+  const aMais = noCodigo.filter((v) => !naBase.includes(v));
+
+  afirmar({
+    afirmacao: 'os tipos de fonte da base são exatamente os do código e os do validador',
+    porque:
+      'o `loadSources` valida o lote inteiro de uma vez e rebenta na primeira linha má — um valor que exista na base e não no código não faz a recolha perder essa fonte, faz perder TODAS, e em silêncio, de noite',
+    onde: `${PASTA}/*.sql, packages/core/src/types.ts e packages/ingest/src/adapter.ts`,
+    ok:
+      naBase.length > 0 &&
+      faltamNoCodigo.length === 0 &&
+      faltamNoValidador.length === 0 &&
+      aMais.length === 0,
+    esperava: naBase.length ? naBase.join(', ') : 'pelo menos um tipo de fonte nas migrações',
+    encontrei:
+      [
+        naBase.length === 0 ? 'não consegui ler o tipo source_kind das migrações' : '',
+        faltamNoCodigo.length ? `a faltar no SourceKind: ${faltamNoCodigo.join(', ')}` : '',
+        faltamNoValidador.length
+          ? `a faltar no sourceKindSchema: ${faltamNoValidador.join(', ')}`
+          : '',
+        aMais.length ? `no código e já não na base: ${aMais.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
  * A porta de quem decide não pode ser um caminho para o painel.
  *
  * O `/balanco` abre com um segredo de leitura e existe porque dar o relatório
