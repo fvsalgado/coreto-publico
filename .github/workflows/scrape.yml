@@ -186,14 +186,22 @@ jobs:
             exit 1
           fi
 
-      # Duas funções mais, pela mesma porta e pela mesma razão — isto é o que
+      # Três funções mais, pela mesma porta e pela mesma razão — isto é o que
       # corre todas as noites com a chave de serviço na mão. `renovar_montra`
       # (0119) empurra para o futuro o programa inventado da montra que já
       # acabou, para a demonstração nunca envelhecer; `snapshot_event_stats`
       # (0120) tira a fotografia diária dos contadores por concelho, que é o
-      # que deixa o relatório mensal contar as visitas de um mês. Nenhuma das
-      # duas toca no catálogo de uma região a sério; as duas devolvem quantas
-      # linhas escreveram, e o número fica no registo.
+      # que deixa o relatório mensal contar as visitas de um mês;
+      # `snapshot_event_quality` (0144) tira a da qualidade do catálogo, que é
+      # o que deixa o painel responder a «está a melhorar?» e o relatório
+      # levar a qualidade do mês em vez da de hoje.
+      #
+      # A ordem importa: a fotografia da qualidade vai **depois** da recolha,
+      # que é o passo que muda o catálogo. Tirá-la antes media a véspera e
+      # carimbava-a com a data de hoje.
+      #
+      # Nenhuma das três toca no catálogo de uma região a sério; as três
+      # devolvem quantas linhas escreveram, e o número fica no registo.
       - name: Renovar a montra e fotografar os contadores
         if: always()
         env:
@@ -204,7 +212,7 @@ jobs:
             echo "Sem credenciais — saltado."
             exit 0
           fi
-          for funcao in renovar_montra snapshot_event_stats; do
+          for funcao in renovar_montra snapshot_event_stats snapshot_event_quality; do
             printf '%s: ' "${funcao}"
             curl --silent --show-error --fail \
               --request POST "${SUPABASE_URL}/rest/v1/rpc/${funcao}" \

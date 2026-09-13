@@ -209,17 +209,18 @@ Base legal: artigo 6.º, n.º 1, alínea f).
 Para quem tiver de responder a um pedido de acesso ou de apagamento, esta é a
 lista completa dos sítios onde pode estar alguma coisa de alguém:
 
-| Tabela / balde                  | O que lá está de pessoal                                                                                 |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `public.submissions`            | Email, nome e organização de quem submeteu; texto original; cabeçalhos; hash do IP; agente do utilizador |
-| `public.submission_attachments` | Metadados dos anexos e o texto deles extraído                                                            |
-| Balde privado do Storage        | Os ficheiros anexados (cartazes, PDF)                                                                    |
-| `public.sender_quotas`          | Endereço de email do remetente, em claro, como chave                                                     |
-| `public.rate_limits`            | Hash com sal do IP, dentro da chave do balde                                                             |
-| `public.admin_actions`          | Quem moderou, e o estado antes/depois das ações                                                          |
-| `public.events`                 | Conteúdo publicado. **Não contém dados de contacto de quem submeteu**                                    |
-| `public.event_stats`            | **Nada.** Ver a secção 4                                                                                 |
-| `public.event_stats_snapshots`  | **Nada.** Uma fotografia diária dos mesmos totais, por concelho. Ver a secção 4                          |
+| Tabela / balde                   | O que lá está de pessoal                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `public.submissions`             | Email, nome e organização de quem submeteu; texto original; cabeçalhos; hash do IP; agente do utilizador        |
+| `public.submission_attachments`  | Metadados dos anexos e o texto deles extraído                                                                   |
+| Balde privado do Storage         | Os ficheiros anexados (cartazes, PDF)                                                                           |
+| `public.sender_quotas`           | Endereço de email do remetente, em claro, como chave                                                            |
+| `public.rate_limits`             | Hash com sal do IP, dentro da chave do balde                                                                    |
+| `public.admin_actions`           | Quem moderou, e o estado antes/depois das ações                                                                 |
+| `public.events`                  | Conteúdo publicado. **Não contém dados de contacto de quem submeteu**                                           |
+| `public.event_stats`             | **Nada.** Ver a secção 4                                                                                        |
+| `public.event_stats_snapshots`   | **Nada.** Uma fotografia diária dos mesmos totais, por concelho. Ver a secção 4                                 |
+| `public.event_quality_snapshots` | **Nada.** Uma fotografia diária de quantos eventos do catálogo público dizem a que horas, onde e com que imagem |
 
 ---
 

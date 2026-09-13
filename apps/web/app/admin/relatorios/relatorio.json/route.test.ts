@@ -45,6 +45,7 @@ const RELATORIO: RelatorioMensal = {
     reviewed: { approved: 0, rejected: 0, other: 0 },
   },
   quality: [],
+  quality_as_of: null,
   visits: {
     available: true,
     from: '2026-08-01',
