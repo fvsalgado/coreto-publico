@@ -1550,6 +1550,46 @@ begin
      and conname = 'event_quality_snapshots_dentro_do_catalogo';
   assert n = 1, 'a restrição que trava percentagens acima de cem nas fotografias desapareceu';
 
+  -- A porta de quem decide (0151) é a segunda porta da casa, e o que a
+  -- sustenta é ser mesmo só de leitura e mesmo só de uma região.
+  --
+  -- A tabela dos segredos não se lê por chave pública nenhuma. Se um dia se
+  -- abrir, o `token_sha256` de cada região fica ao alcance de quem pedir — e
+  -- com ele a porta do balanço de todas elas.
+  select count(*) into n
+    from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+   where ns.nspname = 'public' and c.relname = 'region_report_tokens' and c.relrowsecurity;
+  assert n = 1, 'region_report_tokens está sem RLS';
+
+  select count(*) into n
+    from pg_policies p
+   where p.schemaname = 'public' and p.tablename = 'region_report_tokens';
+  assert n = 0, 'há uma policy em region_report_tokens: os segredos são só da chave de serviço';
+
+  -- Nenhuma das três funções do balanço é executável por quem entra pela
+  -- chave anónima. A `regiao_do_token_de_balanco` é a que mais custaria:
+  -- aberta, seria um oráculo a que qualquer pessoa podia perguntar se um
+  -- segredo serve, tantas vezes quantas quisesse.
+  select count(*), coalesce(string_agg(p.proname, ', '), '')
+    into n, v_cols
+    from pg_proc p
+    join pg_namespace ns on ns.oid = p.pronamespace
+   where ns.nspname = 'public'
+     and p.proname in ('criar_token_de_balanco', 'revogar_tokens_de_balanco',
+                       'regiao_do_token_de_balanco')
+     and (has_function_privilege('anon', p.oid, 'execute')
+       or has_function_privilege('authenticated', p.oid, 'execute'));
+  assert n = 0, format('funções do balanço abertas à chave pública: %s', v_cols);
+
+  -- E o prazo é obrigatório, com a restrição que impede caducá-lo para trás
+  -- por engano. Fechar um segredo faz-se revogando, e a revogação fica na
+  -- auditoria; um `update` distraído ao prazo não é a mesma coisa.
+  select count(*) into n
+    from pg_constraint
+   where conrelid = 'public.region_report_tokens'::regclass
+     and conname = 'region_report_tokens_prazo_no_futuro';
+  assert n = 1, 'a restrição do prazo dos segredos do balanço desapareceu';
+
   -- Os contadores são legíveis pelo público de propósito; escrevê-los, não.
   select count(*) into n
     from pg_policies p

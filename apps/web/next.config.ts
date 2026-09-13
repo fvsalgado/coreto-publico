@@ -242,6 +242,21 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   /*
+   * O `unauthorized()` do `next/navigation`, que a porta do balanço usa.
+   *
+   * Sem isto, uma página que precisa de uma chave e não a recebe só sabe
+   * responder 200 com um texto a dizê-lo — e uma porta fechada que responde
+   * 200 é uma porta que os registos de quem opera contam como aberta. O
+   * código faz parte da resposta.
+   *
+   * É o único uso, e é deliberadamente pequeno: `authInterrupts` liga
+   * também o `forbidden()`, que esta casa não usa em lado nenhum — 403 diz a
+   * quem tenta que a chave existe e não serve ali, que é informação a mais.
+   */
+  experimental: {
+    authInterrupts: true,
+  },
+  /*
    * Sem bloco `images`, e é a verdade a apanhar a configuração.
    *
    * Havia aqui `remotePatterns` a autorizar `**.supabase.co` e `formats` a

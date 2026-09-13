@@ -791,6 +791,64 @@ export async function qualitySnapshotAte(ate: string): Promise<QualitySnapshotRo
   }));
 }
 
+/**
+ * A região que um segredo de balanço abre, ou `null`.
+ *
+ * `null` para um segredo que não existe, para um revogado e para um fora de
+ * prazo — os três são a mesma resposta de propósito. Distingui-los dizia a
+ * quem tenta se acertou no segredo de alguém, que é metade do caminho.
+ *
+ * **Recebe a impressão, e nunca o segredo.** Quem o tem em claro é o pedido; o
+ * que atravessa esta camada e chega à base é o sha256, e é por isso que o
+ * segredo não pode aparecer num plano de consulta nem num registo.
+ *
+ * Esta é a única leitura do painel que **não** atira com erro. Uma porta que
+ * deixa entrar porque não conseguiu ler a base é pior do que uma porta
+ * fechada: o `null` faz o chamador responder 401, que é a resposta certa
+ * quando não se consegue confirmar que alguém pode entrar.
+ */
+export async function regiaoDoSegredoDeBalanco(impressao: string): Promise<string | null> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase.rpc('regiao_do_token_de_balanco', {
+    p_sha256: impressao,
+  });
+  if (error) {
+    reportarErro('regiaoDoTokenDeBalanco', error);
+    return null;
+  }
+  return (data as string | null) ?? null;
+}
+
+/** Um segredo de balanço tal como o painel o mostra — sem o segredo, claro. */
+export interface SegredoDeBalanco {
+  id: string;
+  region_id: string;
+  created_at: string;
+  created_by: string;
+  expires_on: string;
+  last_used_on: string | null;
+}
+
+/**
+ * Os segredos vivos, um por região no máximo.
+ *
+ * Nunca traz `token_sha256`: o painel não tem nada que fazer com ele, e uma
+ * coluna que não é pedida é uma coluna que não pode aparecer num ecrã por
+ * cima do ombro de alguém.
+ */
+export async function listSegredosDeBalanco(): Promise<SegredoDeBalanco[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('region_report_tokens')
+    .select('id, region_id, created_at, created_by, expires_on, last_used_on')
+    .is('revoked_at', null)
+    .order('region_id');
+  // Vazio por erro dizia «nenhuma região tem porta aberta» — e quem lesse isso
+  // dava um segredo novo a alguém que já tinha um, revogando o dele sem saber.
+  exigirLeitura('listSegredosDeBalanco', error);
+  return (data ?? []) as unknown as SegredoDeBalanco[];
+}
+
 export interface DashboardCounts {
   pendingByChannel: Record<string, number>;
   publishedByMunicipality: Record<string, number>;
