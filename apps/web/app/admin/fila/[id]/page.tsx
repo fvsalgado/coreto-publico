@@ -10,10 +10,11 @@ import {
   listAttachments,
   signedAttachmentUrl,
 } from '@/src/lib/admin/queries';
-import { proposedFromPayload, proposedSessions } from '@/src/lib/admin/fields';
+import { propostoEmCartaz, proposedFromPayload, proposedSessions } from '@/src/lib/admin/fields';
 import {
   listCategories,
   listMunicipalitiesDeTodas,
+  listSeriesDeTodas,
   listVenuesDeTodas,
 } from '@/src/lib/queries/events';
 import { hasServiceRole } from '@/src/lib/env';
@@ -30,8 +31,27 @@ const FIELD =
   'mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 const LABEL = 'block text-sm font-medium';
 
-/** Quantas linhas de sessão o formulário oferece por omissão. */
-const SESSION_ROWS = 6;
+/**
+ * Quantas linhas de sessão o formulário oferece — e é um **chão**, não um tecto.
+ *
+ * Era um tecto, e o tecto perdia sessões em silêncio: a RPC aceita e grava as
+ * que lhe derem — medi dez —, mas a página só desenhava seis, e o que não tem
+ * caixa não é submetido. Um candidato com nove sessões ficava gravado com seis,
+ * e o `date_end` saía no dia da sexta em vez do da nona.
+ *
+ * Hoje nenhuma submissão tem mais de duas, por isso isto é profilaxia; mas as
+ * fontes que trazem períodos longos existem, e a regra da casa proíbe mostrar
+ * menos do que se leu sem o dizer.
+ */
+const SESSION_ROWS_MINIMO = 6;
+
+/**
+ * E um limite, porque um formulário com trezentas linhas não se modera.
+ *
+ * Quando o candidato traz mais do que isto, a página **diz quantas leu e
+ * quantas está a mostrar** em vez de as deixar cair caladas.
+ */
+const SESSION_ROWS_LIMITE = 60;
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -54,6 +74,11 @@ export default async function RevisaoSubmissao({ params }: Props) {
     venue_id: submission.venue_id,
   });
   const proposedDates = proposedSessions(payload);
+  const linhasDeSessao = Math.min(
+    Math.max(proposedDates.length + 2, SESSION_ROWS_MINIMO),
+    SESSION_ROWS_LIMITE,
+  );
+  const sessoesPorMostrar = proposedDates.length - linhasDeSessao;
 
   const municipalityId = proposed.municipality_id;
   const title = proposed.title;
@@ -62,11 +87,12 @@ export default async function RevisaoSubmissao({ params }: Props) {
   const daRecolha = submission.channel === 'scraper';
   const raw = (payload.raw ?? {}) as Record<string, unknown>;
 
-  const [attachments, municipalities, categories, venues, duplicates] = await Promise.all([
+  const [attachments, municipalities, categories, venues, ciclos, duplicates] = await Promise.all([
     listAttachments(id),
     listMunicipalitiesDeTodas(),
     listCategories(),
     listVenuesDeTodas(),
+    listSeriesDeTodas(),
     title && municipalityId
       ? findDuplicateCandidates(title, str(proposedDates[0]?.date) || null, municipalityId)
       : Promise.resolve([]),
@@ -288,6 +314,26 @@ export default async function RevisaoSubmissao({ params }: Props) {
               />
             </div>
 
+            {/*
+              Os três que faltavam: subtítulo, freguesia e ciclo.
+              O formulário desenhava doze dos quinze campos editáveis, e o
+              `readEvent` percorria os quinze — uma ausência de pergunta saía de
+              lá como um `null`, e o `changedFields` mandava trancá-lo contra a
+              recolha. O `readEvent` deixou de fabricar; estes três fecham a
+              outra metade, que é poder respondê-los.
+            */}
+            <div>
+              <label htmlFor="subtitle" className={LABEL}>
+                Subtítulo
+              </label>
+              <input
+                id="subtitle"
+                name="subtitle"
+                defaultValue={proposed.subtitle}
+                className={FIELD}
+              />
+            </div>
+
             <div>
               <label htmlFor="description" className={LABEL}>
                 Descrição
@@ -371,6 +417,53 @@ export default async function RevisaoSubmissao({ params }: Props) {
                   className={FIELD}
                 />
               </div>
+
+              <div>
+                <label htmlFor="parish" className={LABEL}>
+                  Freguesia
+                </label>
+                {/* Texto livre: não há tabela de freguesias, e a coluna é texto
+                    sem restrição. O limite é o do esquema do `RawEvent`, para o
+                    formulário dizer o mesmo que a validação. */}
+                <input
+                  id="parish"
+                  name="parish"
+                  maxLength={120}
+                  defaultValue={proposed.parish}
+                  className={FIELD}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="series_id" className={LABEL}>
+                  Ciclo
+                </label>
+                {/* Um `select` e não texto livre: `events.series_id` tem chave
+                    estrangeira para `series`, e um id escrito à mão rebentava a
+                    aprovação com um erro de Postgres em cima de quem modera.
+                    Agrupado por região porque há catorze ciclos de duas CIM na
+                    mesma lista, e uma lista lisa convida a pôr um evento de
+                    Ourém dentro do ciclo de outra comunidade. */}
+                <select
+                  id="series_id"
+                  name="series_id"
+                  defaultValue={proposed.series_id}
+                  className={FIELD}
+                >
+                  <option value="">— (sem ciclo)</option>
+                  {[...new Set(ciclos.map((ciclo) => ciclo.region_id))].map((regiaoDoCiclo) => (
+                    <optgroup key={regiaoDoCiclo} label={regiaoDoCiclo}>
+                      {ciclos
+                        .filter((ciclo) => ciclo.region_id === regiaoDoCiclo)
+                        .map((ciclo) => (
+                          <option key={ciclo.id} value={ciclo.id}>
+                            {ciclo.name}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <fieldset aria-describedby="sessoes-ajuda">
@@ -378,8 +471,15 @@ export default async function RevisaoSubmissao({ params }: Props) {
               <p id="sessoes-ajuda" className="text-sm text-muted">
                 Uma linha por ocorrência. Linhas sem data são ignoradas.
               </p>
+              {sessoesPorMostrar > 0 ? (
+                <p className="mt-1 text-sm text-highlight">
+                  O candidato traz {proposedDates.length} sessões e há {linhasDeSessao} linhas à
+                  vista: {sessoesPorMostrar} não cabem no formulário e perdem-se se aprovares assim.
+                  Trata este à mão.
+                </p>
+              ) : null}
               <div className="mt-2 space-y-2">
-                {Array.from({ length: SESSION_ROWS }, (_, index) => {
+                {Array.from({ length: linhasDeSessao }, (_, index) => {
                   const proposedSession = proposedDates[index];
                   return (
                     <div key={index} className="flex flex-wrap gap-2">
@@ -422,7 +522,11 @@ export default async function RevisaoSubmissao({ params }: Props) {
                   type="checkbox"
                   id="is_ongoing"
                   name="is_ongoing"
-                  defaultChecked={payload.is_ongoing === true}
+                  // As duas formas do payload: aninhado quando vem da recolha,
+                  // liso quando vem da extração. Isto lia só a forma lisa, e as
+                  // 49 submissões que este sistema recebeu são todas da recolha
+                  // — a caixa vinha desmarcada mesmo para os períodos.
+                  defaultChecked={propostoEmCartaz(payload)}
                   aria-describedby="is-ongoing-ajuda"
                   className="size-5 accent-accent"
                 />

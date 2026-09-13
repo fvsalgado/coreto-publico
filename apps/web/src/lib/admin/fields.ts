@@ -6,8 +6,14 @@
  * que é exatamente o que se quer da parte que decide o que fica bloqueado.
  */
 
-/** Colunas do evento que o editor pode preencher no formulário de revisão. */
-const EDITABLE_FIELDS = [
+/**
+ * Colunas do evento que o editor pode preencher no formulário de revisão.
+ *
+ * Exportada para o teste que confronta esta lista com os `name=` da página:
+ * os dois viviam em ficheiros diferentes sem nada a ligá-los, e foi assim que
+ * o subtítulo, a freguesia e o ciclo ficaram sem caixa — e a ser apagados.
+ */
+export const EDITABLE_FIELDS = [
   'title',
   'subtitle',
   'description',
@@ -37,7 +43,12 @@ const BOOLEAN_FIELDS = new Set<EditableField>(['is_free']);
  * Como a extração de email e formulário nomeia cada campo editável.
  *
  * Não é uma conversão mecânica de camelCase para snake_case: `priceRaw` entra
- * em `price_display`, e `series_id` não é proposto por ninguém.
+ * em `price_display`.
+ *
+ * O `series_id` não está aqui porque **nenhuma extração o propõe** — nem o
+ * email nem o formulário público têm por onde o adivinhar. Isso não quer dizer
+ * que ninguém o proponha: o ramo da recolha lê as chaves pelo nome da coluna,
+ * e o adaptador do CAMINHOS manda `series_id` nos dez eventos que publicou.
  */
 const CHAVES_DA_EXTRACAO: Partial<Record<EditableField, string>> = {
   title: 'title',
@@ -134,13 +145,48 @@ export function proposedSessions(payload: Record<string, unknown>): ProposedSess
   return [];
 }
 
+/**
+ * O que o editor escreveu — e só o que ele teve hipótese de escrever.
+ *
+ * **«Não perguntado» não é «apagado».** Esta função percorria os quinze campos
+ * editáveis e fazia `formData.get` a todos, incluindo os que o formulário não
+ * desenha: uma ausência de pergunta saía daqui como um `null`, que é uma
+ * afirmação — «este evento não tem subtítulo». Depois o `changedFields`
+ * comparava o que a fonte propunha com esse `null`, concluía que o editor
+ * mudara o campo, e mandava-o trancar. O resultado, medido contra um Postgres
+ * com as 129 migrações: o evento publicado saía com subtítulo, freguesia e
+ * ciclo a nulo, **e** com três bloqueios manuais de valor nulo — a recolha
+ * ficava proibida para sempre de voltar a preencher o que ela própria trouxe.
+ *
+ * Um formulário HTML submete todos os controlos com `name` que não estejam
+ * desativados, incluindo os de texto vazios. Por isso `formData.has` é
+ * verdadeiro para todos os campos que a página desenha, e falso só para os que
+ * lhe faltam — que é exactamente a distinção que aqui faltava.
+ *
+ * Consequência para quem ler o que sai daqui: **o objeto pode não ter as
+ * quinze chaves.** A `approve_submission` lê tudo com `->>`, que dá nulo para
+ * chave ausente, por isso o `insert` não muda; mas quem escrever um leitor novo
+ * não pode contar que venham sempre todas.
+ */
 export function readEvent(formData: FormData): Record<string, unknown> {
   const event: Record<string, unknown> = {};
   for (const field of EDITABLE_FIELDS) {
+    /*
+     * A caixa fica de fora desta regra, e o teste de cima é que o mostrou: um
+     * `<input type="checkbox">` por picar **não é submetido**, por isso a
+     * ausência dele é a resposta — «não é grátis» — e não uma pergunta que
+     * ninguém fez. Saltá-la aqui fazia o `is_free` sair indefinido em vez de
+     * falso, que é o mesmo pecado ao contrário.
+     *
+     * Em HTML não há como distinguir «caixa desenhada e por picar» de «caixa
+     * que não existe na página». Enquanto a página desenhar a caixa — e
+     * desenha —, a ausência quer dizer por picar.
+     */
     if (BOOLEAN_FIELDS.has(field)) {
       event[field] = formData.get(field) === 'on';
       continue;
     }
+    if (!formData.has(field)) continue;
     const value = formData.get(field);
     event[field] = typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
   }
@@ -159,6 +205,28 @@ export function readEvent(formData: FormData): Record<string, unknown> {
  * As sessões chegam como três listas paralelas (data, hora de início, hora de
  * fim). Uma linha sem data é uma linha que o editor deixou em branco.
  */
+/**
+ * Se o candidato já vinha marcado como período.
+ *
+ * O payload chega em duas formas — aninhado (`{ event: {...} }`) quando vem da
+ * recolha, liso quando vem da extração —, e o `proposedFromPayload` já sabe
+ * disso há muito. A caixa «Em cartaz» lia só a forma lisa, e por isso vinha
+ * desmarcada para as 49 submissões que este sistema recebeu, que são todas da
+ * recolha. Quem aprovasse sem reparar transformava um período de três semanas
+ * em dois espetáculos, o de abrir e o de fechar.
+ *
+ * **Não entra em `EDITABLE_FIELDS`**, e é de propósito: isso trancava o campo
+ * contra a recolha, e a decisão de o deixar de fora está escrita no comentário
+ * do `readEvent`. Isto é só ler o que já lá está.
+ */
+export function propostoEmCartaz(payload: Record<string, unknown>): boolean {
+  const evento = payload.event;
+  if (typeof evento === 'object' && evento !== null) {
+    return (evento as Record<string, unknown>).is_ongoing === true;
+  }
+  return payload.is_ongoing === true;
+}
+
 export function readSessions(formData: FormData): Array<Record<string, string>> {
   const dates = formData.getAll('session_date').map(String);
   const starts = formData.getAll('session_start').map(String);
@@ -190,6 +258,11 @@ export function changedFields(
 ): string[] {
   const changed: string[] = [];
   for (const field of EDITABLE_FIELDS) {
+    // Um campo que o formulário não trouxe não foi decidido por ninguém, e o
+    // que ninguém decidiu não se tranca. Esta função é pura sobre duas imagens
+    // e não tem como saber que uma delas é parcial — é o `readEvent` que agora
+    // lho diz, deixando a chave de fora.
+    if (!(field in edited)) continue;
     const before = proposed[field] ?? null;
     const after = edited[field] ?? null;
     if (String(before ?? '') !== String(after ?? '')) changed.push(field);

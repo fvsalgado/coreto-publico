@@ -267,6 +267,21 @@ export interface AdminAction {
   entity_type: string;
   entity_id: string;
   created_at: string;
+  /**
+   * O que lá estava antes, e o que ficou depois.
+   *
+   * A promessa que o plano queria cumprir com uma tabela de revisões nova —
+   * «o rasto: quem fez, e o que lá estava antes» — já está escrita nestas duas
+   * colunas desde a 0006. O que faltava era ler-se: a auditoria pedia seis
+   * colunas e estas duas não estavam lá, por isso a página mostrava quem e o
+   * quê, e nunca o antes.
+   *
+   * Medido a 13 de setembro de 2026: das 185 ações registadas, **91 têm o
+   * `before`** e todas as 185 têm o `after`. Não cobre tudo — as que não têm
+   * são as que criam do nada, onde não havia antes nenhum —, e é de graça.
+   */
+  before: unknown;
+  after: unknown;
 }
 
 export async function listAdminActions(page: number, perPage = 50): Promise<AdminAction[]> {
@@ -274,7 +289,7 @@ export async function listAdminActions(page: number, perPage = 50): Promise<Admi
   const from = (page - 1) * perPage;
   const { data, error } = await supabase
     .from('admin_actions')
-    .select('id, actor, action, entity_type, entity_id, created_at')
+    .select('id, actor, action, entity_type, entity_id, created_at, before, after')
     .order('id', { ascending: false })
     .range(from, from + perPage - 1);
 

@@ -19,6 +19,48 @@ interface Props {
   searchParams: Promise<{ page?: string }>;
 }
 
+/**
+ * O antes e o depois de uma ação, dobrado.
+ *
+ * A promessa «o rasto: o que lá estava antes» estava cumprida na base desde a
+ * 0006 e nunca tinha sido lida: `before` e `after` não entravam na consulta da
+ * auditoria. Medido a 13 de setembro de 2026: das 185 ações, 91 têm o `before`
+ * — as outras são as que criam do nada, onde não havia antes nenhum.
+ *
+ * **Dobrado e truncado, e não por estética.** Uma rejeição de submissão traz
+ * perto de dois quilobytes, e uma marcação de duplicado perto de três: cinquenta
+ * linhas despejadas fazem uma página de centenas de quilobytes para quem
+ * normalmente só quer ver quem fez o quê. Quem precisa do detalhe abre a linha.
+ */
+function MudancaDaAcao({ before, after }: { before: unknown; after: unknown }) {
+  if (before === null && after === null) return <span className="text-muted">—</span>;
+
+  const escrever = (valor: unknown): string =>
+    valor === null || valor === undefined ? '—' : JSON.stringify(valor, null, 1);
+
+  return (
+    <details className="max-w-md">
+      <summary className="cursor-pointer text-muted underline-offset-4 hover:underline">
+        ver
+      </summary>
+      <div className="mt-2 space-y-2 text-xs">
+        <div>
+          <p className="font-medium">Antes</p>
+          <pre className="mt-1 max-h-40 overflow-auto rounded border border-border bg-surface p-2 whitespace-pre-wrap">
+            {escrever(before)}
+          </pre>
+        </div>
+        <div>
+          <p className="font-medium">Depois</p>
+          <pre className="mt-1 max-h-40 overflow-auto rounded border border-border bg-surface p-2 whitespace-pre-wrap">
+            {escrever(after)}
+          </pre>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default async function Auditoria({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Auditoria" />;
 
@@ -55,6 +97,9 @@ export default async function Auditoria({ searchParams }: Props) {
               <th scope="col" className="py-2 pr-4">
                 Sobre
               </th>
+              <th scope="col" className="py-2 pr-4">
+                O que mudou
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -67,6 +112,9 @@ export default async function Auditoria({ searchParams }: Props) {
                 <td className="py-2 pr-4">{action.action}</td>
                 <td className="py-2 pr-4 text-muted">
                   {action.entity_type} {action.entity_id.slice(0, 8)}
+                </td>
+                <td className="py-2 pr-4">
+                  <MudancaDaAcao before={action.before} after={action.after} />
                 </td>
               </tr>
             ))}
