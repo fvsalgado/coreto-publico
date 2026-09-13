@@ -95,6 +95,33 @@ const RELATORIO: RelatorioMensal = {
     },
   ],
   quality_as_of: '2026-08-31',
+  promises: {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    total: 20,
+    cohesion: {
+      municipalities: 2,
+      municipalities_with_programming: 2,
+      top_share: 0.6,
+      median: 8,
+      below_half_median: 0,
+    },
+    association: {
+      in_association_venue: 3,
+      in_other_venue: 9,
+      without_venue: 8,
+    },
+    admission: { free: 7, priced: 4, undeclared: 9 },
+    accessibility: {
+      any: 5,
+      none: 15,
+      wheelchair: 4,
+      sign_language: 1,
+      audio_description: 2,
+      relaxed: 0,
+    },
+    network: { events: 6, municipalities_touched: 2 },
+  },
   comparison: {
     observed_since: '2026-06-01',
     current: {
@@ -259,6 +286,7 @@ describe('paraCsv', () => {
       'seccao;concelho_id;concelho;publicados;por_publicar;no_catalogo;com_hora;com_espaco;com_imagem;com_descricao;com_preco;com_coordenadas',
       'seccao;janela;de;ate;eventos_publicados;eventos_a_decorrer;sessoes;submissoes_recebidas;submissoes_aprovadas',
       'seccao;chave;valor',
+      'seccao;chave;valor',
       'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques;pagina_oficial;como_chegar',
     ]);
     // Uma linha vazia entre blocos, e nunca duas.
@@ -416,5 +444,76 @@ describe('o bloco «comparacao» do CSV', () => {
 
   it('leva as sessões, que é a unidade do INE', () => {
     expect(paraCsv(RELATORIO)).toMatch(/sessoes/);
+  });
+});
+
+/**
+ * As famílias dos compromissos somam o total, e o teste está aqui e não só na
+ * migração porque o CSV é o que vai anexado: um leitor que some as três
+ * colunas da cauda longa e não chegue ao total conclui, com razão, que lhe
+ * falta uma linha.
+ */
+describe('o bloco «compromissos» do CSV', () => {
+  const linhas = paraCsv(RELATORIO)
+    .split('\n')
+    .filter((l) => l.startsWith('compromissos;'));
+  const valor = (chave: string) =>
+    Number(linhas.find((l) => l.startsWith(`compromissos;${chave};`))?.split(';')[2]);
+
+  it('a cauda longa associativa soma os programados', () => {
+    expect(
+      valor('em_espaco_de_coletividade') +
+        valor('em_equipamento') +
+        valor('sem_espaco_do_catalogo'),
+    ).toBe(valor('programados'));
+  });
+
+  it('a entrada soma os programados, com «não diz» incluído', () => {
+    expect(valor('entrada_livre') + valor('com_preco') + valor('sem_dizer_o_preco')).toBe(
+      valor('programados'),
+    );
+  });
+
+  it('a acessibilidade soma os programados pelas duas primeiras, e não pelas quatro', () => {
+    expect(valor('com_acesso_declarado') + valor('sem_acesso_declarado')).toBe(
+      valor('programados'),
+    );
+    // As quatro condições sobrepõem-se: somá-las dá mais do que «declaram
+    // alguma», e é isso que se está a verificar que continua a acontecer sem
+    // ninguém confundir as duas contas.
+    const quatro =
+      valor('cadeira_de_rodas') +
+      valor('lingua_gestual') +
+      valor('audiodescricao') +
+      valor('sessao_relaxada');
+    expect(quatro).toBeGreaterThanOrEqual(valor('com_acesso_declarado'));
+  });
+
+  it('os concelhos tocados em rede nunca são mais do que os eventos em rede', () => {
+    expect(valor('concelhos_tocados_em_rede')).toBeLessThanOrEqual(valor('em_serie_regional'));
+  });
+
+  it('a quota do maior fica entre 0 e 1', () => {
+    const quota = valor('quota_do_maior');
+    expect(quota).toBeGreaterThanOrEqual(0);
+    expect(quota).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * Sem programação nenhuma não há quota: a célula sai vazia, e não a zero.
+   * Um zero num CSV lê-se como «o maior concelho não tem nada», que é outra
+   * afirmação e é falsa.
+   */
+  it('sem programação, a quota sai vazia e não a zero', () => {
+    const csv = paraCsv({
+      ...RELATORIO,
+      promises: {
+        ...RELATORIO.promises,
+        total: 0,
+        cohesion: { ...RELATORIO.promises.cohesion, top_share: null, median: null },
+      },
+    });
+    expect(csv).toContain('compromissos;quota_do_maior;');
+    expect(csv).not.toMatch(/compromissos;quota_do_maior;0/);
   });
 });

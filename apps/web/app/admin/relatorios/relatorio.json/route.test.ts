@@ -46,6 +46,33 @@ const RELATORIO: RelatorioMensal = {
   },
   quality: [],
   quality_as_of: null,
+  promises: {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    total: 0,
+    cohesion: {
+      municipalities: 2,
+      municipalities_with_programming: 0,
+      top_share: null,
+      median: 0,
+      below_half_median: 0,
+    },
+    association: {
+      in_association_venue: 0,
+      in_other_venue: 0,
+      without_venue: 0,
+    },
+    admission: { free: 0, priced: 0, undeclared: 0 },
+    accessibility: {
+      any: 0,
+      none: 0,
+      wheelchair: 0,
+      sign_language: 0,
+      audio_description: 0,
+      relaxed: 0,
+    },
+    network: { events: 0, municipalities_touched: 0 },
+  },
   comparison: {
     observed_since: null,
     current: {
