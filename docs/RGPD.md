@@ -268,14 +268,14 @@ a rever este documento e a política publicada antes de qualquer outra coisa.
 
 ## 5. Prazos de conservação
 
-| Dados                                | Prazo                            | Como é executado                 |
-| ------------------------------------ | -------------------------------- | -------------------------------- |
-| `rate_limits` (hashes de IP)         | 2 dias                           | `public.prune_rate_limits()`     |
-| Submissões e anexos                  | 24 meses após a data do evento   | **Por implementar** — ver abaixo |
-| `sender_quotas` (email do remetente) | 24 meses após a última submissão | **Por implementar** — ver abaixo |
-| `admin_actions`                      | 24 meses                         | **Por implementar** — ver abaixo |
-| Eventos publicados                   | Arquivo sem prazo                | `status = 'archived'`            |
-| `event_stats`                        | Apagados com o evento            | `on delete cascade`              |
+| Dados                                | Prazo                            | Como é executado               |
+| ------------------------------------ | -------------------------------- | ------------------------------ |
+| `rate_limits` (hashes de IP)         | 2 dias                           | `public.prune_rate_limits()`   |
+| Submissões e anexos                  | 24 meses após a data do evento   | `public.prune_submissions()`   |
+| `sender_quotas` (email do remetente) | 24 meses após a última submissão | `public.prune_sender_quotas()` |
+| `admin_actions`                      | 24 meses                         | `public.prune_admin_actions()` |
+| Eventos publicados                   | Arquivo sem prazo                | `status = 'archived'`          |
+| `event_stats`                        | Apagados com o evento            | `on delete cascade`            |
 
 **Eventos publicados.** O conteúdo de um evento é conservado indefinidamente em
 arquivo: a memória da programação cultural de um território tem valor próprio, e
@@ -283,22 +283,53 @@ o artigo 5.º, n.º 1, alínea e), do RGPD ressalva expressamente a conservaçã
 fins de arquivo de interesse público, com as garantias do artigo 89.º. Os eventos
 publicados não contêm dados de contacto de quem os submeteu.
 
-> ### Lacunas conhecidas, por corrigir
+**Como é executado.** As quatro funções correm todas as noites, pela mesma
+porta e com a mesma chave de serviço que a recolha — o passo «Expurgo de
+retenção» de `.github/workflows/scrape.yml`. Nenhuma delas é executável por
+`anon` nem por `authenticated` (migração 0133, mesma regra da 0007).
+
+**De onde sai «após a data do evento».** O prazo das submissões não conta da
+chegada: conta do fim do evento. A data está dentro do `payload`, e cada canal
+grava-a numa forma diferente — a recolha aninhada em `event`, o formulário
+lisa, e o email em `dates: [{ date, startTime }]`, que é o formato do
+`ExtractedEvent` e não tem `date_start` nenhum. A
+`public.data_do_evento_na_submissao()` lê os três; quando a submissão já deu
+origem a um evento, manda a data do evento, que é a que a moderação corrigiu.
+Sem data legível em sítio nenhum, o prazo conta da revisão e, em último caso,
+da chegada. Uma versão desta função que soubesse ler só duas das três formas
+apagaria as submissões de email 24 meses depois de **chegarem** — podendo ser
+dois anos antes de o evento acontecer, e é o canal que traz `sender_email`,
+`ip_hash` e `raw_text`. `scripts/verificar-afirmacoes.mjs` guarda essa costura
+e a de uma função de expurgo ficar escrita sem ninguém a chamar.
+
+> ### O que isto ainda não faz
 >
-> Escritas aqui de propósito, para não passarem por decisão o que é trabalho por
-> fazer. Um prazo prometido na política publicada e não executado por código é
-> uma promessa que não se cumpre.
+> Escrito aqui de propósito, para não passar por decisão o que é trabalho por
+> fazer.
 >
-> 1. **O expurgo de submissões, anexos e quotas de remetente não está
->    automatizado.** É a lacuna com mais peso: são estas as tabelas com dados de
->    contacto. Enquanto não houver rotina, o expurgo tem de ser feito à mão e
->    registado.
-> 2. **`sender_quotas` guarda o endereço de email em claro** como chave
->    primária, e nada o apaga. Os contadores são diários; a linha não é.
-> 3. **`admin_actions` não tem prazo executado.**
+> 1. **Os bytes dos anexos não saem por SQL.** O balde `intake` é privado e os
+>    ficheiros só se apagam pela API do Storage. A `prune_submissions()` recusa-se
+>    a apagar a linha de metadados enquanto o ficheiro lá estiver — apagá-la
+>    deixava os bytes órfãos, sem ninguém que soubesse o caminho, que é
+>    exatamente o que o expurgo existe para evitar. Essas submissões ficam
+>    contadas em `retidas`, e a execução noturna fica vermelha até alguém tirar
+>    os ficheiros à mão (`public.expired_intake_objects()` diz quais).
+> 2. **`sender_quotas` continua a guardar o endereço em claro** como chave
+>    primária enquanto a linha existe. O que mudou é que a linha deixa de ser
+>    eterna; a forma como está guardada, não.
+> 3. **Uma linha de `admin_actions` de uma submissão já expurgada só é anonimizada
+>    se a submissão passar pelo expurgo.** Se a submissão for apagada por outra
+>    via — como a 0030 apagou as dos dois concelhos que saíram da CIM —, a
+>    fotografia em `before` fica com os dados de contacto até aos 24 meses da
+>    própria ação.
 >
-> As três resolvem-se com uma função de expurgo por tabela, chamada pelo mesmo
-> workflow noturno que já chama `prune_rate_limits()`.
+> **Nada disto já aconteceu.** Medido a 13 de setembro de 2026 em produção: 49
+> submissões, 0 anexos, 0 quotas de remetente, 185 ações de moderação — e **zero
+> linhas fora de prazo em qualquer uma das tabelas**. A linha de dados pessoais
+> mais antiga é de 2026-08-28, portanto a primeira coisa que pode caducar caduca
+> a 2028-08-28. As funções vão devolver zero todas as noites durante dois anos, e
+> é para isso que existem: um prazo que só se escreve no dia em que a primeira
+> linha o ultrapassa é um prazo que já foi ultrapassado.
 
 ---
 
