@@ -295,6 +295,22 @@ function stubHttp(body: string, status = 200): HttpClient {
   });
 }
 
+/**
+ * Um servidor que não responde: nem estado, nem corpo, nem nada.
+ *
+ * É o que o `fetch` faz quando o DNS falha, quando o TLS é cortado ou quando o
+ * tempo se esgota — e é o que oito fontes devolveram ao runner a 12 e 13 de
+ * setembro de 2026.
+ */
+function stubSemResposta(): HttpClient {
+  return new HttpClient({
+    minHostIntervalMs: 0,
+    maxAttempts: 2,
+    sleep: () => Promise.resolve(),
+    fetchImpl: () => Promise.reject(new Error('socket hang up')),
+  });
+}
+
 async function run(
   source: SourceRow,
   db: FakeDatabase,
@@ -1149,5 +1165,78 @@ describe('as medidas dos cartazes', () => {
     expect(pedidosAoCartaz).toHaveLength(1);
     expect(db.events.get(gravado.id)?.image_width).toBe(800);
     expect(db.events.get(gravado.id)?.image_height).toBe(450);
+  });
+});
+
+/**
+ * Nenhuma resposta não é uma agenda vazia.
+ *
+ * O incidente de 12 de setembro de 2026: oito fontes — sete dos onze concelhos,
+ * mais a rede CAMINHOS — pararam de responder ao runner. A base guardou, para
+ * cada uma, `http_responses = 0` e `http_failures = 3`. Nem um byte chegou.
+ *
+ * A causa a montante não se apurou, e não se finge que sim: o conjunto atravessa
+ * dois adaptadores e dois domínios, e o `cm-sardoal` — mesma plataforma que sete
+ * deles — continuou a responder. O que se sabe é o que a base registou.
+ *
+ * E o Coreto escreveu, seis noites seguidas, «contagem suspeita: 0 itens contra
+ * uma linha de base de 10» — a frase que se diz quando a página **respondeu** e
+ * mudou de forma. Quem lesse o aviso ia procurar um seletor partido que estava
+ * intacto, e a `/estado` continuava a contar essas fontes como estando em dia.
+ *
+ * O adaptador é o verdadeiro, de propósito: o `joomla-eventbooking` avisa e
+ * segue quando um endereço não responde, e no fim devolve a lista vazia — é
+ * essa forma, que doze adaptadores partilham, que a guarda do pipeline apanha.
+ * O `generic-html` atira sozinho («nenhuma página de listagem respondeu») e
+ * nunca chegou a ter este defeito.
+ */
+describe('uma fonte que não responde falha, e não se chama agenda vazia', () => {
+  const comoAsOito = () =>
+    makeSource({
+      adapter: 'joomla-eventbooking',
+      config: {},
+      baseline_item_count: 10,
+      min_expected_items: 1,
+    });
+
+  it('conta como falha, e não como contagem em baixo', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(comoAsOito(), db, stubSemResposta());
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.http.responses).toBe(0);
+    expect(outcome.http.failures).toBeGreaterThan(0);
+  });
+
+  it('não acusa a fonte de ter mudado de forma quando não se viu a página', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(comoAsOito(), db, stubSemResposta());
+
+    // Sem uma resposta não há prova nenhuma sobre o layout. Dizer «layout?» é
+    // fabricar um diagnóstico e mandar alguém procurar o que não está partido.
+    expect(outcome.layoutDrift).toBe(false);
+    expect(outcome.error).toContain('não respondeu');
+    expect(outcome.error).not.toContain('contagem suspeita');
+  });
+
+  it('e a fonte não fica marcada como lida com sucesso', async () => {
+    const db = new FakeDatabase();
+    await run(comoAsOito(), db, stubSemResposta());
+
+    const saude = db.health.at(-1);
+    expect(saude).toBeDefined();
+    expect(saude?.succeeded).toBe(false);
+    expect(saude?.updateBaseline).toBe(false);
+  });
+
+  it('mas uma agenda que responde vazia continua a ser contagem em baixo', async () => {
+    // O controlo que separa as duas: aqui a página **respondeu**, e estava
+    // vazia. Isso é sobre a agenda, e continua a ler-se como sempre se leu.
+    const db = new FakeDatabase();
+    const outcome = await run(makeSource({ baseline_item_count: 20 }), db, stubHttp('<ul></ul>'));
+
+    expect(outcome.status).toBe('partial');
+    expect(outcome.http.responses).toBeGreaterThan(0);
+    expect(outcome.layoutDrift).toBe(true);
   });
 });
