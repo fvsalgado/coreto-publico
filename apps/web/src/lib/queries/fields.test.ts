@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { PUBLIC_SOURCE_FIELDS, VENUE_FIELDS, CORETO_FIELDS } from './fields';
+import { PUBLIC_SOURCE_FIELDS, VENUE_FIELDS, CORETO_FIELDS, DETAIL_EVENT_FIELDS } from './fields';
 
 const MIGRATIONS = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -76,5 +76,34 @@ describe('as notas de trabalho não saem para a rua', () => {
   it('os coretos leem `description`', () => {
     expect(asList(CORETO_FIELDS)).toContain('description');
     expect(asList(CORETO_FIELDS)).not.toContain('notes');
+  });
+});
+
+/**
+ * O `status` nas colunas da ficha.
+ *
+ * Não é uma coluna decorativa: é a única coisa que separa, dentro da mesma
+ * página, um convite de um registo. Desde a 0132 a `fetchEvent` devolve as
+ * duas coisas, e sem o `status` a ficha oferecia calendário para abril e o
+ * JSON-LD anunciava bilhetes de um concerto que já se fez.
+ *
+ * Tirá-lo de `DETAIL_EVENT_FIELDS` não parte nenhum tipo — o TypeScript vê o
+ * `select` como uma cadeia — e parte a página em silêncio. Daí o teste.
+ */
+describe('DETAIL_EVENT_FIELDS', () => {
+  const colunas = DETAIL_EVENT_FIELDS.split(',').map((coluna) => coluna.trim());
+
+  it('pede o estado, porque a ficha desenha duas coisas diferentes', () => {
+    expect(colunas).toContain('status');
+  });
+
+  it('e não pede a razão do arquivo, que a política já garante', () => {
+    // A política só deixa passar arquivados com `archived_reason = 'passado'`.
+    // Pedir a coluna era pedir uma resposta que já se sabe.
+    expect(colunas).not.toContain('archived_reason');
+  });
+
+  it('nenhuma coluna se repete — um `select` com repetições é um pedido malformado', () => {
+    expect(new Set(colunas).size).toBe(colunas.length);
   });
 });

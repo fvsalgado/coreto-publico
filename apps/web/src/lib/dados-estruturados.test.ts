@@ -31,6 +31,7 @@ const SESSAO: EventSession = {
 const EVENTO: EventDetail = {
   id: 'e1',
   slug: 'concerto-no-coreto',
+  status: 'published',
   title: 'Concerto no coreto',
   subtitle: null,
   description: null,
@@ -144,7 +145,7 @@ function no(dados: unknown, tipo: string): Record<string, unknown> {
   return encontrado;
 }
 
-function evento(alteracoes: Partial<EventDetail> = {}) {
+function evento(alteracoes: Partial<EventDetail> = {}, jaAconteceu = false) {
   return construirEvento({
     evento: { ...EVENTO, ...alteracoes },
     url: 'https://exemplo.pt/evento/concerto-no-coreto',
@@ -153,6 +154,7 @@ function evento(alteracoes: Partial<EventDetail> = {}) {
     espaco: null,
     ciclo: null,
     regiao: REGIAO,
+    jaAconteceu,
   });
 }
 
@@ -558,5 +560,48 @@ describe('construirFaq', () => {
         item: 'https://exemplo.pt/informacoes',
       },
     ]);
+  });
+});
+
+/**
+ * Um registo de arquivo não põe bilhetes à venda.
+ *
+ * A 0132 abriu as fichas do que já aconteceu, e com elas vinha uma afirmação
+ * que ninguém escreveu de propósito: toda a oferta do JSON-LD leva
+ * `availability: InStock` — «isto está à venda, agora». Num evento de abril é
+ * falso, e é falso no sítio onde mais alastra: um motor de busca repete-o numa
+ * caixa de resultados, com o preço ao lado.
+ *
+ * Medido a 13 de setembro de 2026: das 33 fichas que a 0132 abre, 8 emitiriam
+ * uma oferta — as gratuitas, que saem por `is_free` e não por preço.
+ */
+describe('construirEvento — o arquivo não anuncia disponibilidade', () => {
+  it('um evento que já aconteceu não emite oferta nenhuma', () => {
+    const comPreco = { is_free: false, price_min: 12, price_max: 12 };
+    expect(no(evento(comPreco), 'Event').offers).toBeDefined();
+    expect(no(evento(comPreco, true), 'Event').offers).toBeUndefined();
+  });
+
+  it('nem quando a entrada era livre, que é o caso dos oito', () => {
+    const gratuito = { is_free: true, price_min: 0, price_max: null };
+    expect(no(evento(gratuito), 'Event').offers).toBeDefined();
+    expect(no(evento(gratuito, true), 'Event').offers).toBeUndefined();
+  });
+
+  /*
+   * E o que **fica**, que é a metade que distingue as duas afirmações: «a
+   * entrada era livre» é um facto sobre o que houve e continua verdadeiro
+   * depois de acontecer; «está disponível» é sobre agora, e deixa de ser.
+   */
+  it('mas «a entrada era livre» continua a dizer-se, porque é verdade no passado', () => {
+    const arquivado = no(evento({ is_free: true, price_min: 0, price_max: null }, true), 'Event');
+    expect(arquivado.isAccessibleForFree).toBe(true);
+  });
+
+  it('e o resto da ficha não muda por ter passado', () => {
+    const arquivado = no(evento({}, true), 'Event');
+    expect(arquivado.name).toBe('Concerto no coreto');
+    expect(arquivado.startDate).toBeDefined();
+    expect(arquivado.location).toBeDefined();
   });
 });
