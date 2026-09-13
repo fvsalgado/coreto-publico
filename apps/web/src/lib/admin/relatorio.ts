@@ -10,6 +10,27 @@
  * vão buscar — para os três dizerem o mesmo.
  */
 
+/**
+ * Os totais comparáveis de uma janela. Saem todos de `report_totals` (0146),
+ * a mesma expressão chamada quatro vezes: uma comparação em que os dois lados
+ * são contados por SQL diferente é uma comparação entre duas perguntas.
+ */
+export interface TotaisDaJanela {
+  /** O primeiro e o último dia **dentro** da janela. */
+  from: string;
+  to: string;
+  events_published: number;
+  events_happening: number;
+  /**
+   * A unidade do INE para espetáculos ao vivo. Um festival de três dias é um
+   * evento e três sessões, e sem esta contagem a CIM não consegue pôr o seu
+   * número ao lado do oficial na mesma frase. As canceladas ficam de fora.
+   */
+  sessions_happening: number;
+  submissions_received: number;
+  submissions_approved: number;
+}
+
 export interface RelatorioMensal {
   region: { id: string; name: string };
   /** `AAAA-MM`. */
@@ -97,6 +118,23 @@ export interface RelatorioMensal {
    * partir de» a mostrar um número que não mediu.
    */
   quality_as_of: string | null;
+  /**
+   * Os mesmos totais em quatro janelas, para o relatório se poder comparar.
+   *
+   * Três das quatro podem vir a `null`, e é a parte que interessa: só se
+   * compara um mês que tenha sido observado por inteiro. Um mês que começou
+   * antes de `observed_since` foi visto em parte, e dividir por ele mede a
+   * data em que o projeto começou — não a agenda de ninguém. Aí escreve-se
+   * «sem comparação», que é a regra que as visitas seguem desde a 0120.
+   */
+  comparison: {
+    /** O primeiro dia em que esta região passou a ser observada. */
+    observed_since: string | null;
+    current: TotaisDaJanela;
+    previous_month: TotaisDaJanela | null;
+    same_month_last_year: TotaisDaJanela | null;
+    year_to_date: TotaisDaJanela | null;
+  };
   visits: {
     /** Falso quando não há duas fotografias com que contar o mês. */
     available: boolean;
@@ -265,6 +303,68 @@ function bloco(
 }
 
 /**
+ * As quatro janelas que o relatório compara, pela ordem em que se leem.
+ *
+ * O corrente primeiro, porque é o mês de que o relatório é; depois o que se
+ * lhe compara. `chave` é o que sai no CSV e o que a ficha técnica documenta.
+ */
+export const JANELAS = [
+  { chave: 'mes', rotulo: 'Este mês', campo: 'current' },
+  { chave: 'mes_anterior', rotulo: 'Mês anterior', campo: 'previous_month' },
+  { chave: 'homologo', rotulo: 'Mês homólogo', campo: 'same_month_last_year' },
+  { chave: 'acumulado_do_ano', rotulo: 'Acumulado', campo: 'year_to_date' },
+] as const satisfies ReadonlyArray<{
+  chave: string;
+  rotulo: string;
+  campo: keyof Omit<RelatorioMensal['comparison'], 'observed_since'>;
+}>;
+
+/** As medidas de cada janela, pela ordem em que se leem. */
+export const MEDIDAS_COMPARAVEIS = [
+  { campo: 'events_published', rotulo: 'Eventos publicados' },
+  { campo: 'events_happening', rotulo: 'Eventos a decorrer' },
+  { campo: 'sessions_happening', rotulo: 'Sessões' },
+  { campo: 'submissions_received', rotulo: 'Submissões recebidas' },
+  { campo: 'submissions_approved', rotulo: 'Submissões aprovadas' },
+] as const satisfies ReadonlyArray<{
+  campo: keyof Omit<TotaisDaJanela, 'from' | 'to'>;
+  rotulo: string;
+}>;
+
+export interface Variacao {
+  /** A diferença, com sinal. */
+  absoluto: number;
+  /**
+   * A variação relativa, arredondada ao ponto percentual. `null` quando o
+   * ponto de partida era zero: de 0 para 5 não são «mais infinito por cento»
+   * nem «mais 500%», são cinco onde não havia nenhum, e escreve-se assim.
+   */
+  percentagem: number | null;
+  /** A mesma coisa por palavras, para quem lê e não calcula. */
+  palavras: string;
+}
+
+/**
+ * A variação entre duas janelas.
+ *
+ * Por palavras e por sinal, sem cores: a casa não tem cores de estado, e uma
+ * seta vermelha decide pelo leitor o que é bom — um mês com menos submissões
+ * pode ser um mês em que a recolha automática passou a trazer tudo.
+ */
+export function variacao(antes: number, agora: number): Variacao {
+  const absoluto = agora - antes;
+  const percentagem = antes === 0 ? null : Math.round((absoluto / antes) * 100);
+  if (absoluto === 0) return { absoluto, percentagem, palavras: 'igual' };
+  const verbo = absoluto > 0 ? 'mais' : 'menos';
+  const quantos = Math.abs(absoluto);
+  const parte =
+    percentagem === null
+      ? `de ${antes} para ${agora}`
+      : `${Math.abs(percentagem)}% ${absoluto > 0 ? 'acima' : 'abaixo'}`;
+  return { absoluto, percentagem, palavras: `${quantos} ${verbo}, ${parte}` };
+}
+
+/**
  * O relatório inteiro num CSV só, por blocos separados por uma linha vazia.
  *
  * Um ficheiro por secção era mais puro e menos útil: quem descarrega quer
@@ -287,6 +387,9 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         // Vazia quando o mês não teve fotografia e a qualidade é a de hoje.
         // Uma coluna vazia diz «não medi» melhor do que uma data emprestada.
         ['qualidade_de', relatorio.quality_as_of ?? ''],
+        // Sem esta data, o bloco «comparacao» parece ter linhas em falta por
+        // descuido. Com ela, diz-se porquê: não se observou o mês inteiro.
+        ['observado_desde', relatorio.comparison.observed_since ?? ''],
       ],
     ),
     bloco(
@@ -394,6 +497,38 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         q.with_price,
         q.with_coordinates,
       ]),
+    ),
+    // Uma linha por janela, com as mesmas cinco medidas. As janelas sem
+    // comparação ficam **de fora** do ficheiro, e não com zeros: um zero num
+    // CSV lê-se como uma medição, e ninguém mediu agosto.
+    bloco(
+      'comparacao',
+      [
+        'janela',
+        'de',
+        'ate',
+        'eventos_publicados',
+        'eventos_a_decorrer',
+        'sessoes',
+        'submissoes_recebidas',
+        'submissoes_aprovadas',
+      ],
+      JANELAS.flatMap((janela) => {
+        const totais = relatorio.comparison[janela.campo];
+        if (!totais) return [];
+        return [
+          [
+            janela.chave,
+            totais.from,
+            totais.to,
+            totais.events_published,
+            totais.events_happening,
+            totais.sessions_happening,
+            totais.submissions_received,
+            totais.submissions_approved,
+          ] as Celula[],
+        ];
+      }),
     ),
     bloco(
       'visitas',

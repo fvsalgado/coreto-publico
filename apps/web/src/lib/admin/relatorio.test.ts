@@ -7,6 +7,7 @@ import {
   nomeDoMes,
   paraCsv,
   porqueSemHistorico,
+  variacao,
   type RelatorioMensal,
 } from './relatorio';
 
@@ -94,6 +95,37 @@ const RELATORIO: RelatorioMensal = {
     },
   ],
   quality_as_of: '2026-08-31',
+  comparison: {
+    observed_since: '2026-06-01',
+    current: {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      events_published: 12,
+      events_happening: 30,
+      sessions_happening: 41,
+      submissions_received: 9,
+      submissions_approved: 7,
+    },
+    previous_month: {
+      from: '2026-08-01',
+      to: '2026-08-31',
+      events_published: 8,
+      events_happening: 24,
+      sessions_happening: 33,
+      submissions_received: 6,
+      submissions_approved: 5,
+    },
+    same_month_last_year: null,
+    year_to_date: {
+      from: '2026-06-01',
+      to: '2026-09-30',
+      events_published: 40,
+      events_happening: 70,
+      sessions_happening: 95,
+      submissions_received: 20,
+      submissions_approved: 16,
+    },
+  },
   visits: {
     available: true,
     from: '2026-08-01',
@@ -225,6 +257,7 @@ describe('paraCsv', () => {
       'seccao;canal;recebidas',
       'seccao;desfecho;revistas',
       'seccao;concelho_id;concelho;publicados;por_publicar;no_catalogo;com_hora;com_espaco;com_imagem;com_descricao;com_preco;com_coordenadas',
+      'seccao;janela;de;ate;eventos_publicados;eventos_a_decorrer;sessoes;submissoes_recebidas;submissoes_aprovadas',
       'seccao;chave;valor',
       'seccao;concelho_id;concelho;aberturas;bilhetica;calendario;partilhas;cliques;pagina_oficial;como_chegar',
     ]);
@@ -304,5 +337,84 @@ describe('paraCsv', () => {
     expect(semVisitas).toContain('visitas;fotografia_de;');
     expect(semVisitas).toContain('visitas;fotografia_ate;2026-09-01');
     expect(semVisitas.filter((l) => l.startsWith('visitas_por_concelho;'))).toEqual([]);
+  });
+});
+
+/**
+ * A variação, por palavras e por sinal.
+ *
+ * O plano pede «valor absoluto e percentagem, por palavras e por sinal — a
+ * casa não tem cores de estado». A razão é que uma seta vermelha decide pelo
+ * leitor o que é bom: um mês com menos submissões pode ser um mês em que a
+ * recolha automática passou a trazer tudo, e o relatório não sabe qual dos
+ * dois é.
+ */
+describe('a variação entre duas janelas', () => {
+  it('diz quantos a mais e quanto por cento', () => {
+    const v = variacao(8, 12);
+    expect(v.absoluto).toBe(4);
+    expect(v.percentagem).toBe(50);
+    expect(v.palavras).toBe('4 mais, 50% acima');
+  });
+
+  it('a descer, diz «menos» e «abaixo» — e não um sinal negativo por palavras', () => {
+    const v = variacao(20, 15);
+    expect(v.absoluto).toBe(-5);
+    expect(v.percentagem).toBe(-25);
+    expect(v.palavras).toBe('5 menos, 25% abaixo');
+  });
+
+  /**
+   * De zero para cinco não são «mais infinito por cento» nem «mais 500%». São
+   * cinco onde não havia nenhum, e é isso que se escreve. Uma percentagem com
+   * denominador zero é a forma mais fácil de um relatório publicar um número
+   * que não quer dizer nada.
+   */
+  it('de zero não tira percentagem nenhuma', () => {
+    const v = variacao(0, 5);
+    expect(v.absoluto).toBe(5);
+    expect(v.percentagem).toBeNull();
+    expect(v.palavras).toBe('5 mais, de 0 para 5');
+  });
+
+  it('para zero é uma queda de cem por cento, que é verdade', () => {
+    const v = variacao(5, 0);
+    expect(v.absoluto).toBe(-5);
+    expect(v.percentagem).toBe(-100);
+    expect(v.palavras).toBe('5 menos, 100% abaixo');
+  });
+
+  it('igual escreve-se «igual», e não «0 mais, 0% acima»', () => {
+    expect(variacao(7, 7).palavras).toBe('igual');
+    expect(variacao(0, 0).palavras).toBe('igual');
+    expect(variacao(0, 0).percentagem).toBeNull();
+  });
+
+  it('arredonda ao ponto percentual, como o resto da casa', () => {
+    // 3 em 7 são 42,857…%
+    expect(variacao(7, 10).percentagem).toBe(43);
+  });
+});
+
+/**
+ * O CSV das comparações deixa de fora as janelas que não se podem comparar.
+ * Um zero num ficheiro entregue lê-se como uma medição, e ninguém mediu um
+ * mês que começou antes de a região passar a ser observada.
+ */
+describe('o bloco «comparacao» do CSV', () => {
+  it('leva uma linha por janela que existe, e nenhuma pelas que não', () => {
+    const linhas = paraCsv(RELATORIO)
+      .split('\n')
+      .filter((l) => l.startsWith('comparacao;') || l.startsWith('comparacao,'));
+    const janelas = linhas.map((l) => l.split(/[;,]/)[1]);
+    expect(janelas).toContain('mes');
+    expect(janelas).toContain('mes_anterior');
+    expect(janelas).toContain('acumulado_do_ano');
+    // O fixture não tem homólogo: a região não tinha um ano de registo.
+    expect(janelas).not.toContain('homologo');
+  });
+
+  it('leva as sessões, que é a unidade do INE', () => {
+    expect(paraCsv(RELATORIO)).toMatch(/sessoes/);
   });
 });
