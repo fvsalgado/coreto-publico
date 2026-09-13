@@ -46,6 +46,21 @@ const RELATORIO: RelatorioMensal = {
   },
   quality: [],
   quality_as_of: null,
+  comparison: {
+    observed_since: null,
+    current: {
+      from: '2026-09-01',
+      to: '2026-09-30',
+      events_published: 0,
+      events_happening: 0,
+      sessions_happening: 0,
+      submissions_received: 0,
+      submissions_approved: 0,
+    },
+    previous_month: null,
+    same_month_last_year: null,
+    year_to_date: null,
+  },
   visits: {
     available: true,
     from: '2026-08-01',
