@@ -1,0 +1,276 @@
+{
+ "_captured": "https://sitecmaproxy.cm-abrantes.pt/proxy/agenda/eventos/648 — 2026-08-28, com Origin: https://www.cm-abrantes.pt (recolha autorizada pela CM de Abrantes).",
+ "sucess": true,
+ "code": 200,
+ "message": "OK",
+ "errors": [],
+ "payload": [
+  {
+   "atividade": {
+    "id": "",
+    "titulo": "",
+    "dataInicio": "",
+    "projeto": "",
+    "descricao": "",
+    "areaTematica": "",
+    "tipoAtividade": "",
+    "publicoAlvo": "",
+    "classeEtaria": "",
+    "tipoEntrada": "",
+    "valorEntrada": "",
+    "url": "",
+    "estado": "",
+    "telefone": "",
+    "email": "",
+    "imagemDestaque": "",
+    "sessoes": [
+     {
+      "dataInicio": "",
+      "dataFim": "",
+      "horaInicio": "",
+      "horaFim": "",
+      "estado": "",
+      "local": ""
+     }
+    ]
+   },
+   "evento": {
+    "id": 648,
+    "titulo": "Festival ao Alto ",
+    "horaInicio": "19:30",
+    "horaFim": "03:00",
+    "dataInicio": "04-09-2026",
+    "dataFim": "06-09-2026",
+    "local": "Alto de Santo António",
+    "areaTematica": "Cultura",
+    "promotor": "Municipio de Abrantes ",
+    "descricao": "04 setembro 2026\n19H30| Abertura do festival \n19h00-00h00 | I Torneio de Ténis ao Alto \n19H30 – 20H30 | Cenas ao Alto (Homens de Espelhos e Palhaço Karaoke)\n20H30 - 22H30|  Palco ao Alto com Ivo Ramad\n 21h00-23h00 I Cenas ao Alto (Homens de Espelhos e Palhaça Glitter)\n22H30 | Palco Principal  BIA CABOZ\n00h00-01h00 I Cenas ao Alto (Homens de Espelhos e palhaço Karaoke)\n00H30 -02H30 | Mamma Mia \n \n\n 05 setembro 2026\n19H30| Abertura do festival \n19h00-00h00 | I Torneio de Ténis ao Alto \n19H30 – 20H30 | Cenas ao Alto (Homens de Espelhos e Palhaço Karaoke)\n20H30 - 22H30| Palco ao Alto  com Gabriel \n21h00-23h00 I Cenas ao Alto (Homens de Espelhos e Palhaça Glitter)\n21H00 – 22H30 | Cenas ao Alto \n22H30 | Palco Principal NAPA\n00h00-01h00 I Cenas ao Alto (Homens de Espelhos e palhaço Karaoke)\n00H30 -02H30 |  Joana Perez e MC Sara Sá \n ",
+    "estado": "Disponível",
+    "cor": "#a9dad1",
+    "sinopse": "",
+    "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+    "destaque": true,
+    "atividadeUnica": false,
+    "lstAtividades": [
+     {
+      "id": 1590,
+      "titulo": "Ivo Ramad",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Concerto",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "04-09-2026",
+        "dataFim": "04-09-2026",
+        "horaInicio": "20:30",
+        "horaFim": "22:30",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     },
+     {
+      "id": 1591,
+      "titulo": "BIA CABOZ",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Espetáculo",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "04-09-2026",
+        "dataFim": "04-09-2026",
+        "horaInicio": "22:30",
+        "horaFim": "23:45",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     },
+     {
+      "id": 1592,
+      "titulo": "Mamma Mia Party ",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Espetáculo",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "05-09-2026",
+        "dataFim": "05-09-2026",
+        "horaInicio": "00:30",
+        "horaFim": "02:30",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     },
+     {
+      "id": 1593,
+      "titulo": "Gabriel ",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Concerto",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "05-09-2026",
+        "dataFim": "05-09-2026",
+        "horaInicio": "20:30",
+        "horaFim": "22:30",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     },
+     {
+      "id": 1594,
+      "titulo": "NAPA ",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Espetáculo",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "05-09-2026",
+        "dataFim": "05-09-2026",
+        "horaInicio": "22:30",
+        "horaFim": "23:30",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     },
+     {
+      "id": 1595,
+      "titulo": "Joana Perez e MC Sara Sá ",
+      "descricao": "",
+      "areaTematica": "Cultura",
+      "tipoAtividade": "Espetáculo",
+      "sinopse": "",
+      "imagemDestaque": "https://repositorioma.cm-abrantes.pt/externo/Eventos/6a831ab4b8332cec5cbcbcc8.png",
+      "publicoAlvo": "Público em geral",
+      "classeEtaria": "",
+      "tipoEntrada": "Para todos os públicos",
+      "valorEntrada": "",
+      "url": "",
+      "estado": "Disponível",
+      "contactos": {
+       "telefone": "",
+       "email": ""
+      },
+      "lstImagens": {
+       "imagem": []
+      },
+      "lstSessoes": [
+       {
+        "dataInicio": "06-09-2026",
+        "dataFim": "06-09-2026",
+        "horaInicio": "00:30",
+        "horaFim": "02:30",
+        "local": "Alto de Santo António",
+        "georeferenciacao": "",
+        "estado": "Disponível",
+        "quantidadeBilhetes": 0,
+        "comLotacao": false,
+        "lstBilhetes": []
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {}
+ ]
+}

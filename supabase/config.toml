@@ -1,0 +1,79 @@
+# A pilha Supabase local — só para o CI e para desenvolvimento.
+#
+# O projeto real vive no Supabase gerido; este ficheiro existe para o
+# `supabase start` do job `regioes`, que levanta uma base efémera, aplica as
+# migrações e a região de prova e serve o sítio inteiro sobre duas regiões.
+# Está reduzido ao que esse job usa: a base e a API REST. Tudo o resto
+# (Studio, realtime, correio) fica desligado — são contentores
+# que custavam minutos ao job e que nenhuma leitura pública toca: o sítio só
+# fala com o PostgREST, com a chave anónima.
+project_id = "coreto"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+# O mesmo tecto do projeto gerido: nenhuma consulta do sítio pede mais do que
+# isto, e um tecto diferente do real esconderia paginações partidas.
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# A maior versão que o Supabase gerido serve — a paridade com produção conta
+# mais do que a novidade.
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.seed]
+# O seed do CI (supabase/ci/9000_…) aplica-se À MÃO no job, depois do
+# `db reset`: não é um seed do produto, é a região de prova — e mantê-lo fora
+# daqui garante que um `db reset` de desenvolvimento produz exatamente a base
+# de produção, sem regiões fictícias.
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+# Ligado — e a razão medida não é a que aqui esteve escrita.
+#
+# Dizia-se que era a migração 0008, que insere em `storage.buckets` e cria uma
+# policy sobre `storage.objects`. **Não é.** Com `supabase start -x
+# gotrue,storage-api`, as 125 migrações aplicam-se todas sem um erro (execução
+# 33872432452 do CI).
+#
+# O que parte é o caminho de dados em execução. Sem estes dois serviços o
+# sítio deixou de conseguir ler as regiões, e a consequência foi total: TODOS
+# os anfitriões passaram a desconhecidos, a raiz caiu na página do produto e
+# tudo o resto respondeu 404 — 61 asserções do `verificar-regioes.mjs` em
+# baixo. O mecanismo exato não está apurado; o que está medido é que
+# excluí-los parte a leitura, e é quanto basta para não o fazer.
+#
+# Valeu a pena por outra razão: a queda passou despercebida a todas as
+# asserções de fuga («sem uma letra do Médio Tejo» passou em tudo, porque uma
+# página 404 não tem letra nenhuma). Foi o `responde 200` que a apanhou. Um
+# guardião que só procurasse fugas teria ficado verde sobre um sítio inteiro
+# em baixo.
+enabled = true
+
+[auth]
+# Ligado por arrasto do storage — ver acima. O sítio em si nunca fala com
+# nenhum dos dois; fala só com o PostgREST, o que torna a queda acima tão
+# pouco intuitiva quanto real.
+enabled = true
+
+[analytics]
+enabled = false
+
+[edge_runtime]
+enabled = false

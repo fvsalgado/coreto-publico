@@ -1,0 +1,754 @@
+'use server';
+
+import { revalidatePath, revalidateTag } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { reportarErro } from '../registo';
+import { normalizeForHash } from '@coreto/core';
+import { z } from 'zod';
+import { requireAdmin } from './auth';
+import {
+  CAMPOS_DA_REGIAO,
+  changedFields,
+  comAviso,
+  LOTE_MAX,
+  readEvent,
+  readSessions,
+} from './fields';
+import { requireAdminClient } from '../supabase/server';
+import { SECCOES_OPCIONAIS } from '../navegacao';
+import { REGIAO_PRINCIPAL } from '../regiao-host';
+import { CACHE_TAGS } from '../queries/events';
+
+/**
+ * As ações de moderação.
+ *
+ * Nenhuma escreve em `events` diretamente: todas passam pelas funções SQL
+ * (`approve_submission`, `reject_submission`, `merge_events`), que são o único
+ * caminho de escrita e as que registam a auditoria. Uma escrita a partir daqui
+ * seria uma ação sem rasto, e o registo de quem fez o quê é metade do que
+ * torna esta fila confiável.
+ */
+
+function invalidate(municipalityId: unknown): void {
+  const tags: string[] = [CACHE_TAGS.events, CACHE_TAGS.venues, CACHE_TAGS.taxonomy];
+  if (typeof municipalityId === 'string' && municipalityId) {
+    tags.push(CACHE_TAGS.municipality(municipalityId));
+  }
+  for (const tag of tags) revalidateTag(tag, { expire: 0 });
+}
+
+export async function approveSubmission(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const submissionId = String(formData.get('submission_id') ?? '');
+  if (!submissionId) throw new Error('submissão em falta');
+
+  const event = readEvent(formData);
+  const sessions = readSessions(formData);
+  const first = sessions[0];
+  if (first) event.date_start = first.session_date;
+
+  const { data: eventId, error } = await supabase.rpc('approve_submission', {
+    p_submission_id: submissionId,
+    p_actor: actor,
+    p_event: event,
+    p_sessions: sessions,
+  });
+  if (error) throw new Error(error.message);
+
+  // Bloqueia o que o editor mudou face ao que a fonte propunha.
+  const proposed = JSON.parse(String(formData.get('proposed') ?? '{}')) as Record<string, unknown>;
+  const locked = changedFields(proposed, event);
+  if (locked.length > 0 && typeof eventId === 'string') {
+    const { error: lockError } = await supabase.rpc('lock_event_fields', {
+      p_event_id: eventId,
+      p_fields: locked,
+      p_actor: actor,
+      p_note: 'corrigido na moderação',
+    });
+    // Um bloqueio que falha não desfaz a publicação — regista-se e segue.
+    if (lockError) reportarErro('lock_event_fields', lockError);
+  }
+
+  invalidate(event.municipality_id);
+  redirect('/admin/fila');
+}
+
+const ESTADOS_PERMITIDOS = new Set(['published', 'draft', 'hidden', 'cancelled', 'archived']);
+
+/**
+ * Publicar, despublicar e arrumar, em lote, a partir de `/admin/eventos`.
+ *
+ * A escrita é uma chamada só, mas quem escreve é `set_event_status` — a
+ * aplicação continua a não tocar em `events` — e é ela que põe **uma linha de
+ * auditoria por evento**, com o antes e o depois de cada um. Um lote registado
+ * como um acontecimento só pouparia linhas e tornaria irreversível o que assim
+ * se desfaz um a um.
+ */
+export async function bulkSetEventStatus(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const ids = formData.getAll('ids').map(String).filter(Boolean);
+  const status = String(formData.get('status') ?? '');
+  const voltarPara = String(formData.get('voltar') ?? '/admin/eventos');
+
+  if (ids.length === 0) redirect(comAviso(voltarPara, 'Não escolheste nenhum evento.'));
+  if (!ESTADOS_PERMITIDOS.has(status)) redirect(comAviso(voltarPara, 'Estado desconhecido.'));
+  if (ids.length > LOTE_MAX) {
+    redirect(comAviso(voltarPara, `No máximo ${LOTE_MAX} eventos de cada vez.`));
+  }
+
+  const { data, error } = await supabase.rpc('set_event_status', {
+    p_ids: ids,
+    p_status: status,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  // Sem saber de que concelhos eram, invalida-se o que é comum a todos. É o
+  // preço de não ir buscar as linhas outra vez só para afinar a etiqueta.
+  invalidate(null);
+
+  const n = typeof data === 'number' ? data : 0;
+  redirect(
+    comAviso(
+      voltarPara,
+      n === 0
+        ? 'Nada mudou — já estavam todos nesse estado.'
+        : `${n} ${n === 1 ? 'evento' : 'eventos'} em «${status}».`,
+    ),
+  );
+}
+
+export async function rejectSubmission(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const status = String(formData.get('status') ?? 'rejected');
+  const duplicateOf = String(formData.get('duplicate_of') ?? '');
+
+  const { error } = await supabase.rpc('reject_submission', {
+    p_submission_id: String(formData.get('submission_id') ?? ''),
+    p_actor: actor,
+    p_status: status,
+    p_notes: String(formData.get('notes') ?? '') || null,
+    p_duplicate_of: duplicateOf || null,
+  });
+  if (error) throw new Error(error.message);
+
+  redirect('/admin/fila');
+}
+
+export async function mergeEvents(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const { error } = await supabase.rpc('merge_events', {
+    p_canonical_id: String(formData.get('canonical_id') ?? ''),
+    p_duplicate_id: String(formData.get('duplicate_id') ?? ''),
+    p_actor: actor,
+  });
+  if (error) throw new Error(error.message);
+
+  invalidate(formData.get('municipality_id'));
+  redirect('/admin/fila');
+}
+
+/**
+ * Ligar e desligar uma secção do sítio.
+ *
+ * Como todas as outras, escreve por uma função da base — `set_site_section` —,
+ * que é quem deixa a linha de auditoria. Um interruptor que muda a cara do
+ * sítio sem dizer quem foi seria o único do painel a fazê-lo.
+ *
+ * O identificador é validado aqui contra a mesma lista que a navegação usa,
+ * antes de chegar à base. A restrição da tabela também o recusaria; recusá-lo
+ * antes dá um aviso em português em vez de um erro de Postgres.
+ */
+/**
+ * Descartar a cache e servir já o que a base tem.
+ *
+ * As consultas públicas guardam-se por uma hora, e quem escreve na base por
+ * fora do sítio — uma migração de dados, uma correção feita à mão no Supabase —
+ * fica a olhar para a página velha sem perceber porquê. Aconteceu no dia em que
+ * o levantamento dos coretos passou de dez para vinte e sete espaços: a base
+ * tinha os vinte e sete, a página mostrava dez, e nada estava avariado.
+ *
+ * Havia dois caminhos e nenhum servia: esperar pela hora, ou o `curl` ao
+ * `/api/revalidate` com o segredo à mão. O segredo existe para o disparador
+ * externo — a recolha noturna chama esse endereço quando acaba — e pedir a uma
+ * pessoa que o vá buscar para ver o próprio sítio actualizado é fazê-la pagar
+ * por uma decisão de arquitetura que não é dela.
+ *
+ * Invalida tudo o que é público de uma vez, incluindo as secções: quem carrega
+ * aqui quer o sítio inteiro a dizer a verdade, e a diferença entre invalidar
+ * quatro etiquetas ou seis é uma reconstrução que ninguém nota. Não é destrutivo
+ * — não apaga nada, só obriga a próxima visita a ir buscar à base o que a base
+ * já diz.
+ */
+export async function actualizarSitio(): Promise<void> {
+  await requireAdmin();
+
+  for (const tag of [
+    CACHE_TAGS.events,
+    CACHE_TAGS.venues,
+    CACHE_TAGS.coretos,
+    CACHE_TAGS.taxonomy,
+    CACHE_TAGS.sources,
+    CACHE_TAGS.sections,
+    CACHE_TAGS.regions,
+  ]) {
+    revalidateTag(tag, { expire: 0 });
+  }
+
+  redirect(comAviso('/admin', 'O sítio passou a servir o que a base tem agora.'));
+}
+
+export async function alternarSeccao(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const seccao = String(formData.get('seccao') ?? '');
+  const ligar = String(formData.get('ligar') ?? '') === '1';
+  // O interruptor vive em dois sítios: no painel de entrada (a região
+  // principal) e na página de cada região. O caminho de volta acompanha, e é
+  // derivado — nunca lido do formulário, que um caminho vindo de fora é um
+  // redirect aberto à espera de acontecer.
+  const regiao = String(formData.get('regiao') ?? REGIAO_PRINCIPAL);
+  const voltarPara =
+    regiao === REGIAO_PRINCIPAL ? '/admin' : `/admin/regioes/${encodeURIComponent(regiao)}`;
+
+  if (!(SECCOES_OPCIONAIS as readonly string[]).includes(seccao)) {
+    redirect(comAviso(voltarPara, 'Secção desconhecida.'));
+  }
+
+  const { data, error } = await supabase.rpc('set_site_section', {
+    p_id: seccao,
+    p_enabled: ligar,
+    p_actor: actor,
+    p_region: regiao,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  /*
+   * Esta etiqueta é lida pelo layout de raiz, e o layout de raiz entra em
+   * todas as páginas: invalidá-la refaz o sítio inteiro. É o preço certo para
+   * uma ação rara e deliberada — o contrário era o cabeçalho continuar a
+   * mostrar durante uma hora uma secção que já responde 404.
+   */
+  revalidateTag(CACHE_TAGS.sections, { expire: 0 });
+
+  redirect(
+    comAviso(
+      voltarPara,
+      data === true
+        ? `A secção passou a estar ${ligar ? 'ligada' : 'desligada'}.`
+        : 'Nada mudou — já estava assim.',
+    ),
+  );
+}
+
+export async function atualizarRegiao(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const id = String(formData.get('id') ?? '');
+  const voltarPara = `/admin/regioes/${encodeURIComponent(id)}`;
+  if (!id) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  /*
+   * O patch leva TODOS os campos do formulário, não só os mudados: é a função
+   * SQL que compara com a linha e só regista o que mudou de facto — comparar
+   * aqui era ter duas verdades. Os tipos convertem-se antes de seguir, porque
+   * um formulário só sabe falar em texto.
+   */
+  const patch: Record<string, unknown> = {};
+  for (const [campo, tipo] of Object.entries(CAMPOS_DA_REGIAO)) {
+    const bruto = formData.get(campo);
+    if (bruto === null) continue;
+    const texto = String(bruto).trim();
+    if (tipo === 'numero' || tipo === 'inteiro') {
+      if (texto === '') {
+        patch[campo] = null;
+      } else {
+        const numero = Number.parseInt(texto, 10);
+        if (!Number.isFinite(numero) || String(numero) !== texto) {
+          redirect(comAviso(voltarPara, `O campo ${campo} tem de ser um número inteiro.`));
+        }
+        patch[campo] = numero;
+      }
+    } else if (tipo === 'anulavel') {
+      patch[campo] = texto === '' ? null : texto;
+    } else {
+      patch[campo] = texto;
+    }
+  }
+  // `sort_order` é obrigatório na base; em branco não segue como nulo.
+  if (patch.sort_order === null) {
+    redirect(comAviso(voltarPara, 'A ordem tem de ser um número inteiro.'));
+  }
+  // A caixa «região ligada» só viaja quando desmarcada não viaja nada — é o
+  // feitio dos checkboxes; o campo escondido `is_enabled_presente` diz que o
+  // formulário a trazia.
+  if (formData.get('is_enabled_presente') !== null) {
+    patch.is_enabled = formData.get('is_enabled') !== null;
+  }
+  /*
+   * A região principal do deployment não se desliga. É dela a identidade que o
+   * deployment veste — os canónicos, os feeds, o sitemap, o painel — e é ela
+   * que um build sem base de dados pré-gera; com a linha escondida pela RLS o
+   * sítio inteiro caía no esqueleto neutro de recurso, sem nome, sem logótipos
+   * e sem aviso nenhum. Quando a escotilha dos anfitriões desconhecidos está
+   * aberta (`REGIAO_DE_OMISSAO` no ambiente), é também a região que eles veem,
+   * o que só agrava a queda. A base não pode guardar esta regra, porque quem é
+   * a região principal é configuração do deployment; guarda-a quem a conhece.
+   * O dia em que uma região destas tiver de sair do ar começa por passar o
+   * papel a outra região, não por este interruptor.
+   */
+  if (id === REGIAO_PRINCIPAL && patch.is_enabled === false) {
+    redirect(
+      comAviso(
+        voltarPara,
+        'A região principal do deployment não se desliga — é dela a identidade que o ' +
+          'sítio veste quando não há domínio que diga outra coisa. Para a tirar do ar, ' +
+          'o deployment tem primeiro de passar o papel a outra região.',
+      ),
+    );
+  }
+
+  const { data, error } = await supabase.rpc('update_region', {
+    p_id: id,
+    p_patch: patch,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  // A identidade da região entra em todas as páginas do domínio dela — a
+  // etiqueta refaz tudo, que é o preço certo de uma edição rara.
+  revalidateTag(CACHE_TAGS.regions, { expire: 0 });
+
+  redirect(
+    comAviso(
+      voltarPara,
+      data === true ? 'Região atualizada.' : 'Nada mudou — o formulário trazia o que lá estava.',
+    ),
+  );
+}
+
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Registar uma licença de região — insert-only, como a função da base.
+ *
+ * Corrigir é acrescentar uma linha nova com nota; por isso não há aqui nem
+ * editar nem apagar. Expirar não desliga nada: o painel avisa e o corte é o
+ * interruptor da região, um gesto humano à parte.
+ */
+export async function registarLicenca(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const regiao = String(formData.get('regiao') ?? '');
+  const voltarPara = `/admin/regioes/${encodeURIComponent(regiao)}`;
+  if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  const inicio = String(formData.get('starts_on') ?? '').trim();
+  const fim = String(formData.get('ends_on') ?? '').trim();
+  const tipo = String(formData.get('kind') ?? '').trim();
+
+  if (!DATA_ISO.test(inicio)) redirect(comAviso(voltarPara, 'A data de início não é uma data.'));
+  if (fim !== '' && !DATA_ISO.test(fim)) {
+    redirect(comAviso(voltarPara, 'A data de fim não é uma data.'));
+  }
+  if (!tipo) {
+    redirect(
+      comAviso(voltarPara, 'A licença precisa de um tipo — «contrato», «piloto», o que for.'),
+    );
+  }
+
+  const { error } = await supabase.rpc('add_region_license', {
+    p_region_id: regiao,
+    p_starts_on: inicio,
+    p_ends_on: fim === '' ? null : fim,
+    p_kind: tipo,
+    p_notes: String(formData.get('notes') ?? '').trim() || null,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  // Nada de público muda: as licenças são só do painel, sem cache a invalidar.
+  redirect(comAviso(voltarPara, 'Licença registada.'));
+}
+
+const ESPACOS = '/admin/espacos';
+/** Uma chave da fila: o nome já passado por `normalize_for_hash`. */
+const CHAVE = /^[a-z0-9]{1,200}$/;
+/** Um identificador do catálogo — concelho ou espaço —, que é um slug. */
+const IDENTIFICADOR = /^[a-z0-9][a-z0-9-]{0,119}$/;
+
+const LIGAR_SITIO = z.object({
+  normalized: z.string().regex(CHAVE),
+  name: z.string().trim().min(1).max(200),
+  municipality: z.union([z.literal(''), z.string().regex(IDENTIFICADOR)]),
+  venue: z.string().regex(IDENTIFICADOR),
+});
+
+const POR_DE_LADO = z.object({
+  normalized: z.string().regex(CHAVE),
+});
+
+/**
+ * Ligar um nome que uma fonte escreve a um espaço que já está no catálogo.
+ *
+ * É a primeira fila do painel que se fecha sem migração, e a razão está na
+ * 0117 e em `/admin/espacos`: um alias para um espaço que já existe é trabalho
+ * editorial, como aprovar uma submissão — faz-se aqui, fica em
+ * `admin_actions`, e o registo é a auditoria e a cópia de segurança da base.
+ * Criar o espaço continua a ser uma migração, e o painel diz como.
+ *
+ * Quem escreve é `set_venue_alias`: grava o alias, liga os eventos que estavam
+ * à espera do nome — no concelho do espaço, e nunca por cima de um `venue_id`
+ * trancado à mão — e deixa a linha de auditoria. Recusa um nome de um concelho
+ * a apontar a um espaço de outro, e a recusa volta como aviso.
+ *
+ * O concelho vem do formulário porque vem da fila: é o que a recolha viu para
+ * o evento. Com concelho, o alias fica preso a ele — a escolha segura, e a que
+ * ganha na resolução (0066). Sem concelho, é regional.
+ */
+export async function ligarSitio(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const lido = LIGAR_SITIO.safeParse({
+    normalized: formData.get('normalized'),
+    name: formData.get('name'),
+    municipality: formData.get('municipality') ?? '',
+    venue: formData.get('venue'),
+  });
+  if (!lido.success) {
+    const semEspaco = lido.error.issues.some((issue) => issue.path[0] === 'venue');
+    redirect(
+      comAviso(
+        ESPACOS,
+        semEspaco
+          ? 'Escolhe primeiro o espaço a que o nome pertence.'
+          : 'O formulário veio incompleto — recarrega a página e tenta outra vez.',
+      ),
+    );
+  }
+  const { normalized, name, municipality, venue } = lido.data;
+
+  // A chave da fila e o nome viajam os dois, e têm de ser o mesmo nome: o
+  // alias que a base grava é `normalize_for_hash(nome)`, e é essa chave que a
+  // pessoa viu na fila. Um formulário velho, ou mexido, não escreve um alias
+  // que não é o que se estava a ver.
+  if (normalizeForHash(name) !== normalized) {
+    redirect(comAviso(ESPACOS, 'O nome e a chave não batem certo — recarrega a página.'));
+  }
+
+  const { data, error } = await supabase.rpc('set_venue_alias', {
+    p_name: name,
+    p_venue_id: venue,
+    p_municipality_id: municipality || null,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(ESPACOS, error.message));
+
+  // Os eventos ligados mudam de ficha e de mapa, e o concelho, quando se sabe,
+  // afina a etiqueta. A fila é dinâmica, mas o router do cliente guarda a
+  // última resposta: invalidar o caminho é o que garante que a fila que se vê
+  // a seguir é a que a base tem.
+  invalidate(municipality || null);
+  revalidatePath(ESPACOS);
+
+  const n = typeof data === 'number' ? data : 0;
+  redirect(
+    comAviso(
+      ESPACOS,
+      n === 0
+        ? `«${name}» passou a ser «${venue}». Nenhum evento estava à espera; a próxima recolha já o conhece.`
+        : `«${name}» passou a ser «${venue}»: ${n} ${n === 1 ? 'evento ligado' : 'eventos ligados'}.`,
+    ),
+  );
+}
+
+/**
+ * «Não é um sítio»: tirar da fila um nome que nunca vai ser um espaço.
+ *
+ * Nada de público muda — a fila é só do painel —, por isso não há etiqueta de
+ * cache a invalidar. O histórico fica na tabela; o que muda é que o nome deixa
+ * de voltar todas as noites a pedir uma decisão que já foi tomada.
+ */
+export async function porSitioDeLado(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const lido = POR_DE_LADO.safeParse({ normalized: formData.get('normalized') });
+  if (!lido.success) redirect(comAviso(ESPACOS, 'Falta a chave do nome a pôr de lado.'));
+
+  const { error } = await supabase.rpc('dismiss_unresolved_venue', {
+    p_normalized: lido.data.normalized,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(ESPACOS, error.message));
+
+  revalidatePath(ESPACOS);
+  redirect(comAviso(ESPACOS, 'Posto de lado. Não volta à fila; o histórico fica.'));
+}
+
+const NOVA_REGIAO_CAMINHO = '/admin/regioes/nova';
+/** Um nome de anfitrião: etiquetas de letras, algarismos e hífenes, com pelo menos um ponto. */
+const ANFITRIAO = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+/** Um número decimal escrito à mão, com ou sem sinal. */
+const DECIMAL = /^-?\d+(\.\d+)?$/;
+
+/**
+ * O formulário de uma região nova. As mensagens são por campo e em português,
+ * porque um `safeParse` que falha diz «invalid_string» a quem escreveu o
+ * domínio com `https://` à frente — e o aviso tem de dizer o que corrigir.
+ */
+const NOVA_REGIAO = z.object({
+  id: z.string().trim().regex(IDENTIFICADOR),
+  name: z.string().trim().min(1).max(120),
+  article: z.enum(['o', 'a', 'os', 'as']),
+  cim_name: z.string().trim().min(1).max(200),
+  cim_url: z
+    .string()
+    .trim()
+    .url()
+    .regex(/^https?:\/\//),
+  domain: z.string().trim().toLowerCase().regex(ANFITRIAO),
+  contact_email: z.string().trim().email(),
+  // Em branco fica igual ao domínio — é assim que uma região nasce, e é o
+  // que o guia manda (0101). Um valor próprio tem a forma de um domínio.
+  ical_uid_domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .refine((valor) => valor === '' || ANFITRIAO.test(valor)),
+  district: z.string().trim().max(80),
+  // Com um erro, a lista volta ao formulário pela query de um
+  // redirecionamento: oito mil caracteres são uma centena de concelhos — a
+  // maior CIM do país tem dezanove — e cabem num `Location` em qualquer
+  // proxy; cinquenta mil não cabiam.
+  municipalities: z.string().max(8_000),
+});
+
+const AVISOS_DA_NOVA_REGIAO: Record<keyof z.infer<typeof NOVA_REGIAO>, string> = {
+  id: 'O identificador da região tem de ser um slug: minúsculas, algarismos e hífenes, a começar por letra ou algarismo.',
+  name: 'A região precisa de nome.',
+  article: 'O artigo do nome tem de ser «o», «a», «os» ou «as».',
+  cim_name: 'O promotor precisa de nome.',
+  cim_url: 'O endereço do promotor tem de ser um URL completo, com https://.',
+  domain:
+    'O domínio tem de ser um nome de anfitrião, como coreto.cimlt.pt — sem https:// nem barras.',
+  contact_email: 'O email da região tem de ser um endereço de email.',
+  ical_uid_domain:
+    'O domínio dos UID iCal tem de ser um nome de anfitrião, como o domínio — ou ficar em branco, para ser igual a ele.',
+  district: 'O distrito não pode ter mais de 80 caracteres.',
+  municipalities: 'A lista de concelhos é grande de mais para um formulário.',
+};
+
+interface ConcelhoNovo {
+  id: string;
+  name: string;
+  district: string;
+  latitude: number;
+  longitude: number;
+  website: string | null;
+}
+
+type ConcelhosLidos = { ok: true; concelhos: ConcelhoNovo[] } | { ok: false; erro: string };
+
+function recusaNaLinha(numero: number, razao: string): ConcelhosLidos {
+  return { ok: false, erro: `Linha ${numero} dos concelhos: ${razao}` };
+}
+
+/**
+ * A lista de concelhos, lida linha a linha: `slug | Nome | latitude |
+ * longitude | sítio`, com o sítio opcional e, em sexto, o distrito de um
+ * concelho que não é do distrito da região — a Azambuja é de Lisboa, mas a
+ * Lezíria é de Santarém, e o distrito é público («Concelho do distrito de…»).
+ *
+ * Tudo o que se recusa aqui recusa-se também na função da base, que é quem
+ * manda; a diferença é a frase, que nomeia a linha. Uma pessoa que escreveu
+ * trinta concelhos quer saber qual é o que tem a vírgula no sítio do ponto,
+ * não que «as coordenadas do concelho x não são números».
+ *
+ * As coordenadas plausíveis são as de Portugal inteiro, do Corvo a Bragança:
+ * não é uma validação da morada, é a rede que apanha a latitude e a
+ * longitude trocadas e o sinal da longitude esquecido — que são os enganos
+ * que acontecem, e que poriam um concelho no mar.
+ */
+function lerConcelhos(texto: string, distritoDaRegiao: string): ConcelhosLidos {
+  const concelhos: ConcelhoNovo[] = [];
+  const linhaDe = new Map<string, number>();
+
+  for (const [indice, bruta] of texto.split(/\r?\n/).entries()) {
+    const numero = indice + 1;
+    const linha = bruta.trim();
+    if (linha === '') continue;
+
+    const campos = linha.split('|').map((campo) => campo.trim());
+    if (campos.length < 4 || campos.length > 6) {
+      return recusaNaLinha(
+        numero,
+        `esperavam-se «slug | Nome | latitude | longitude | sítio», e ${
+          campos.length === 1 ? 'veio 1 campo' : `vieram ${campos.length} campos`
+        }.`,
+      );
+    }
+    const [id = '', name = '', lat = '', lon = '', website = '', distrito = ''] = campos;
+
+    if (!IDENTIFICADOR.test(id)) {
+      return recusaNaLinha(numero, `«${id}» não é um slug — minúsculas, algarismos e hífenes.`);
+    }
+    const repetida = linhaDe.get(id);
+    if (repetida !== undefined) {
+      return recusaNaLinha(numero, `o concelho «${id}» já apareceu na linha ${repetida}.`);
+    }
+    if (name === '') return recusaNaLinha(numero, 'falta o nome do concelho.');
+    if (!DECIMAL.test(lat) || !DECIMAL.test(lon)) {
+      return recusaNaLinha(
+        numero,
+        `as coordenadas têm de ser dois números decimais, como 39.2362 e -8.6850 (vieram «${lat}» e «${lon}»).`,
+      );
+    }
+    const latitude = Number(lat);
+    const longitude = Number(lon);
+    if (latitude < 32 || latitude > 43 || longitude < -32 || longitude > -6) {
+      return recusaNaLinha(
+        numero,
+        `as coordenadas (${lat}, ${lon}) não caem em Portugal — latitude e longitude trocadas, ou um sinal a menos?`,
+      );
+    }
+    if (website !== '' && !/^https?:\/\/\S+$/.test(website)) {
+      return recusaNaLinha(
+        numero,
+        `o sítio «${website}» tem de ser um URL completo, com https://.`,
+      );
+    }
+    const district = distrito || distritoDaRegiao;
+    if (district === '') {
+      return recusaNaLinha(
+        numero,
+        'falta o distrito — preenche o distrito da região, ou acrescenta-o à linha como sexto campo.',
+      );
+    }
+
+    linhaDe.set(id, numero);
+    concelhos.push({ id, name, district, latitude, longitude, website: website || null });
+  }
+
+  if (concelhos.length === 0) {
+    return { ok: false, erro: 'A região precisa de pelo menos um concelho — a lista veio vazia.' };
+  }
+  return { ok: true, concelhos };
+}
+
+/**
+ * De volta ao formulário, com o aviso e com o que a pessoa já tinha escrito.
+ *
+ * As outras ações voltam só com o aviso, e chega-lhes: são um campo ou dois.
+ * Aqui há trinta linhas de concelhos, e um erro na décima sétima não pode
+ * custar as outras vinte e nove. Os valores viajam na query e a página
+ * volta a pô-los nos campos — nada disto é pessoal nem secreto, é a
+ * configuração de uma região.
+ */
+function voltarAoFormulario(formData: FormData, aviso: string): never {
+  const params = new URLSearchParams();
+  for (const campo of Object.keys(NOVA_REGIAO.shape)) {
+    const valor = formData.get(campo);
+    if (typeof valor === 'string' && valor !== '') params.set(campo, valor);
+  }
+  redirect(comAviso(`${NOVA_REGIAO_CAMINHO}?${params.toString()}`, aviso));
+}
+
+/**
+ * Fazer nascer uma região a partir do painel.
+ *
+ * É a promessa do produto — «uma CIM nova entra sem um único commit» — sem o
+ * SQL editor que até aqui a cumpria. Quem escreve é `create_region`
+ * (migração 0121), e é ela que faz tudo de uma vez ou nada: a linha da
+ * região com a contagem e a caixa geográfica calculadas dos concelhos, os
+ * concelhos pela ordem da lista, e por concelho o espaço provisório e a fonte
+ * desligada que as schema-checks exigem — com a linha de auditoria. O que a
+ * função recusa volta como aviso, com o formulário preenchido.
+ *
+ * A validação daqui é a mesma da base, dita por linha: a base é quem manda,
+ * e o formulário é quem sabe em que linha a pessoa se enganou.
+ *
+ * Nasce ligada, como as regiões semeadas à mão, e vai direta à ficha: o que
+ * falta — prosa, logótipos, licença, e o domínio no Vercel e no DNS — está lá
+ * e no guia. Enquanto o DNS não resolve, ninguém chega à região sem lhe pôr o
+ * cabeçalho Host; ligada só quer dizer que o mapa dos domínios já a conhece.
+ */
+export async function criarRegiao(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const lido = NOVA_REGIAO.safeParse(
+    Object.fromEntries(
+      Object.keys(NOVA_REGIAO.shape).map((campo) => {
+        const valor = formData.get(campo);
+        return [campo, typeof valor === 'string' ? valor : ''];
+      }),
+    ),
+  );
+  if (!lido.success) {
+    const campo = String(lido.error.issues[0]?.path[0] ?? '');
+    voltarAoFormulario(
+      formData,
+      campo in AVISOS_DA_NOVA_REGIAO
+        ? AVISOS_DA_NOVA_REGIAO[campo as keyof typeof AVISOS_DA_NOVA_REGIAO]
+        : 'O formulário veio incompleto — recarrega a página e tenta outra vez.',
+    );
+  }
+  const dados = lido.data;
+
+  const lista = lerConcelhos(dados.municipalities, dados.district);
+  if (!lista.ok) voltarAoFormulario(formData, lista.erro);
+  const concelhos = lista.concelhos;
+
+  const { error } = await supabase.rpc('create_region', {
+    p_id: dados.id,
+    p_name: dados.name,
+    p_article: dados.article,
+    p_cim_name: dados.cim_name,
+    p_cim_url: dados.cim_url,
+    p_domain: dados.domain,
+    p_contact_email: dados.contact_email,
+    p_ical_uid_domain: dados.ical_uid_domain || dados.domain,
+    p_municipalities: concelhos,
+    p_actor: actor,
+  });
+  if (error) voltarAoFormulario(formData, error.message);
+
+  /*
+   * As regiões, porque o mapa dos domínios (`/api/regioes`) e o layout de
+   * cada região leem essa etiqueta — é por ela que o middleware passa a
+   * conhecer o domínio novo em cinco minutos, sem deploy. E o catálogo que
+   * nasceu com ela: os concelhos vivem na taxonomia, e o espaço e a fonte de
+   * cada um nas suas etiquetas. Tudo a fundo, que uma região nova é rara.
+   */
+  for (const tag of [
+    CACHE_TAGS.regions,
+    CACHE_TAGS.taxonomy,
+    CACHE_TAGS.venues,
+    CACHE_TAGS.sources,
+  ]) {
+    revalidateTag(tag, { expire: 0 });
+  }
+
+  const n = concelhos.length;
+  redirect(
+    comAviso(
+      `/admin/regioes/${encodeURIComponent(dados.id)}`,
+      `Região «${dados.name}» criada, com ${n} ${n === 1 ? 'concelho' : 'concelhos'} — cada um com um ` +
+        'espaço provisório e uma fonte desligada. O domínio no Vercel e no DNS é o passo seguinte ' +
+        'do guia docs/NOVA-CIM.md.',
+    ),
+  );
+}

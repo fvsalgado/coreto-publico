@@ -1,0 +1,58 @@
+name: Sondagem das fontes
+
+# Só à mão. Isto não é recolha: é o diagnóstico que se corre antes de escrever
+# um adaptador, para saber o que os sites servem de facto ao executor — e não
+# o que servem a uma máquina de desenvolvimento, cujo endereço de origem tem
+# outra reputação junto de um WAF.
+#
+# Não recebe segredo nenhum, de propósito. Só faz pedidos de leitura a páginas
+# públicas, e por isso pode correr antes de a infraestrutura estar ligada.
+on:
+  workflow_dispatch:
+    inputs:
+      pausa:
+        description: 'Segundos entre pedidos'
+        required: false
+        default: '2'
+
+permissions:
+  contents: read
+
+jobs:
+  sondar:
+    name: Sondar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sondar os endereços candidatos
+        env:
+          PAUSA: ${{ inputs.pausa }}
+        run: ./scripts/sondar-fontes.sh
+
+      # O corpo de cada resposta é o que falta a este repositório: uma página
+      # verdadeira contra a qual calibrar um seletor, em vez do HTML que o
+      # autor do teste imaginou. Sai como artefacto e não como commit — é obra
+      # de terceiros, e o que se versiona depois é só o mínimo necessário.
+      - name: Guardar o que veio
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sondagem-${{ github.run_id }}
+          path: sondagem/
+          retention-days: 14
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo '## Sondagem das fontes'
+            echo
+            echo '| id | tipo | código | bytes | conteúdo | servidor |'
+            echo '| --- | --- | --- | --- | --- | --- |'
+            tail -n +2 sondagem/resumo.tsv | while IFS=$'\t' read -r id tipo codigo bytes ctype servidor _; do
+              echo "| \`$id\` | $tipo | $codigo | $bytes | $ctype | $servidor |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

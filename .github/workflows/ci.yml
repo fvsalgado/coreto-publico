@@ -1,0 +1,507 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Uma execução por ramo. Um «push» novo torna a execução anterior irrelevante
+# antes de ela acabar, e deixá-la a correr só atrasa a que interessa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    name: Qualidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # A ação do gitleaks lê a lista de commits do PR para saber o que varrer, e
+    # sem `pull-requests: read` a API responde 403 «Resource not accessible by
+    # integration» — que foi como o varrimento falhou na primeira execução. O
+    # `permissions:` do topo do ficheiro dá só `contents: read`, e é para
+    # continuar assim: cada trabalho pede o que precisa e mais nada.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    # Os trabalhos pesados perguntam a este se vale a pena arrancarem. Ver o
+    # passo «Ver se a alteração é só documentação», no fim.
+    outputs:
+      so_documentacao: ${{ steps.mudancas.outputs.so_documentacao }}
+
+    steps:
+      # `fetch-depth: 0` por causa do varrimento de segredos, que é sobre a
+      # **história** e não sobre a árvore de trabalho: um segredo apagado num
+      # commit posterior continua no repositório de quem o clonar, e é esse que
+      # interessa apanhar. A história inteira deste repositório são três
+      # megabytes.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Era um trabalho só para si, que corria doze segundos e custava um
+      # minuto: a faturação do Actions arredonda **cada trabalho** para cima, e
+      # seis trabalhos em paralelo pagam seis arredondamentos. Como passo de um
+      # trabalho que já existia, custa o tempo que demora. A promessa do
+      # `SECURITY.md` — varrer em cada alteração, sem exceções — mantém-se
+      # inteira: o Qualidade corre em todos os eventos, e é o único que corre
+      # sempre.
+      #
+      # Gitleaks e não ggshield pela razão do costume: **nada aqui recebe
+      # segredos**, para o repositório poder ser bifurcado e o CI passar sem uma
+      # única chave. O ggshield precisa de `GITGUARDIAN_API_KEY` e falharia em
+      # todos os forks; o gitleaks corre local, sem conta e sem rede. O
+      # `.gitguardian.yaml` continua a valer para quem corra o ggshield à mão ou
+      # tenha a GitHub App ligada — são duas redes, não duas verdades.
+      #
+      # Sem `GITLEAKS_LICENSE`: é exigida a organizações, e este repositório é
+      # de uma conta pessoal. No dia em que passar para uma organização, o passo
+      # falha a dizer isso — que é melhor do que passar a verde sem varrer nada.
+      - name: Varrimento de segredos
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Sem comentários no PR: o passo a falhar já é o sinal, e um bot a
+          # escrever no PR precisaria de permissão de escrita — que é o que um
+          # varrimento de segredos não deve ter.
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+
+      # A versão do pnpm vem do campo «packageManager» do package.json, para
+      # não haver duas fontes de verdade a divergir em silêncio.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Nada aqui recebe segredos, e é de propósito: o sítio tem de compilar e
+      # os testes têm de passar num fork, sem base de dados e sem chaves. Se um
+      # dia algum destes passos precisar de um segredo para passar, o que se
+      # partiu foi a degradação graciosa — não o CI.
+      - name: Formatação
+        run: pnpm format:check
+
+      - name: Tipos
+        run: pnpm -r typecheck
+
+      - name: Análise estática
+        run: pnpm lint
+
+      - name: Testes
+        run: pnpm test
+
+      # Confere os números do `PROJETO.md` contra o repositório. Não precisa de
+      # segredos — é o que lhe permite estar aqui, ao lado das outras.
+      - name: Números do PROJETO.md
+        run: pnpm check:numeros
+
+      # O irmão do anterior, e aqui pela mesma razão: confronta cada afirmação
+      # pública com o ficheiro, o campo ou a rota que a sustenta, e falha
+      # nomeando ficheiro e linha. A família que precisa de um pedido a
+      # produção — cabeçalhos servidos, totais da API, códigos de estado —
+      # salta sem `AFIRMACOES_BASE`, e salta aqui de propósito: este trabalho
+      # corre sem rede e sem um único segredo, e é isso que o deixa passar num
+      # fork. Quem quiser medir a produção corre
+      # `AFIRMACOES_BASE=producao pnpm check:afirmacoes` à mão.
+      - name: Afirmações públicas
+        run: pnpm check:afirmacoes
+
+      - name: Compilação
+        run: pnpm build
+
+      # Uma alteração que só mexe em prosa não pode mudar o que os trabalhos
+      # pesados verificam: nenhum `.md` deste repositório entra na compilação —
+      # são documentação e mais nada. Quando é esse o caso, poupam-se os nove
+      # minutos faturados que Regiões e Auditorias custam juntos.
+      #
+      # Calculado aqui, e não dentro de cada trabalho pesado, para haver uma só
+      # definição de «só documentação» — e porque um trabalho que existisse só
+      # para responder a isto custava o minuto que se está a tentar poupar.
+      #
+      # Na dúvida corre-se tudo: sem PR, sem intervalo, ou sem ficheiros na
+      # diferença, a resposta é «não».
+      - name: Ver se a alteração é só documentação
+        id: mudancas
+        # Os SHA vão por ambiente e não interpolados no shell: um `${{ }}`
+        # dentro de um bloco de shell é o padrão que abre a porta a injeção,
+        # mesmo quando o valor é de confiança. O hábito vale mais do que o caso.
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          TOPO: ${{ github.event.pull_request.head.sha }}
+        run: |
+          responder() {
+            echo "Só documentação: $1"
+            echo "so_documentacao=$1" >> "${GITHUB_OUTPUT}"
+            exit 0
+          }
+
+          [ -n "${BASE}" ] && [ -n "${TOPO}" ] || responder nao
+
+          # Três pontos: a diferença desde o ponto em que o ramo saiu, e não
+          # contra a ponta de `main` — senão o que entrou em `main` entretanto
+          # contava como alteração deste PR. Se a comparação falhar por o que
+          # for, corre-se tudo.
+          ficheiros="$(git diff --name-only "${BASE}...${TOPO}")" || responder nao
+          [ -n "${ficheiros}" ] || responder nao
+
+          # `grep -v` sai a zero quando encontra **alguma** linha que não é
+          # documentação — que é exatamente a pergunta a fazer.
+          if printf '%s\n' "${ficheiros}" | grep -qvE '(^docs/|\.md$)'; then
+            responder nao
+          fi
+          responder sim
+
+  migracoes:
+    name: Migrações
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Sem palavra-passe, de propósito. A base existe durante o job, só
+          # aceita ligações da própria máquina e desaparece no fim; escrever
+          # aqui uma palavra-passe seria pôr num ficheiro versionado um
+          # literal com ar de segredo, que é coisa que este repositório não
+          # tem.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # O `psql` já vem na imagem do runner do Ubuntu. Este passo instalava-o
+      # à mesma, e um `apt-get update` inteiro custa quinze segundos a cada
+      # execução para não mudar nada. A guarda mantém o trabalho a funcionar
+      # no dia em que a imagem deixar de o trazer — e a dizê-lo alto, em vez
+      # de o job partir numa linha de `psql: command not found`.
+      - name: Garantir o cliente do PostgreSQL
+        run: |
+          if command -v psql >/dev/null 2>&1; then
+            psql --version
+          else
+            echo "::warning::O runner deixou de trazer o psql; a instalar."
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
+
+      # Aplica todas as migrações a uma base limpa, por ordem, e corre as
+      # asserções de `scripts/schema-checks.sql`. É o que garante que uma base
+      # de dados nova se reconstrói só a partir deste repositório — e o que
+      # apanha, entre outras coisas, um seed que deixe cair um concelho.
+      - name: Aplicar e verificar as migrações
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: ./scripts/verify-migrations.sh
+
+      # Sobre a mesma base, já migrada: semeia um registo de migrações torto
+      # como o que produção tinha e prova que `scripts/conciliar-registo.sh` o
+      # vê e o endireita. O registo é o que decide o que `aplicar-migracoes.sh`
+      # reaplica — um script que o conserta mal é pior do que nenhum.
+      - name: Ensaiar a conciliação do registo de migrações
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: ./scripts/conciliar-registo.test.sh
+
+      # A pergunta que nenhum dos outros portões pode fazer.
+      #
+      # Tudo o que está acima corre contra uma base **limpa**, e uma base
+      # limpa está sempre em dia por construção: o verde deste trabalho nunca
+      # disse nada sobre a base real. A 7 de setembro de 2026 isso custou duas
+      # vagas seguidas — o `main` levava a 0128 e a 0129, produção estava no
+      # 0127, e o `next build` da Vercel rebentava a pré-gerar as páginas com
+      # «column events.wheelchair_accessible_resolved does not exist». O sítio
+      # nunca esteve em baixo (a Vercel mantém o último build bom), e é isso
+      # que faz deste modo de falha um dos piores: tudo responde e nada é
+      # publicado, durante o tempo que ninguém levar a olhar para a consola.
+      #
+      # Nem o build de pré-visualização o via — o anfitrião de pré-visualização
+      # não é de região nenhuma e serve a montra, que não pede a agenda — nem a
+      # sonda externa, que pergunta se o sítio responde e ele responde, com o
+      # build de antes.
+      #
+      # Salta com aviso sem o segredo, como as outras verificações que precisam
+      # de produção: um fork não tem a base, e um trabalho que reprova por falta
+      # de credenciais é um trabalho que se aprende a ignorar.
+      - name: A base de produção tem o que este código vai pedir
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::warning::Sem BACKUP_DATABASE_URL — não dá para saber se produção está em dia com as migrações deste commit. Ver docs/INFRAESTRUTURA.md."
+            exit 0
+          fi
+          ./scripts/migracoes-por-aplicar.sh
+
+  regioes:
+    name: Regiões
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Só em PR, e só quando a alteração toca em código.
+    #
+    # O que este trabalho prova não muda entre o último commit de um PR e o
+    # merge desse PR: é a mesma árvore. Repetir a bateria inteira no push para
+    # `main` custava quinze minutos faturados por push para reconfirmar um verde
+    # de há minutos. O que guarda produção — Qualidade e Migrações — continua a
+    # correr nos dois eventos.
+    #
+    # `needs: qualidade` não é ordem por gosto: é onde se calcula se a alteração
+    # é só prosa. Traz de borla o que faltava — quando a formatação, os tipos,
+    # o lint ou os testes reprovam, os quatro minutos do Supabase efémero
+    # deixam de arder para dizer o que já se sabe. Custa ver este resultado
+    # dois minutos mais tarde.
+    needs: qualidade
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.qualidade.outputs.so_documentacao != 'sim'
+
+    # A versão executável da promessa comercial: a segunda CIM nasce com um
+    # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
+    # migrações E a região de prova (supabase/ci/9000_…), serve o sítio e
+    # bate-lhe à porta com dois cabeçalhos Host — o do Médio Tejo e o da
+    # região fictícia. `scripts/verificar-regioes.mjs` afirma que cada domínio
+    # serve a sua região, que nem uma letra de uma aparece na outra, e que a
+    # identidade de máquina (canónicos, sitemap, feeds, manifesto, widget) é a
+    # do domínio certo.
+    #
+    # Corre de propósito SEM `REGIAO_DE_OMISSAO`: essa variável é a escotilha
+    # que manda servir uma região aos anfitriões desconhecidos, e o que este
+    # job tem de provar é o comportamento por omissão — um Host que não é de
+    # ninguém vê a página do produto, nunca a agenda de uma CIM.
+    #
+    # Não recebe segredos, de propósito, como tudo aqui: a pilha local traz as
+    # suas chaves de demonstração e o job passa num fork tal e qual. É o mais
+    # pesado dos três — o arranque da pilha são dois minutos e meio dos quatro
+    # que custa — e corre em paralelo com o das auditorias.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # O `psql` já vem na imagem do runner do Ubuntu. Este passo instalava-o
+      # à mesma, e um `apt-get update` inteiro custa quinze segundos a cada
+      # execução para não mudar nada. A guarda mantém o trabalho a funcionar
+      # no dia em que a imagem deixar de o trazer — e a dizê-lo alto, em vez
+      # de o job partir numa linha de `psql: command not found`.
+      - name: Garantir o cliente do PostgreSQL
+        run: |
+          if command -v psql >/dev/null 2>&1; then
+            psql --version
+          else
+            echo "::warning::O runner deixou de trazer o psql; a instalar."
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends postgresql-client
+          fi
+
+      # O npx fixa a versão da CLI no próprio comando — a mesma que se usa em
+      # desenvolvimento, sem uma segunda fonte de verdade num action.
+      #
+      # **Guardar as imagens na cache do GitHub foi tentado e medido, e é
+      # pior.** Na execução 33870383712, no mesmo commit e nas duas pernas:
+      #
+      #   sem cache   puxar do registo          2m43s
+      #   com cache   restaurar 37s + docker load 3m28s + start 38s = 4m43s
+      #
+      # O `docker load` importa imagens inteiras e descomprimidas, uma a uma;
+      # o `docker pull` traz camadas em paralelo e em fluxo, direto do registo
+      # da AWS. A cache trocava a segunda coisa pela primeira, e ainda ocupava
+      # vários gigabytes da cota de 10 GB do repositório. Não repetir sem
+      # medir de novo.
+      #
+      # (O que fez os 16m33s de uma execução anterior foi um dia mau do
+      # runner, não este passo: na mesma semana o mesmo comando custou 9m32s e
+      # 2m43s, e o `pnpm/action-setup` oscilou entre 26s e 5m30s.)
+      #
+      # **Excluir serviços daqui foi tentado e parte tudo** — ver o porquê
+      # medido em `supabase/config.toml`, nas secções `[storage]` e `[auth]`.
+      - name: Levantar o Supabase local (migrações incluídas)
+        run: npx --yes supabase@2.40.7 start
+
+      - name: Semear a região de prova
+        run: |
+          DB_URL="$(npx --yes supabase@2.40.7 status -o env | grep '^DB_URL=' | sed -e 's/^DB_URL=//' -e 's/"//g')"
+          for ficheiro in supabase/ci/*.sql; do
+            echo "→ ${ficheiro} (só CI, nunca produção)"
+            psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f "${ficheiro}"
+          done
+
+      # O `status -o env` escreve os valores entre aspas; num $GITHUB_ENV as
+      # aspas fariam parte do valor, e uma chave com aspas dentro não abre
+      # porta nenhuma — daí o segundo sed.
+      - name: Guardar as credenciais locais
+        run: |
+          npx --yes supabase@2.40.7 status -o env | grep '^ANON_KEY=' \
+            | sed -e 's/^ANON_KEY=/NEXT_PUBLIC_SUPABASE_ANON_KEY=/' -e 's/"//g' >> "$GITHUB_ENV"
+          echo 'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321' >> "$GITHUB_ENV"
+
+      - name: Compilar com as duas regiões
+        run: pnpm --filter @coreto/web build
+
+      - name: Verificar as regiões no sítio a correr
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: |
+          pnpm --filter @coreto/web start --port 3000 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "${BASE_URL}/" \
+            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
+          node scripts/verificar-regioes.mjs
+
+  auditorias:
+    name: Auditorias do sítio
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Eram dois trabalhos — «Acessibilidade» e «Desempenho» — e faziam duas
+    # vezes exatamente o mesmo antes de medirem coisas diferentes: instalar
+    # dependências, instalar o Chromium, compilar com as mesmas variáveis e
+    # levantar o sítio. Um minuto e meio de trabalho idêntico por execução,
+    # mais um arredondamento de faturação, para preparar duas vezes a mesma
+    # página. Prepara-se uma vez e medem-se as duas.
+    #
+    # A razão de terem nascido separados continua de pé, e é por isso que o
+    # nome deste trabalho não é o de nenhuma delas: «uma falha de orçamento a
+    # aparecer sob o nome Acessibilidade é a melhor maneira de alguém desligar
+    # o que não devia». Cada medição é o seu passo, e é o nome do passo que
+    # aparece numa execução falhada — «Medir o desempenho» ou «Auditar a
+    # acessibilidade», nunca uma pela outra.
+    #
+    # Só em PR e só com código, pela razão escrita no trabalho anterior.
+    needs: qualidade
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.qualidade.outputs.so_documentacao != 'sim'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Sem CHROMIUM_PATH: aqui o navegador é o que o Playwright instala, e a
+      # versão bate certo com a biblioteca. A variável existe para as caixas de
+      # desenvolvimento onde já há um Chromium do sistema.
+      - name: Instalar o Chromium
+        run: npx playwright install --with-deps chromium
+
+      # As páginas de ficha existem a partir dos dados: sem credenciais de
+      # leitura, `/concelho/tomar` responde 404 porque o concelho não está lá.
+      # Vale a pena configurar `NEXT_PUBLIC_SUPABASE_URL` e
+      # `NEXT_PUBLIC_SUPABASE_ANON_KEY` nos segredos do repositório — são as
+      # credenciais públicas de leitura, as mesmas que o navegador de qualquer
+      # visitante recebe — para as auditorias cobrirem também essas páginas.
+      #
+      # Sem credenciais corre-se à mesma, sobre um catálogo vazio: na
+      # acessibilidade verifica-se a estrutura, que é onde vivem quase todas as
+      # falhas, e as rotas de ficha são saltadas com aviso; no desempenho os
+      # orçamentos são só tectos, e é por isto — um mínimo faria este trabalho
+      # reprovar em qualquer fork.
+      #
+      # Aviso e não falha, de propósito: o repositório tem de poder ser
+      # bifurcado e o CI passar sem um único segredo. Um trabalho que exige
+      # credenciais para arrancar é um trabalho que quem contribui de fora não
+      # consegue correr.
+      - name: Avisar quando as auditorias vão correr sem dados
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        run: |
+          if [ -z "${SUPABASE_URL}" ]; then
+            echo "::notice::Sem credenciais de leitura: as páginas de ficha ficam fora da auditoria e mede-se um catálogo vazio."
+          fi
+
+      # As auditorias batem ao sítio por endereço IP, e um IP não é o domínio de
+      # região nenhuma: sem `REGIAO_DE_OMISSAO` o middleware serve-lhe a página
+      # do produto na raiz e 404 em tudo o resto, e não haveria uma única página
+      # de região para auditar ou medir. É a escotilha que manda servir uma
+      # região aos anfitriões desconhecidos — ver `apps/web/src/lib/regiao-host.ts`.
+      # Vai na compilação e no servidor porque o valor entra tanto na
+      # pré-geração como no sítio a correr.
+      - name: Compilar
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+        run: pnpm build
+
+      # Um servidor lançado com `&` sobrevive ao fim do passo — o executor não
+      # mata o que ficou de fundo entre passos —, e é o que permite às duas
+      # medições seguintes partilharem este arranque. A espera fica aqui, para
+      # nenhuma delas começar a medir uma porta que ainda não abriu.
+      - name: Levantar o sítio
+        id: servidor
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          REGIAO_DE_OMISSAO: medio-tejo
+          BASE_URL: http://127.0.0.1:3000
+        run: |
+          pnpm --filter @coreto/web start --port 3000 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "${BASE_URL}/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "${BASE_URL}/" \
+            || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
+
+      # Este passo é o que sustenta a declaração de acessibilidade publicada em
+      # `/acessibilidade`. Uma declaração que ninguém verifica é uma promessa;
+      # isto torna-a um teste. Não leva `continue-on-error`: se falhar, a
+      # declaração deixou de ser verdade e o que se corrige é o sítio.
+      - name: Auditar a acessibilidade
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: pnpm check:a11y
+
+      # O README abre a dizer que o sítio é rápido, e nada o media. Aqui
+      # verificam-se as promessas que são função da compilação e não do humor do
+      # executor — o peso por rota, zero pedidos a terceiros, zero cookies, e o
+      # essencial a funcionar sem JavaScript. O TTFB e o LCP saem em
+      # `::notice::` e nunca reprovam.
+      #
+      # Corre mesmo quando a acessibilidade reprova: eram trabalhos paralelos e
+      # independentes, e passarem a ser dois passos do mesmo trabalho não pode
+      # fazer da primeira falha uma venda de olhos sobre a segunda. Preso ao
+      # arranque do servidor e não a `always()` — sem sítio a correr não há nada
+      # para medir, e a medição falharia a dizer o que o passo anterior já
+      # disse.
+      - name: Medir o desempenho
+        if: always() && steps.servidor.outcome == 'success'
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: pnpm check:desempenho

@@ -1,0 +1,83 @@
+name: Capturar fixtures
+
+# Só à mão, e separado da sondagem de propósito: esta escreve no repositório
+# e a outra não. Um diagnóstico de leitura e uma tarefa que faz commit não
+# devem partilhar as mesmas permissões.
+#
+# Continua a não precisar de segredo nenhum além do que o GitHub já dá ao
+# executor para empurrar um ramo.
+on:
+  workflow_dispatch:
+    inputs:
+      pausa:
+        description: 'Segundos entre pedidos'
+        required: false
+        default: '2'
+
+permissions:
+  contents: write
+
+jobs:
+  capturar:
+    name: Capturar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sondar
+        env:
+          PAUSA: ${{ inputs.pausa }}
+        run: ./scripts/sondar-fontes.sh
+
+      - name: Reduzir ao mínimo que serve de fixture
+        run: python3 scripts/extrair-fixtures.py
+
+      - name: Escrever o ramo
+        id: ramo
+        run: |
+          RAMO="fixtures/sondagem-${{ github.run_number }}"
+
+          if [ -z "$(git status --porcelain packages/ingest/src/__fixtures__)" ]; then
+            echo 'Nada mudou: as fixtures no ramo principal já descrevem o que os sites servem.'
+            echo "houve_alteracao=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # O commit fica em nome do executor, que é quem o faz. Não se assume
+          # a identidade de ninguém — e por isso a pré-visualização deste ramo
+          # vai ser recusada pelo Vercel, que é irrelevante: isto não muda o
+          # sítio. Ao fundir com merge commit, o autor passa a ser quem funde e
+          # a produção publica.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git checkout -b "$RAMO"
+          git add packages/ingest/src/__fixtures__
+          printf '%s\n' \
+            'Capturar as páginas que as câmaras servem hoje' \
+            '' \
+            'Saída de scripts/extrair-fixtures.py sobre a sondagem da execução' \
+            '${{ github.run_id }}. Reduzida aos blocos de evento: não é a' \
+            'página, e nenhuma imagem foi guardada.' > /tmp/mensagem
+          git commit --file=/tmp/mensagem
+
+          git push origin "$RAMO"
+          echo "houve_alteracao=true" >> "$GITHUB_OUTPUT"
+          echo "ramo=$RAMO" >> "$GITHUB_OUTPUT"
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo '## Captura de fixtures'
+            echo
+            if [ '${{ steps.ramo.outputs.houve_alteracao }}' = 'true' ]; then
+              echo "Ramo escrito: \`${{ steps.ramo.outputs.ramo }}\`"
+            else
+              echo 'Nada mudou desde a última captura.'
+            fi
+            echo
+            ls -la packages/ingest/src/__fixtures__ 2>/dev/null || echo 'sem fixtures'
+          } >> "$GITHUB_STEP_SUMMARY"

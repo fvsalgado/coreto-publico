@@ -1,0 +1,41 @@
+{
+  "name": "coreto",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Coreto — agendas culturais regionais: um só código, uma região por domínio",
+  "license": "AGPL-3.0-only",
+  "author": "Fábio Salgado (https://salgado.zip)",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @coreto/web dev",
+    "build": "pnpm -r --filter './packages/*' build && pnpm --filter @coreto/web build",
+    "lint": "pnpm -r --parallel lint && eslint scripts",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "ingest": "pnpm --filter @coreto/ingest start",
+    "check:a11y": "node scripts/check-a11y.mjs",
+    "check:a11y:admin": "node scripts/check-a11y-admin.mjs",
+    "check:migrations": "./scripts/verify-migrations.sh",
+    "check:numeros": "node scripts/verificar-numeros.mjs",
+    "check:afirmacoes": "node scripts/verificar-afirmacoes.mjs",
+    "check:desempenho": "node scripts/check-desempenho.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
+    "playwright": "^1.62.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.0"
+  }
+}
