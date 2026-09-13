@@ -140,7 +140,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description,
     alternates: {
       canonical: path,
-      types: { 'text/calendar': eventCalendarPath(event.slug) },
+      // O arquivo não anuncia calendário: a rota do `.ics` recusa um evento que
+      // já aconteceu (0132), e anunciar aqui um endereço que responde 404 era
+      // mandar um leitor de metadados a uma porta fechada.
+      ...(event.status === 'published'
+        ? { types: { 'text/calendar': eventCalendarPath(event.slug) } }
+        : {}),
     },
     openGraph: {
       type: 'article',
@@ -250,6 +255,15 @@ export default async function EventPage({ params }: Props) {
   const updatedAt = lisbonDate(event.updated_at);
   const originLabel = ORIGIN_LABELS[event.origin] ?? 'Origem por identificar';
   const calendarHref = eventCalendarPath(event.slug);
+  /*
+   * Do **estado**, e não da data.
+   *
+   * A base aceita um arquivado com data futura — há um hoje, o trail de Fátima
+   * de outubro — e derivar isto da data fazia a ficha mentir nos dois sentidos:
+   * um arquivo a oferecer calendário, ou um evento por acontecer com uma faixa
+   * a dizer que já foi. O que decide é o que a recolha escreveu.
+   */
+  const jaAconteceu = event.status === 'archived';
   const origem = urlDoSitio(regiao, SITE_URL);
 
   return (
@@ -257,6 +271,7 @@ export default async function EventPage({ params }: Props) {
       <AnalyticsEventTracker eventId={event.id} />
       <EventStructuredData
         event={event}
+        jaAconteceu={jaAconteceu}
         url={`${origem}/evento/${event.slug}`}
         origem={origem}
         municipality={municipality}
@@ -290,6 +305,23 @@ export default async function EventPage({ params }: Props) {
             </>
           ) : null}
         </p>
+
+        {/*
+          O registo diz que é um registo, e diz porquê a data acima não é um
+          convite. Fica logo abaixo do título e da data porque é isso que muda
+          o sentido das duas linhas de cima — pô-lo no fim da página era deixar
+          alguém ler a data e fechar a página a pensar que ainda vai a tempo.
+        */}
+        {jaAconteceu ? (
+          <p className="mt-3 rounded border border-border bg-surface px-3 py-2 text-sm">
+            <strong className="font-medium">Já aconteceu.</strong> Esta página é o registo do que
+            houve, e não um convite: a data acima é a que a fonte deu. O que está para vir está na{' '}
+            <Link href="/agenda" className="underline underline-offset-4">
+              agenda
+            </Link>
+            .
+          </p>
+        ) : null}
 
         {cycle ? (
           <p className="mt-2 text-sm text-muted">
@@ -454,13 +486,15 @@ export default async function EventPage({ params }: Props) {
             Página oficial ↗
           </a>
         ) : null}
-        <a
-          href={calendarHref}
-          data-stat-kind="ical_download"
-          className="inline-flex min-h-11 items-center rounded border border-border bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline"
-        >
-          Adicionar ao calendário
-        </a>
+        {jaAconteceu ? null : (
+          <a
+            href={calendarHref}
+            data-stat-kind="ical_download"
+            className="inline-flex min-h-11 items-center rounded border border-border bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline"
+          >
+            Adicionar ao calendário
+          </a>
+        )}
         <AnalyticsShareButton
           eventId={event.id}
           title={event.title}

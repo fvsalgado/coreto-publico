@@ -72,9 +72,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * Um evento de um ciclo, no cartão que ele pode ter.
  *
  * Não é o `EventCard` da agenda, e a diferença é toda numa linha: o que já
- * passou não tem ficha no Coreto — o arquivo é legível, mas não é navegável —
- * e por isso o título leva à página oficial de onde o evento veio. Quem ainda
- * está por acontecer leva à sua ficha, como em todo o lado.
+ * passou leva o título à página oficial de onde o evento veio, e o que está
+ * por acontecer leva à sua ficha, como em todo o lado.
+ *
+ * **A razão que aqui estava escrita já não é verdade.** Dizia «o que já passou
+ * não tem ficha no Coreto — o arquivo é legível, mas não é navegável», e a
+ * 0132 inverteu-o: o registo do que aconteceu abre no seu endereço de sempre.
+ * O que fica de pé é uma escolha por fazer — mandar quem clica para a ficha do
+ * Coreto ou para a página da fonte —, e ela muda-se numa linha quando alguém a
+ * decidir. Fica escrita como escolha, para não voltar a ler-se como limitação.
+ *
+ * Repare-se, para quem lá for: quando `source_url` é nulo este ramo deixa o
+ * título sem ligação nenhuma. A ficha resolveria esse beco.
  */
 function CartaoDoCiclo({
   event,

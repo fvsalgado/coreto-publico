@@ -51,6 +51,7 @@ interface EventProps {
   venue: Venue | null;
   cycle: { id: string; name: string } | null;
   regiao: Regiao;
+  jaAconteceu?: boolean;
 }
 
 export function EventStructuredData({
@@ -61,6 +62,7 @@ export function EventStructuredData({
   venue,
   cycle,
   regiao,
+  jaAconteceu,
 }: EventProps) {
   const dados = construirEvento({
     evento: event,
@@ -70,6 +72,7 @@ export function EventStructuredData({
     espaco: venue,
     ciclo: cycle,
     regiao,
+    jaAconteceu,
   });
   if (!dados) return null;
   return <JsonLdScript data={dados} />;

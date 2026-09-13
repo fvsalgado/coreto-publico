@@ -364,7 +364,26 @@ async function fetchEvent(regiao: string, slug: string): Promise<EventDetail | n
     .select(`${DETAIL_EVENT_FIELDS}, municipalities!inner()`)
     .eq('municipalities.region_id', regiao)
     .eq('slug', slug)
-    .eq('status', 'published')
+    /*
+     * O que está publicado, **e** o que foi arquivado por ter acontecido.
+     *
+     * Esta linha dizia `.eq('status', 'published')`, e era ela — e não a
+     * política da base — que fazia 404 a todas as fichas do arquivo. A política
+     * deixa passar o registo do que houve desde a 0064; uma consulta que exclui
+     * nunca chega a perguntar se podia incluir, e assim ficou sessenta e seis
+     * migrações.
+     *
+     * O recorte escreve-se aqui **e** na política, de propósito: é o que as
+     * listagens já fazem (linhas 117-118 e 336-337), e uma consulta que confia
+     * só no RLS alarga-se sozinha no dia em que alguém somar uma política.
+     *
+     * O `is_canonical` faltava a esta função e está em todas as outras. Corrige
+     * zero fichas hoje — os 194 publicados são todos canónicos — e é o que
+     * trava o duplicado arquivado na próxima desduplicação, porque a
+     * `reconcile_source_events` escreve 'passado' sem olhar à canonicidade.
+     */
+    .or('status.eq.published,and(status.eq.archived,archived_reason.eq.passado)')
+    .eq('is_canonical', true)
     .maybeSingle();
 
   // **Propaga o erro, mas não a ausência.** As duas situações davam `null`, e
@@ -704,8 +723,9 @@ export const listSeries = unstable_cache(
  * aconteceu continua a ser o melhor argumento para a próxima. Quem decide o
  * que sai daqui não é este ficheiro — é a política de leitura da base, que
  * deixa passar os eventos arquivados só quando foram arquivados por terem
- * acontecido e pertencem a um ciclo com nome (migração 0064). O que foi
- * arquivado por estar errado continua invisível, se se pedir ou não.
+ * acontecido e são canónicos (migração 0132; até lá pedia-se também um ciclo
+ * com nome, que era a 0064 escrita para o CAMINHOS). O que foi arquivado por
+ * estar errado continua invisível, se se pedir ou não.
  */
 async function fetchSeriesEvents(seriesId: string): Promise<SeriesEvent[]> {
   const supabase = publicClient();

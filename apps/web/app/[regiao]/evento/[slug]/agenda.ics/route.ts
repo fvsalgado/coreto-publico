@@ -35,6 +35,21 @@ export async function GET(
   const event = await getEvent(regiao.id, slug);
   if (!event) return feedNotFound('Evento não encontrado.');
 
+  /*
+   * O arquivo abre a ficha e não abre o calendário.
+   *
+   * Esta rota é a única que alargou sozinha com a 0132: chama o `getEvent`
+   * diretamente, e no dia em que ele passou a devolver o arquivo passou a
+   * escrever compromissos em abril para quem os pedisse. Ninguém quer um
+   * lembrete de uma coisa que já se fez.
+   *
+   * A ficha desse evento continua a responder 200 — é o registo do que houve.
+   * O que não se serve é o convite.
+   */
+  if (event.status !== 'published') {
+    return feedNotFound('Este evento já aconteceu. A ficha continua a abrir.');
+  }
+
   const feedContext = await loadEventContext(regiao, event);
   const calendar = buildCalendar(toCalendarEntries([event], feedContext), {
     name: event.title,

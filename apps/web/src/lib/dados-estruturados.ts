@@ -160,6 +160,16 @@ function quandoComecaEAcaba(evento: EventDetail): { inicio: string; fim?: string
  * 5: anunciar o mínimo como se fosse o preço é o género de verdade parcial que
  * leva alguém à bilheteira com metade do dinheiro. Sem preço nenhum não sai
  * oferta nenhuma.
+ *
+ * **E nenhuma de um evento que já aconteceu.** Toda a oferta daqui leva
+ * `availability: InStock`, que é uma afirmação sobre **agora**: «isto está à
+ * venda». Num registo de arquivo é falsa, e é o género de falsidade que um
+ * motor de busca repete numa caixa de resultados com um preço ao lado. Ver
+ * `construirEvento`.
+ *
+ * O `isAccessibleForFree` fica, e a diferença é essa mesma: «a entrada era
+ * livre» é um facto sobre o que houve, e continua verdadeiro depois de
+ * acontecer. «Está disponível» não.
  */
 function oferta(evento: EventDetail, url: string): JsonLdValue | undefined {
   const onde = evento.ticketing_url ?? evento.source_url ?? url;
@@ -299,6 +309,8 @@ interface ArgumentosDoEvento {
   espaco: Venue | null;
   ciclo: { id: string; name: string } | null;
   regiao: Regiao;
+  /** Um registo de arquivo não anuncia bilhetes à venda — ver `oferta`. */
+  jaAconteceu?: boolean;
 }
 
 export function construirEvento({
@@ -309,6 +321,7 @@ export function construirEvento({
   espaco,
   ciclo,
   regiao,
+  jaAconteceu = false,
 }: ArgumentosDoEvento): JsonLdValue | null {
   const quando = quandoComecaEAcaba(evento);
   if (!quando) return null;
@@ -353,7 +366,7 @@ export function construirEvento({
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     isAccessibleForFree: entradaLivre(evento),
     location: lugar,
-    offers: oferta(evento, url),
+    offers: jaAconteceu ? undefined : oferta(evento, url),
     // Não há `organizer`: a base não guarda quem organiza, e o espaço onde uma
     // coisa acontece não é quem a faz. Volta quando houver coluna para isso.
     superEvent: ciclo

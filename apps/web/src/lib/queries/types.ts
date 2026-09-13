@@ -74,6 +74,8 @@ export interface EventSession {
 }
 
 export interface EventDetail extends EventCard {
+  /** `published` ou `archived` — ver `DETAIL_EVENT_FIELDS` e a migração 0132. */
+  status: string;
   subtitle: string | null;
   description: string | null;
   location_address: string | null;
