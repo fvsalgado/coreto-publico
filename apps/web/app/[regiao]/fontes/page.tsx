@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { FALHAS_ATE_PAUSA, HORAS_EM_PAUSA } from '@coreto/core';
+import { FALHAS_ATE_PAUSA, HORAS_EM_PAUSA, USER_AGENT } from '@coreto/core';
 import { PageHeader } from '@/src/components/PageHeader';
 import { avaliarRecolha, fraseDaFonte } from '@/src/lib/estado';
 import { formatLongDate } from '@/src/lib/format';
@@ -453,6 +453,133 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
             estar errado, por ser duplicado ou por ter desaparecido da fonte não volta a ver-se.
           </p>
         </div>
+      </section>
+
+      {/*
+       * A secção para quem está do outro lado do fio.
+       *
+       * Esta página é o endereço que o agente da recolha traz dentro de si, e
+       * até aqui não dizia nada a quem segue esse endereço. Quem o segue não
+       * vem propor uma fonte: vem de um registo de acessos, com uma linha que
+       * não reconhece, a decidir se aquilo se bloqueia.
+       *
+       * Deixou de ser hipótese. A 12 e 13 de setembro de 2026, oito fontes do
+       * Médio Tejo calaram-se ao mesmo tempo — e as oito resolvem para a mesma
+       * máquina. Do executor do GitHub Actions a ligação morre com
+       * `ECONNRESET`; de uma ligação móvel portuguesa o mesmo endereço abre.
+       * É bloqueio por origem, e a casa não lhe dá a volta. O que resta é
+       * pedir — e um pedido vale mais se a página que o agente aponta
+       * responder às perguntas de quem o recebe, em vez de só falar para
+       * quem quer acrescentar uma agenda.
+       *
+       * A linha do agente é lida de `@coreto/core` e não escrita aqui: quem
+       * for confrontá-la com os registos dele tem de encontrar carácter a
+       * carácter o que esta página lhe promete.
+       */}
+      <section aria-labelledby="registos" className="mt-12 border-t border-border pt-8">
+        <h2 id="registos" className="ct-heading">
+          Encontrou-nos nos registos do seu servidor
+        </h2>
+        <p className="mt-3 max-w-2xl text-muted">
+          Se administra o sítio de uma câmara, de uma junta ou de uma sala desta região, é provável
+          que tenha chegado aqui por esta linha — é ela que trazemos em cada pedido, e é por ela que
+          nos encontra:
+        </p>
+        {/*
+         * Quebra a linha, não a põe a deslocar.
+         *
+         * Esteve aqui `overflow-x-auto`, que é o que a casa usa nas tabelas e
+         * nos blocos de código do `/levar`. O `axe` recusou-o, e com razão:
+         * `scrollable-region-focusable`, no telemóvel e só no telemóvel, que é
+         * a largura onde estes 76 caracteres transbordam. Uma região que se
+         * desloca tem de se alcançar pelo teclado.
+         *
+         * O remédio da casa nesses outros sítios é `tabIndex={0}`, e aqui
+         * seria pior do que a doença. Isto é uma linha, não uma tabela: quem a
+         * lê está a compará-la, caractere a caractere, com o que tem nos
+         * registos do servidor dele — e mandá-lo arrastar na horizontal, num
+         * telemóvel, para ver o resto de uma cadeia que tem de conferir, é
+         * dar-lhe uma paragem de teclado em vez de lhe dar a linha. `break-all`
+         * mostra-a inteira de uma vez, e a seleção para copiar continua a
+         * trazer a cadeia sem as quebras que só existem no ecrã.
+         */}
+        <p className="mt-3 max-w-2xl rounded border border-border bg-surface px-3 py-2 font-mono text-sm break-all">
+          {USER_AGENT}
+        </p>
+        <dl className="mt-5 max-w-2xl space-y-4">
+          <div className="border-b border-border pb-4">
+            <dt className="font-semibold">O que fazemos</dt>
+            <dd className="mt-1.5 text-muted">
+              Uma vez por dia lemos a página da agenda — o endereço, ou os poucos endereços de
+              listagem, que estão escritos na configuração desta fonte, nunca descobertos por
+              varrimento — e seguimos a ligação de cada evento para a ficha dele, que é onde estão a
+              data, a hora e o local. Mais nada: não percorremos o resto do sítio, não adivinhamos
+              endereços, não procuramos ficheiros. Um pedido de cada vez, com pelo menos um segundo
+              entre pedidos ao mesmo servidor. As imagens não são copiadas — continuam a ser
+              servidas por si, a partir do seu endereço.
+            </dd>
+          </div>
+          <div className="border-b border-border pb-4">
+            <dt className="font-semibold">Para que serve</dt>
+            <dd className="mt-1.5 text-muted">
+              Para que o que a sua casa programa apareça numa agenda da região, com o nome da fonte
+              e uma ligação de volta à sua página. Não há publicidade, não se revende o conteúdo, e
+              cada evento diz de onde veio.
+            </dd>
+          </div>
+          <div className="border-b border-border pb-4">
+            <dt className="font-semibold">Se quiser que abrandemos, ou que paremos</dt>
+            <dd className="mt-1.5 text-muted">
+              Escreva{' '}
+              {EMAIL ? (
+                <a
+                  href={`mailto:${EMAIL}?subject=${encodeURIComponent('Recolha do Coreto')}`}
+                  className="font-medium underline underline-offset-4"
+                >
+                  {EMAIL}
+                </a>
+              ) : (
+                'à equipa'
+              )}{' '}
+              e diga o domínio: desligamos a fonte no mesmo dia, ou espaçamos a leitura para o ritmo
+              que lhe servir. Não é preciso justificar.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold">Se já nos bloqueou</dt>
+            <dd className="mt-1.5 text-muted">
+              Fica bloqueado. Não trocamos de agente, não usamos intermediários e não voltamos a
+              bater de outra morada para contornar a regra — contornar um controlo de acesso não é
+              recolha. Se o bloqueio foi para travar um robô a mais e não a nós, basta dizer-nos.
+            </dd>
+          </div>
+        </dl>
+        {/*
+         * O `robots.txt` diz-se em falta, e não se finge cumprido.
+         *
+         * A recolha não lê o `robots.txt` de ninguém — verificado no pacote
+         * `@coreto/ingest`, onde não existe uma linha sobre isso. Um agente
+         * bem-comportado costuma lê-lo, e quem lê esta página assume que sim.
+         * Deixar a suposição de pé seria a frase falsa mais fácil de escrever
+         * desta página inteira: ninguém precisava de a escrever para ela
+         * enganar.
+         *
+         * Passar a cumpri-lo não é um remendo, é uma decisão de produto com
+         * um custo por medir — há portais municipais cujo `robots.txt` proíbe
+         * tudo o que não seja um motor de busca, e ligá-lo sem contar podia
+         * desligar fontes legítimas, já acordadas, numa noite e em silêncio.
+         * Essa decisão é do dono; está escrita como tal em
+         * `docs/O-QUE-FALTA-AO-DONO.md`. Até lá a página diz o que é verdade.
+         */}
+        <p className="mt-5 max-w-2xl text-muted">
+          <strong className="font-semibold text-fg">
+            Ainda não lemos o seu <code>robots.txt</code>.
+          </strong>{' '}
+          As fontes desta agenda são escolhidas e configuradas uma a uma, não por varrimento, e a
+          recolha não vai lá buscar regras — por isso não lhe prometemos que uma regra escrita aí
+          nos chegue. Para nos dizer que não, o caminho que funciona é o email acima, e funciona no
+          mesmo dia.
+        </p>
       </section>
 
       {/*
