@@ -716,6 +716,34 @@ export const listSeries = unstable_cache(
 );
 
 /**
+ * Os ciclos de todas as regiões, para a fila de moderação.
+ *
+ * Par de `listVenuesDeTodas`, e pela mesma razão: a fila é transversal — uma
+ * submissão de outra CIM chega à mesma página —, e o `listSeries` acima é
+ * recortado por região. Quem moderasse veria os ciclos errados, ou nenhum.
+ *
+ * O `region_id` vem para poder agrupar as opções: há catorze ciclos em duas
+ * regiões, e uma lista lisa convida a pôr um evento de Ourém dentro do ciclo de
+ * outra comunidade intermunicipal. Um `select` que agrupa não impede o erro,
+ * mas mostra-o antes de ele acontecer.
+ */
+export const listSeriesDeTodas = unstable_cache(
+  async (): Promise<Array<{ id: string; name: string; region_id: string }>> => {
+    const supabase = publicClient();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('series')
+      .select('id, name, region_id')
+      .order('region_id')
+      .order('name');
+    exigirLeitura('listSeriesDeTodas', error);
+    return (data ?? []) as unknown as Array<{ id: string; name: string; region_id: string }>;
+  },
+  ['series-todas'],
+  { tags: [CACHE_TAGS.taxonomy], revalidate: REVALIDATE_SECONDS },
+);
+
+/**
  * Os eventos de um ciclo — os que vêm aí e os que já passaram.
  *
  * É a única consulta desta casa que não filtra por `status = 'published'`, e é
