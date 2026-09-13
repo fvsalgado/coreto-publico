@@ -311,7 +311,10 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
       { campo: 'visitas_por_concelho.partilhas', conta: 'Partilhas a partir da ficha.' },
       {
         campo: 'visitas_por_concelho.cliques',
-        conta: 'Cliques na ligação para a página oficial do evento.',
+        conta:
+          'A soma das três colunas anteriores — bilhética, calendário e partilhas. É uma coluna gerada na base, e não uma contagem própria.',
+        naoConta:
+          'Não são cliques na ligação para a página oficial: essa ligação não é contada. E não se soma às outras três num total, porque **é** essa soma.',
       },
     ],
   },
