@@ -1,5 +1,6 @@
 import 'server-only';
 import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
+import { reportarErro } from '../registo';
 import { requireAdminClient } from '../supabase/server';
 
 /**
@@ -284,12 +285,60 @@ export interface AdminAction {
   after: unknown;
 }
 
-export async function listAdminActions(page: number, perPage = 50): Promise<AdminAction[]> {
+/**
+ * Os recortes da auditoria.
+ *
+ * Cinquenta linhas por página e quinze mil ações por ano fazem da auditoria um
+ * sítio onde só se encontra o que aconteceu esta manhã. Quem a abre tem sempre
+ * uma pergunta concreta — «o que é que o João mexeu em agosto?», «quem aprovou
+ * submissões?» — e essa pergunta responde-se com quatro recortes.
+ *
+ * `mes` é `AAAA-MM`; qualquer outra coisa é ignorada em vez de rebentar, porque
+ * o que entra aqui vem da barra de endereços.
+ */
+export interface RecorteDaAuditoria {
+  actor?: string;
+  action?: string;
+  entityType?: string;
+  mes?: string;
+}
+
+/** As opções que os recortes oferecem, lidas do que existe mesmo na base. */
+export interface OpcoesDaAuditoria {
+  actors: string[];
+  actions: string[];
+  entityTypes: string[];
+}
+
+const MES = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** O primeiro dia do mês seguinte, para o intervalo ser meio-aberto. */
+function mesSeguinte(mes: string): string {
+  const [ano, numero] = mes.split('-').map(Number);
+  return numero === 12
+    ? `${(ano ?? 0) + 1}-01-01`
+    : `${ano}-${String((numero ?? 0) + 1).padStart(2, '0')}-01`;
+}
+
+export async function listAdminActions(
+  page: number,
+  perPage = 50,
+  recorte: RecorteDaAuditoria = {},
+): Promise<AdminAction[]> {
   const supabase = requireAdminClient();
   const from = (page - 1) * perPage;
-  const { data, error } = await supabase
+  let query = supabase
     .from('admin_actions')
-    .select('id, actor, action, entity_type, entity_id, created_at, before, after')
+    .select('id, actor, action, entity_type, entity_id, created_at, before, after');
+
+  if (recorte.actor) query = query.eq('actor', recorte.actor);
+  if (recorte.action) query = query.eq('action', recorte.action);
+  if (recorte.entityType) query = query.eq('entity_type', recorte.entityType);
+  if (recorte.mes && MES.test(recorte.mes)) {
+    query = query.gte('created_at', `${recorte.mes}-01`).lt('created_at', mesSeguinte(recorte.mes));
+  }
+
+  const { data, error } = await query
     .order('id', { ascending: false })
     .range(from, from + perPage - 1);
 
@@ -308,6 +357,47 @@ export async function listAdminActions(page: number, perPage = 50): Promise<Admi
   if (error && ehPaginaAlemDoFim(error)) return [];
   exigirLeitura('listAdminActions', error);
   return (data ?? []) as unknown as AdminAction[];
+}
+
+/**
+ * As opções dos recortes, lidas do que a base tem mesmo.
+ *
+ * Escritas à mão ficavam desatualizadas no dia em que uma função nova
+ * registasse uma ação com outro nome — e um filtro que não oferece o que
+ * existe é pior do que filtro nenhum, porque parece completo.
+ *
+ * Lê um tecto de linhas em vez da tabela inteira: o que interessa é oferecer o
+ * que se usa, e o que se usa aparece nas mais recentes.
+ */
+export async function opcoesDaAuditoria(limite = 2000): Promise<OpcoesDaAuditoria> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('admin_actions')
+    .select('actor, action, entity_type')
+    .order('id', { ascending: false })
+    .limit(limite);
+
+  if (error) {
+    // Sem as opções, os recortes ficam vazios e a lista continua a servir —
+    // que é o comportamento certo: a auditoria responde a «quem fez o quê»
+    // mesmo sem filtros, e não responde a nada se a página rebentar.
+    reportarErro('opcoesDaAuditoria', error);
+    return { actors: [], actions: [], entityTypes: [] };
+  }
+
+  const linhas = (data ?? []) as unknown as Array<{
+    actor: string;
+    action: string;
+    entity_type: string;
+  }>;
+  const unicos = (valores: string[]) =>
+    [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'pt'));
+
+  return {
+    actors: unicos(linhas.map((l) => l.actor)),
+    actions: unicos(linhas.map((l) => l.action)),
+    entityTypes: unicos(linhas.map((l) => l.entity_type)),
+  };
 }
 
 export interface AdminEventRow {
