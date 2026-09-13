@@ -1050,6 +1050,57 @@ end
 $$;
 rollback;
 
+-- ---- Os tipos de fonte descrevem o território (0135/0136) ----
+--
+-- As asserções da 0136 correram uma vez, antes de a região de prova existir.
+-- Estas correm depois de tudo, e é aqui que a segunda CIM do CI é obrigada às
+-- mesmas regras da primeira — que é a única razão por que a região de prova
+-- existe.
+do
+$$
+declare
+  n integer;
+  v_lista text;
+begin
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources
+   where (id like 'jf-%' or id like 'uf-%') and kind is distinct from 'parish_site';
+  assert n = 0, format('fontes com id de junta que não são parish_site: %s', v_lista);
+
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources
+   where kind = 'parish_site' and id not like 'jf-%' and id not like 'uf-%';
+  assert n = 0, format('fontes marcadas como junta sem o id de uma: %s', v_lista);
+
+  -- Uma fonte de junta não tem espaço: uma junta é uma instituição, não uma
+  -- sala. É a diferença que justifica o `parish_site` existir.
+  select count(*), string_agg(id, ', ' order by id) into n, v_lista
+    from public.sources where kind = 'parish_site' and venue_id is not null;
+  assert n = 0, format('fontes de junta com espaço: %s', v_lista);
+
+  -- O denominador, em toda a região completa que não seja a montra.
+  select count(*), string_agg(m.id, ', ' order by m.id) into n, v_lista
+    from public.municipalities m
+    join public.regions r on r.id = m.region_id
+   where m.parish_count is null
+     and r.kind <> 'montra'
+     and r.expected_municipality_count =
+         (select count(*) from public.municipalities x where x.region_id = r.id);
+  assert n = 0,
+    format('concelhos sem freguesias contadas numa região que se declara completa: %s — '
+           'ver docs/NOVA-CIM.md', v_lista);
+
+  -- E o numerador nunca pode passar o denominador: mais juntas ligadas do que
+  -- freguesias existem é a fração a dizer que 27 de 84 são 27 de 84 mais uma.
+  select count(*), string_agg(m.id, ', ' order by m.id) into n, v_lista
+    from public.municipalities m
+   where m.parish_count is not null
+     and (select count(*) from public.sources s
+           where s.kind = 'parish_site' and s.municipality_id = m.id) > m.parish_count;
+  assert n = 0, format('concelhos com mais juntas ligadas do que freguesias: %s', v_lista);
+end
+$$;
+
 -- ---- Nada de `security definer` ao alcance de quem não é a chave de serviço ----
 --
 -- A regra está escrita desde a 0007 e nunca esteve verificada: lá, oito funções

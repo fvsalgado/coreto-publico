@@ -73,6 +73,45 @@ function agrupar(sources: PublicSource[]): { ligadas: PublicSource[]; desligadas
   };
 }
 
+/**
+ * As agendas de um concelho, por quem as publica.
+ *
+ * Aqui esteve uma lista só, ordenada por concelho, com as 14 câmaras, as 26
+ * juntas e as salas todas misturadas. Uma câmara e uma junta de freguesia não
+ * são a mesma coisa para quem lê esta página: a câmara é a agenda oficial do
+ * município, a junta é a prova de que a agenda desce ao território, e a sala é
+ * quem tem o detalhe que a agenda da câmara não traz. Com 26 juntas na lista,
+ * as 14 câmaras desapareciam no meio.
+ *
+ * O `kind` é que decide, e é a 0135 que o torna possível: até lá, uma junta
+ * estava escrita como `venue_site` e só se distinguia de uma sala pelo prefixo
+ * do id.
+ */
+const INSTITUICOES = [
+  {
+    chave: 'municipal_site',
+    titulo: 'As câmaras',
+    descricao: 'A agenda oficial de cada município, lida todas as noites.',
+  },
+  {
+    chave: 'parish_site',
+    titulo: 'As juntas de freguesia',
+    descricao: 'O que se passa nas aldeias e nas vilas, e que raramente chega à agenda da câmara.',
+  },
+  {
+    chave: null,
+    titulo: 'Salas, museus e coletividades',
+    descricao:
+      'Quem programa a sua própria casa e publica com o detalhe que a agenda do concelho não traz.',
+  },
+] as const;
+
+function porInstituicao(sources: PublicSource[], chave: string | null): PublicSource[] {
+  return chave === null
+    ? sources.filter((source) => source.kind !== 'municipal_site' && source.kind !== 'parish_site')
+    : sources.filter((source) => source.kind === chave);
+}
+
 /** «cm-tomar.pt/comunicacao/agenda» é mais legível do que o endereço inteiro. */
 function encurtar(url: string): string {
   return url
@@ -165,6 +204,19 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
   const regionais = ligadas.filter((source) => source.municipality_id === null);
   const locais = ligadas.filter((source) => source.municipality_id !== null);
 
+  /*
+   * O denominador de «X das Y juntas», e `null` quando ele não existe.
+   *
+   * «Não consegui saber» e «não há» são duas respostas diferentes: um concelho
+   * sem `parish_count` faz a fração inteira desaparecer, em vez de a publicar
+   * a menos de um concelho. É a regra que as schema-checks já exigem a
+   * qualquer região que se declare completa (0136) — aqui é a cintura, para o
+   * dia em que uma região nova ainda esteja a nascer.
+   */
+  const freguesias = municipalities.every((municipality) => municipality.parish_count !== null)
+    ? municipalities.reduce((total, municipality) => total + (municipality.parish_count ?? 0), 0)
+    : null;
+
   // Concelhos sem fonte ligada: hoje nenhum, e a página tem de continuar a
   // dizê-lo se um dia deixar de ser verdade.
   const cobertos = new Set(locais.map((source) => source.municipality_id));
@@ -217,28 +269,43 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           As agendas de cada concelho
         </h2>
         <p className="mt-2 max-w-2xl text-muted">
-          Uma por município, mais as salas que publicam a sua própria programação com detalhe que a
-          agenda da câmara não traz.
+          A câmara de cada município, as juntas de freguesia que publicam agenda própria, e as salas
+          que publicam a sua programação com detalhe que a agenda da câmara não traz.
         </p>
 
-        <ul className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
-          {locais
+        {INSTITUICOES.map((instituicao) => {
+          const doGrupo = porInstituicao(locais, instituicao.chave)
             .slice()
             .sort((a, b) =>
               (municipalityNames[a.municipality_id ?? ''] ?? '').localeCompare(
                 municipalityNames[b.municipality_id ?? ''] ?? '',
                 'pt',
               ),
-            )
-            .map((source) => (
-              <SourceCard
-                key={source.id}
-                source={source}
-                where={municipalityNames[source.municipality_id ?? ''] ?? null}
-                estado={estadoPorFonte.get(source.id) ?? null}
-              />
-            ))}
-        </ul>
+            );
+          if (doGrupo.length === 0) return null;
+
+          return (
+            <div key={instituicao.titulo} className="mt-8 first:mt-6">
+              <h3 className="ct-eyebrow">{instituicao.titulo}</h3>
+              <p className="mt-1 max-w-2xl text-sm text-muted">
+                {instituicao.descricao}
+                {instituicao.chave === 'parish_site' && freguesias !== null
+                  ? ` São ${doGrupo.length} das ${freguesias} freguesias da região.`
+                  : null}
+              </p>
+              <ul className="mt-3 grid auto-rows-fr gap-3 sm:grid-cols-2">
+                {doGrupo.map((source) => (
+                  <SourceCard
+                    key={source.id}
+                    source={source}
+                    where={municipalityNames[source.municipality_id ?? ''] ?? null}
+                    estado={estadoPorFonte.get(source.id) ?? null}
+                  />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
 
         {semFonte.length > 0 ? (
           <p className="mt-4 max-w-2xl rounded border border-dashed border-border px-4 py-3 text-sm">

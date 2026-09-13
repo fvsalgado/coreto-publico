@@ -120,6 +120,13 @@ export interface Municipality {
   latitude: number | null;
   longitude: number | null;
   sort_order: number;
+  /**
+   * Quantas freguesias tem o concelho (0136), ou `null` enquanto ninguém as
+   * tiver contado. É o denominador de «X das Y juntas já publicam na agenda
+   * regional» — e o nulo é a diferença entre «este concelho não tem juntas
+   * ligadas» e «ninguém contou as freguesias deste concelho».
+   */
+  parish_count: number | null;
 }
 
 export interface Venue {

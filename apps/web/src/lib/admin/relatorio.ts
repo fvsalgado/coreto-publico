@@ -48,6 +48,21 @@ export interface RelatorioMensal {
     last_success_at: string | null;
     items_new_in_month: number;
   }>;
+  /**
+   * Quanto do território está ligado — o numerador e o denominador de «26 das
+   * 84 juntas já publicam na agenda regional» (0137).
+   *
+   * `parishes` é `null` quando um concelho da região ainda não tem as
+   * freguesias contadas. Somar só os que têm dava um denominador menor sem
+   * ninguém escrever nada de falso, que é a mentira mais barata que há numa
+   * fração: quem lê não pode distinguir «26 em 84» de «26 em 72».
+   */
+  territory: {
+    municipalities: number;
+    parishes: number | null;
+    municipal_sources_enabled: number;
+    parish_sources_enabled: number;
+  };
   submissions: {
     received_by_channel: { scraper: number; email: number; form: number };
     received: number;
@@ -228,7 +243,7 @@ function bloco(
  * faz a sua.
  */
 export function paraCsv(relatorio: RelatorioMensal): string {
-  const { events, sources, submissions, quality, visits } = relatorio;
+  const { events, sources, submissions, quality, visits, territory } = relatorio;
 
   const blocos: string[][] = [
     bloco(
@@ -288,6 +303,19 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         f.last_success_at,
         f.items_new_in_month,
       ]),
+    ),
+    bloco(
+      'territorio',
+      ['chave', 'valor'],
+      [
+        ['concelhos', territory.municipalities],
+        // Vazio e não zero quando falta contar um concelho: «não consegui
+        // saber» e «não há» são duas respostas diferentes, e numa folha de
+        // cálculo um zero num denominador é uma divisão por zero à espera.
+        ['freguesias', territory.parishes],
+        ['camaras_ligadas', territory.municipal_sources_enabled],
+        ['juntas_ligadas', territory.parish_sources_enabled],
+      ],
     ),
     bloco(
       'submissoes_recebidas',
