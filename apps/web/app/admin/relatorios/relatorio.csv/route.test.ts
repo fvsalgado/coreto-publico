@@ -57,6 +57,7 @@ const RELATORIO: RelatorioMensal = {
     reviewed: { approved: 0, rejected: 0, other: 0 },
   },
   quality: [],
+  quality_as_of: null,
   visits: { available: false, from: null, to: null, clicks_since: null, by_municipality: [] },
 };
 

@@ -253,7 +253,8 @@ interface Props {
  *
  * Tudo o que se mostra vem de `monthly_report` (0120), numa ida só à base;
  * o que não se sabe diz-se — as visitas de um mês sem duas fotografias são
- * «sem histórico», e a qualidade é a de hoje, porque não tem outra.
+ * «sem histórico», e a qualidade de um mês sem fotografia é a de hoje, com a
+ * ressalva escrita por cima da tabela em vez de deixada ao leitor.
  */
 export default async function Relatorios({ searchParams }: Props) {
   if (!hasServiceRole) {
@@ -478,13 +479,28 @@ export default async function Relatorios({ searchParams }: Props) {
               </div>
             </Seccao>
 
+            {/*
+              Duas legendas, porque são dois factos diferentes e a diferença
+              importa a quem lê. Com fotografia, isto é o estado com que o mês
+              fechou; sem ela, é o catálogo de hoje com a etiqueta de um mês
+              passado — que era o único caso possível antes da 0144, e que fica
+              a ser o caso dos meses anteriores para sempre.
+            */}
             <Seccao
               id="qualidade"
               titulo="Qualidade do catálogo"
-              legenda="Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. É o catálogo tal como está hoje, e não como estava no fim do mês: a medida de qualidade não guarda histórico, e o relatório prefere dizê-lo a fingir."
+              legenda={
+                relatorio.quality_as_of
+                  ? `Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. É a fotografia de ${relatorio.quality_as_of}, a última tirada dentro do mês: o estado com que o mês fechou, e não o de hoje.`
+                  : 'Quantos eventos dizem a que horas, onde e com que imagem — em percentagem do catálogo (publicados mais por publicar), como em /admin/qualidade. Este mês não tem fotografia nenhuma, e por isso é o catálogo tal como está hoje — não como estava no fim do mês. A medida só passou a guardar memória a partir de setembro de 2026, e o relatório prefere dizê-lo a fingir.'
+              }
             >
               <StatTable
-                caption="A qualidade do catálogo por concelho, tal como está hoje."
+                caption={
+                  relatorio.quality_as_of
+                    ? `A qualidade do catálogo por concelho, no dia ${relatorio.quality_as_of}.`
+                    : 'A qualidade do catálogo por concelho, tal como está hoje.'
+                }
                 columns={QUALIDADE}
                 rows={relatorio.quality}
                 rowKey={(q) => q.municipality_id}

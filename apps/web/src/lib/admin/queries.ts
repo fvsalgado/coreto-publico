@@ -733,6 +733,62 @@ export async function qualityBySource(): Promise<QualityRow[]> {
   }));
 }
 
+/** Uma fotografia da qualidade, tal como a 0144 a guarda. */
+export interface QualitySnapshotRow extends QualityRow {
+  /** O dia em que foi tirada. */
+  taken_on: string;
+}
+
+/**
+ * A última fotografia da qualidade tirada até uma data, uma linha por concelho.
+ *
+ * A 0144 tira uma por noite. Esta leitura procura a mais recente **até** ao
+ * dia pedido — não a do dia pedido — porque uma noite falhada não pode apagar
+ * a memória do mês: com a fotografia de 31 em falta, a de 30 responde à mesma
+ * pergunta com um dia de erro, e o dia vem no `taken_on` para quem quiser
+ * saber.
+ *
+ * Devolve `[]` quando não há fotografia nenhuma até lá — o caso dos meses
+ * anteriores à 0144, que ficam sem memória para sempre. «Não há» e «não
+ * consegui saber» continuam a ser duas respostas diferentes: o erro atira.
+ */
+export async function qualitySnapshotAte(ate: string): Promise<QualitySnapshotRow[]> {
+  const supabase = requireAdminClient();
+  const { data: dia, error: erroDia } = await supabase
+    .from('event_quality_snapshots')
+    .select('taken_on')
+    .lte('taken_on', ate)
+    .order('taken_on', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  exigirLeitura('qualitySnapshotAte (dia)', erroDia);
+  const taken_on = (dia as { taken_on: string } | null)?.taken_on;
+  if (!taken_on) return [];
+
+  const { data, error } = await supabase
+    .from('event_quality_snapshots')
+    .select(
+      'municipality_id, taken_on, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
+    )
+    .eq('taken_on', taken_on);
+  // Uma memória vazia por erro de leitura lê-se como «não houve mudança
+  // nenhuma» — a frase mais tranquilizadora que um painel de qualidade pode
+  // dizer, e dita no instante em que não se consegue ler a base.
+  exigirLeitura('qualitySnapshotAte', error);
+
+  const rows = (data ?? []) as unknown as Array<
+    Omit<QualitySnapshotRow, 'id' | 'name'> & { municipality_id: string }
+  >;
+  return rows.map(({ municipality_id, ...rest }) => ({
+    id: municipality_id,
+    // A fotografia não guarda o nome do concelho, e bem: o nome vive em
+    // `municipalities` e um nome guardado seria um segundo nome a envelhecer.
+    // Quem a lê já tem a lista dos concelhos à mão.
+    name: municipality_id,
+    ...rest,
+  }));
+}
+
 export interface DashboardCounts {
   pendingByChannel: Record<string, number>;
   publishedByMunicipality: Record<string, number>;

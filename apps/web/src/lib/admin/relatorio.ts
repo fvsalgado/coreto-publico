@@ -68,7 +68,14 @@ export interface RelatorioMensal {
     received: number;
     reviewed: { approved: number; rejected: number; other: number };
   };
-  /** A vista de qualidade tal como está hoje, uma linha por concelho. */
+  /**
+   * A qualidade do catálogo, uma linha por concelho.
+   *
+   * Desde a 0145 é a **última fotografia tirada dentro do mês** quando há
+   * uma — o estado com que o mês fechou. Sem fotografia no mês é o catálogo
+   * tal como está hoje, como sempre foi, e `quality_as_of` diz qual dos dois
+   * é. Ler isto sem ler essa data é ler um número sem saber de que dia é.
+   */
   quality: Array<{
     municipality_id: string;
     municipality_name: string;
@@ -82,6 +89,14 @@ export interface RelatorioMensal {
     with_price: number;
     with_coordinates: number;
   }>;
+  /**
+   * O dia da fotografia que `quality` traz, ou `null` quando não houve
+   * nenhuma nesse mês e a qualidade é a de hoje.
+   *
+   * A mesma forma que `visits.clicks_since`: o relatório prefere escrever «a
+   * partir de» a mostrar um número que não mediu.
+   */
+  quality_as_of: string | null;
   visits: {
     /** Falso quando não há duas fotografias com que contar o mês. */
     available: boolean;
@@ -269,6 +284,9 @@ export function paraCsv(relatorio: RelatorioMensal): string {
         ['regiao', relatorio.region.name],
         ['mes', relatorio.month],
         ['gerado_em', relatorio.generated_at],
+        // Vazia quando o mês não teve fotografia e a qualidade é a de hoje.
+        // Uma coluna vazia diz «não medi» melhor do que uma data emprestada.
+        ['qualidade_de', relatorio.quality_as_of ?? ''],
       ],
     ),
     bloco(
