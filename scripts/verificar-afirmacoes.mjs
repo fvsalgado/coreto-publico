@@ -1542,6 +1542,43 @@ if (!BASE) {
     });
   }
 
+  // ---- O ficheiro de dados abertos conta o mesmo que a API ----
+  //
+  // O `dados.json` traz `total` dentro do próprio ficheiro, e é esse número que
+  // uma CIM cita. Se ele se afastar do que a API diz para a mesma região e o
+  // mesmo dia, um dos dois está a mentir — e quem o lê não tem como saber qual.
+  //
+  // O tecto do ficheiro é 5000 e a agenda tem 194: a igualdade é a afirmação
+  // certa hoje. No dia em que deixar de ser, é porque o catálogo passou o tecto,
+  // e essa é exatamente a altura de dar por isso.
+  for (const dominio of [ORIGENS.regiao, ORIGENS.montra]) {
+    const ficheiro = await pedir(dominio, '/dados.json');
+    const api = await pedir(dominio, '/api/events?limit=1');
+    const noFicheiro = Number(ficheiro.corpo.match(/"total":(\d+)/)?.[1] ?? '-1');
+    const naApi = Number(api.corpo.match(/"total":(\d+)/)?.[1] ?? '-2');
+    afirmar({
+      afirmacao: `${dominio}: o ficheiro de dados abertos conta o mesmo que a API`,
+      porque:
+        'o `total` viaja dentro do ficheiro e é o que uma CIM cita; dois números diferentes para a mesma pergunta deixam quem lê sem saber qual é o certo',
+      onde: onde(dominio, '/dados.json', 'apps/web/app/[regiao]/dados.json/route.ts'),
+      ok: noFicheiro >= 0 && noFicheiro === naApi,
+      esperava: `o mesmo total nos dois (a API diz ${naApi})`,
+      encontrei: `ficheiro ${noFicheiro} · API ${naApi}`,
+    });
+
+    afirmar({
+      afirmacao: `${dominio}: o ficheiro de dados abertos leva a licença e a data dentro`,
+      porque:
+        'um ficheiro de dados abertos que não diz de quando é obriga quem o recebe a acreditar no nome do anexo, e um sem licença não se pode reutilizar sem perguntar',
+      onde: onde(dominio, '/dados.json', 'apps/web/src/lib/feeds/dump.ts'),
+      ok:
+        /"gerado_em":"\d{4}-\d{2}-\d{2}T/.test(ficheiro.corpo) &&
+        ficheiro.corpo.includes('creativecommons.org/licenses/by/4.0/'),
+      esperava: 'gerado_em em ISO 8601 e a licença CC BY 4.0',
+      encontrei: ficheiro.corpo.slice(0, 160),
+    });
+  }
+
   // ---- A declaração de acessibilidade, e onde cada frase está ----
   {
     const pagina = await pedir(ORIGENS.regiao, '/acessibilidade');

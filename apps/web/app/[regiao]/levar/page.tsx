@@ -81,6 +81,16 @@ function feedsGlobais(concelhos: number): readonly FeedRow[] {
       description: 'A agenda em JSON, com filtros. É a base do widget e de qualquer integração.',
     },
     {
+      path: '/dados.json',
+      description:
+        'O catálogo de uma vez, sem paginar, com a data de geração, a contagem e a licença dentro do próprio ficheiro. É o que se anexa a um processo em vez de explicar o que é uma API.',
+    },
+    {
+      path: '/dados.csv',
+      description:
+        'O mesmo, para quem abre folhas de cálculo. Com BOM, ponto e vírgula e os metadados em linhas «#» à cabeça, que o Excel e o LibreOffice saltam.',
+    },
+    {
       path: '/sitemap.xml',
       description: `Mapa do sítio: as páginas fixas, os ${concelhos} concelhos, os espaços, os ciclos com programação e os eventos por acontecer. O que já passou não entra — um mapa do sítio é para o que se pode visitar.`,
     },
