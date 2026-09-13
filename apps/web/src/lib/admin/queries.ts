@@ -414,7 +414,17 @@ export async function countEventsByStatus(): Promise<Record<string, number>> {
 
 export interface UnknownTag {
   tag: string;
+  /**
+   * Avistamentos: a recolha soma um de cada vez que vê a etiqueta, todas as
+   * noites, no mesmo evento. **Não é o número que decide** — serve para
+   * separar uma etiqueta que apareceu uma vez e nunca mais de uma que a fonte
+   * escreve todas as noites num evento só.
+   */
   hits: number;
+  /** Eventos do catálogo que trazem esta etiqueta. É o número que decide. */
+  eventos: number;
+  /** E, desses, os que continuam sem prateleira nenhuma. */
+  eventos_sem_prateleira: number;
   last_seen: string;
   example_url: string | null;
 }
@@ -426,7 +436,16 @@ export async function listUnknownTags(): Promise<UnknownTag[]> {
     // — «Ar Livre», «Cultura», «Multidisciplinar». Sem ela a fila só crescia:
     // uma etiqueta mapeada deixa de ser desconhecida, mas a linha ficava lá.
     .from('unknown_tags_pendentes')
-    .select('tag, hits, last_seen, example_url')
+    .select('tag, hits, eventos, eventos_sem_prateleira, last_seen, example_url')
+    /*
+     * Por eventos, e não por avistamentos (0140).
+     *
+     * A 0084 escreveu o critério para abrir prateleira nova: meia dúzia **de
+     * eventos**. Ordenada por `hits`, esta fila punha no topo «Infantis, 12
+     * vezes» — que é um evento, visto doze noites seguidas. Quem abrisse o
+     * painel lia um padrão onde havia um caso.
+     */
+    .order('eventos', { ascending: false })
     .order('hits', { ascending: false })
     .limit(200);
   exigirLeitura('listUnknownTags', error);
