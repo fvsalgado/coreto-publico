@@ -291,13 +291,47 @@ export async function runSource(
     const result = await collectAndWrite(source, context, lookups, log, counters, clock);
     submitted = result.submitted;
 
+    /*
+     * **Nenhuma resposta não é uma agenda vazia.**
+     *
+     * O cliente HTTP não atira quando o pedido nem chega a ter resposta: devolve
+     * `{ ok: false, status: 0 }` e deixa a decisão a quem chamou. Todos os doze
+     * adaptadores desta casa fazem, com razões suas, a mesma coisa nesse ramo —
+     * escrevem um aviso e seguem para o endereço seguinte. Quando **todos** os
+     * endereços falham, o adaptador devolve uma lista vazia, e uma lista vazia
+     * é indistinguível de «a câmara não tem nada em cartaz».
+     *
+     * Foi o que aconteceu de 12 a 13 de setembro de 2026 a oito fontes — sete
+     * concelhos dos onze, mais a rede CAMINHOS. A base guardou, para cada uma,
+     * `http_responses = 0` e `http_failures = 3`: nem um byte chegou. E o
+     * Coreto escreveu, seis noites seguidas, «contagem suspeita: 0 itens contra
+     * uma linha de base de 10» — que diz à pessoa que lê o aviso que a página
+     * respondeu e mudou de forma, mandando-a procurar um seletor partido que
+     * está intacto.
+     *
+     * É a regra da casa outra vez, do lado da recolha: «não há» e «não consegui
+     * saber» são duas respostas diferentes. A de cima trata a contagem em que
+     * não se confia; esta trata o caso anterior a haver contagem nenhuma.
+     *
+     * `layoutDrift` cai para falso de propósito: sem uma resposta, não há prova
+     * nenhuma sobre a forma da página, e acusar a câmara de ter mudado de tema
+     * quando não se chegou a ver o tema é fabricar um diagnóstico.
+     */
+    const http = httpDelta();
+    const nuncaRespondeu = http.responses === 0 && http.failures > 0;
+    const estado = nuncaRespondeu ? 'failed' : result.status;
+    const derivaDeLayout = nuncaRespondeu ? false : result.layoutDrift;
+    const nota = nuncaRespondeu
+      ? `a fonte não respondeu a nenhum dos ${http.failures} pedidos — não se leu nada, e zero itens aqui não quer dizer agenda vazia`
+      : result.note;
+
     await ignoreFailure(log, 'fechar a execução', () =>
       log.finish({
-        status: result.status,
+        status: estado,
         counters,
-        http: httpDelta(),
-        layoutDrift: result.layoutDrift,
-        error: result.note,
+        http,
+        layoutDrift: derivaDeLayout,
+        error: nota,
       }),
     );
 
@@ -321,12 +355,12 @@ export async function runSource(
      * treinar a linha de base é a contagem em que não se confia o suficiente
      * para dizer que está tudo bem.
      */
-    const leituraBoa = result.contagem === 'normal';
+    const leituraBoa = !nuncaRespondeu && result.contagem === 'normal';
 
     await ignoreFailure(log, 'atualizar o estado da fonte', async () => {
       await context.db?.updateSourceHealth(source.id, {
         succeeded: leituraBoa,
-        error: result.note,
+        error: nota,
         itemsFound: counters.itemsFound,
         consecutiveFailures: source.consecutive_failures,
         baseline: source.baseline_item_count,
@@ -338,13 +372,13 @@ export async function runSource(
     });
 
     return outcome(source, {
-      status: result.status,
-      layoutDrift: result.layoutDrift,
+      status: estado,
+      layoutDrift: derivaDeLayout,
       contagem: result.contagem,
       counters,
       submitted,
-      http: httpDelta(),
-      error: result.note,
+      http,
+      error: nota,
       warnings: log.totalWarnings,
     });
   } catch (error) {
