@@ -227,6 +227,16 @@ export const PUBLIC_SOURCE_FIELDS = [
   'id',
   'name',
   'kind',
+  /*
+   * O nome do leitor, público desde a 0139 — e a `/estado` é quem o usa.
+   *
+   * Oito fontes calaram-se a 12 e 13 de setembro de 2026 e sete delas correm
+   * este mesmo leitor; a página mostrava oito linhas soltas e deixava a quem lê
+   * o trabalho de descobrir o que tinham em comum. O `config` continua fora
+   * desta lista e da concessão: o nome do leitor é público, a configuração
+   * dele nunca.
+   */
+  'adapter',
   'municipality_id',
   'region_id',
   'venue_id',
