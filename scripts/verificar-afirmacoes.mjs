@@ -734,6 +734,69 @@ presente(
   },
 );
 /*
+ * A ficha técnica dos indicadores contra os campos que o relatório escreve.
+ *
+ * O relatório mensal é a peça que uma CIM anexa quando tem de justificar o que
+ * pagou, e quase todos os seus campos respondem a uma pergunta ligeiramente
+ * diferente da que o nome sugere: `eventos_publicados_no_mes` conta a **decisão
+ * de publicar** e inclui o que já foi arquivado; `eventos_a_decorrer_no_mes`
+ * conta a **programação** e não inclui; `qualidade` conta o catálogo, que é
+ * publicados **mais** por publicar. Somar colunas de blocos diferentes dá um
+ * número que não quer dizer nada, e o erro não é do leitor.
+ *
+ * O `docs/INDICADORES.md` diz, campo a campo, o que conta e o que não conta. Um
+ * documento assim envelhece no dia em que alguém acrescenta um indicador — e é
+ * exatamente aí que ele passa a mentir por omissão, que é pior do que não
+ * existir. Por isso o par prende-se nos dois sentidos: nenhum campo sem linha,
+ * nenhuma linha sem campo.
+ */
+{
+  const relatorio = ler('apps/web/src/lib/admin/relatorio.ts');
+  const csv = relatorio.split('export function paraCsv')[1]?.split('\n}')[0] ?? '';
+
+  // Cada `bloco('nome', [cabeçalho], linhas)`. Nos blocos de chave/valor o
+  // cabeçalho é literalmente ['chave', 'valor'], e os campos são as chaves das
+  // linhas — que é o que sai no ficheiro e o que um leitor vê.
+  const campos = [];
+  for (const bloco of csv.matchAll(/bloco\(\s*'([a-z_]+)',\s*\[([^\]]*)\],/g)) {
+    const nome = bloco[1];
+    const cabecalho = [...bloco[2].matchAll(/'([a-z_]+)'/g)].map((e) => e[1]);
+    if (cabecalho.join() === 'chave,valor') {
+      const corpo = csv.slice(bloco.index + bloco[0].length).split('\n    ),')[0] ?? '';
+      for (const chave of corpo.matchAll(/\['([a-z_]+)',/g)) campos.push(`${nome}.${chave[1]}`);
+    } else {
+      for (const coluna of cabecalho) campos.push(`${nome}.${coluna}`);
+    }
+  }
+
+  const ficha = ler('docs/INDICADORES.md');
+  const documentados = new Set(
+    [...ficha.matchAll(/`([a-z_]+\.[a-z_]+)`/g)].map((entrada) => entrada[1]),
+  );
+
+  const semLinha = campos.filter((campo) => !documentados.has(campo));
+  const semCampo = [...documentados].filter((campo) => !campos.includes(campo));
+
+  afirmar({
+    afirmacao:
+      'cada campo do relatório mensal tem uma linha na ficha técnica, e cada linha um campo',
+    porque:
+      'quase todos estes números respondem a uma pergunta ligeiramente diferente da que o nome sugere, e dois leitores que somem a mesma coluna chegam a números diferentes — o que desconta a peça não é o erro, é ninguém saber dizer qual era o certo',
+    onde: `docs/INDICADORES.md contra ${origem('apps/web/src/lib/admin/relatorio.ts', /export function paraCsv/)}`,
+    ok: campos.length > 0 && semLinha.length === 0 && semCampo.length === 0,
+    esperava: `${campos.length} campos, um por linha da ficha`,
+    encontrei:
+      [
+        campos.length === 0 ? 'não consegui ler os campos do relatório' : '',
+        semLinha.length ? `sem linha na ficha: ${semLinha.join(', ')}` : '',
+        semCampo.length ? `na ficha e já não no relatório: ${semCampo.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'os mesmos',
+  });
+}
+
+/*
  * O exemplo de resposta de `/levar` contra as colunas que a API serve.
  *
  * A página `/levar` publica um JSON de exemplo com o cabeçalho «a resposta».

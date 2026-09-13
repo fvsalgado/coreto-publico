@@ -506,6 +506,18 @@ export default async function Relatorios({ searchParams }: Props) {
                 </li>
                 <li>As fronteiras do mês são à meia-noite UTC.</li>
               </ul>
+              {/*
+                Estas quatro linhas são o resumo; a ficha técnica é a versão que
+                se anexa. Campo a campo, o que conta e o que não conta — porque
+                quase todos estes números respondem a uma pergunta ligeiramente
+                diferente da que o nome sugere, e somar colunas de blocos
+                diferentes dá um número que não quer dizer nada.
+              */}
+              <p className="mt-3">
+                A definição exata de cada campo — o que conta, o que não conta, sobre que universo —
+                está em <code>docs/INDICADORES.md</code>, e o CI falha se um indicador novo aparecer
+                sem lá ter entrada.
+              </p>
             </section>
           </article>
         </>

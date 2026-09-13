@@ -86,6 +86,7 @@ corrigida para o número errado por quem só olhe para ela.
 | [`docs/OPERACAO.md`](docs/OPERACAO.md)                 | O que fazer quando alguma coisa corre mal                                    |
 | [`docs/BACKUPS.md`](docs/BACKUPS.md)                   | Cópias de segurança e como testar um restauro                                |
 | [`docs/RGPD.md`](docs/RGPD.md)                         | Registo de tratamento de dados pessoais                                      |
+| [`docs/INDICADORES.md`](docs/INDICADORES.md)           | O que cada número do relatório mensal conta, e o que não conta               |
 | [`docs/EMAIL.md`](docs/EMAIL.md)                       | O canal de entrada por email                                                 |
 | [`docs/DNS.md`](docs/DNS.md)                           | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)    |
 | [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                 | Como nasce uma região nova — sem um commit                                   |
