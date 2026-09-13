@@ -1587,6 +1587,48 @@ begin
     from public.venues
    where opening_hours is not null and opening_hours_checked_on is null;
   assert n = 0, format('espaços com horário sem data de leitura: %s', v_cols);
+
+  -- A percentagem de `/admin/qualidade` e a lista de `/admin/eventos?falta=`
+  -- contam a mesma população, ou a ligação entre as duas mente.
+  --
+  -- Desde a vaga 7 a percentagem **é** a porta para a lista. Se a vista
+  -- contar uma coisa e o filtro do painel outra, quem vê 62% e carrega abre
+  -- uma lista que não é a dos 38% que faltam — e não há erro nenhum a dar por
+  -- isso, porque as duas consultas correm bem cada uma por si.
+  --
+  -- A 0143 alinhou «descrição»: a vista contava `is not null` e o filtro
+  -- conta `is null or = ''`. Eram zero linhas nesse dia, e é essa a diferença
+  -- que isto guarda a zero.
+  select count(*) into n
+    from public.events
+   where is_canonical and status in ('published', 'draft')
+     and description = '';
+  assert n = 0,
+    format('%s eventos com a descrição vazia: a vista conta-os como «com descrição» '
+           'e a lista de trabalho abre-os como «sem» — ver a 0143', n);
+
+  -- O mesmo facto, dito do lado da vista: a soma tem de bater com a contagem
+  -- que o filtro abre. Apanha uma alteração à vista que a 0143 não previu.
+  select (select coalesce(sum(with_description), 0) from public.event_quality_by_municipality)
+       - (select count(*) from public.events
+           where is_canonical and status in ('published', 'draft')
+             and description is not null and description <> '')
+    into n;
+  assert n = 0,
+    format('a vista de qualidade e a lista de trabalho divergem em %s eventos com descrição', n);
+
+  -- E o preço, que a vaga 7 pôs a ligar pela primeira vez. `with_price` conta
+  -- `is_free or price_min is not null`; o filtro conta o complemento exato.
+  -- A conta só fecha porque `is_free` é `not null` desde a 0004 — se alguém
+  -- lhe tirar o `not null`, os nulos desaparecem dos dois lados e ninguém dá
+  -- por isso. Esta asserção é o aviso.
+  select count(*) into n
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'events'
+     and column_name = 'is_free' and is_nullable = 'NO';
+  assert n = 1,
+    'events.is_free deixou de ser «not null»: o filtro «sem preço» de /admin/eventos '
+    'passa a perder os eventos em que ela é nula, que a vista também não conta';
 end
 $$;
 
