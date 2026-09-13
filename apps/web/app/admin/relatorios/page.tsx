@@ -514,9 +514,17 @@ export default async function Relatorios({ searchParams }: Props) {
                 diferentes dá um número que não quer dizer nada.
               */}
               <p className="mt-3">
-                A definição exata de cada campo — o que conta, o que não conta, sobre que universo —
-                está em <code>docs/INDICADORES.md</code>, e o CI falha se um indicador novo aparecer
-                sem lá ter entrada.
+                A definição exata de cada campo — o que conta, o que não conta, sobre que universo,
+                e o enviesamento conhecido de cada contagem — está na{' '}
+                <a
+                  href="/indicadores"
+                  className="underline underline-offset-4"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ficha técnica dos indicadores (abre noutro separador)
+                </a>
+                , que é pública. O CI falha se um indicador novo aparecer sem lá ter entrada.
               </p>
             </section>
           </article>

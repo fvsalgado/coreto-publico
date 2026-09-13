@@ -744,8 +744,9 @@ presente(
  * publicados **mais** por publicar. Somar colunas de blocos diferentes dá um
  * número que não quer dizer nada, e o erro não é do leitor.
  *
- * O `docs/INDICADORES.md` diz, campo a campo, o que conta e o que não conta. Um
- * documento assim envelhece no dia em que alguém acrescenta um indicador — e é
+ * A ficha técnica (`src/lib/indicadores.ts`, servida em `/indicadores`) diz,
+ * campo a campo, o que conta e o que não conta. Uma ficha assim envelhece no dia
+ * em que alguém acrescenta um indicador — e é
  * exatamente aí que ele passa a mentir por omissão, que é pior do que não
  * existir. Por isso o par prende-se nos dois sentidos: nenhum campo sem linha,
  * nenhuma linha sem campo.
@@ -769,9 +770,9 @@ presente(
     }
   }
 
-  const ficha = ler('docs/INDICADORES.md');
+  const ficha = ler('apps/web/src/lib/indicadores.ts');
   const documentados = new Set(
-    [...ficha.matchAll(/`([a-z_]+\.[a-z_]+)`/g)].map((entrada) => entrada[1]),
+    [...ficha.matchAll(/campo: '([a-z_]+\.[a-z_]+)'/g)].map((entrada) => entrada[1]),
   );
 
   const semLinha = campos.filter((campo) => !documentados.has(campo));
@@ -782,7 +783,7 @@ presente(
       'cada campo do relatório mensal tem uma linha na ficha técnica, e cada linha um campo',
     porque:
       'quase todos estes números respondem a uma pergunta ligeiramente diferente da que o nome sugere, e dois leitores que somem a mesma coluna chegam a números diferentes — o que desconta a peça não é o erro, é ninguém saber dizer qual era o certo',
-    onde: `docs/INDICADORES.md contra ${origem('apps/web/src/lib/admin/relatorio.ts', /export function paraCsv/)}`,
+    onde: `apps/web/src/lib/indicadores.ts contra ${origem('apps/web/src/lib/admin/relatorio.ts', /export function paraCsv/)}`,
     ok: campos.length > 0 && semLinha.length === 0 && semCampo.length === 0,
     esperava: `${campos.length} campos, um por linha da ficha`,
     encontrei:
