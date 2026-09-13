@@ -3,11 +3,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CAMPOS_DA_REGIAO,
+  EDITABLE_FIELDS,
   changedFields,
   comAviso,
   estadoDaLicenca,
   proposedFromPayload,
   proposedSessions,
+  propostoEmCartaz,
   readEvent,
 } from './fields';
 
@@ -269,5 +271,128 @@ describe('CAMPOS_DA_REGIAO', () => {
 
     expect(naBase.length).toBeGreaterThan(0);
     expect(noFormulario).toEqual(naBase);
+  });
+});
+
+/**
+ * «Não perguntado» não é «apagado».
+ *
+ * O formulário de revisão desenha doze dos quinze campos editáveis: faltam-lhe
+ * o subtítulo, a freguesia e o ciclo. O `readEvent` percorria os quinze e fazia
+ * `formData.get` a todos, por isso uma ausência de pergunta saía de lá como um
+ * `null` — que é uma afirmação. O `changedFields` comparava o que a fonte
+ * propunha com esse `null`, concluía que o editor mudara o campo, e mandava-o
+ * trancar contra a recolha.
+ *
+ * Medido contra um Postgres com as 129 migrações: o evento saía com os três
+ * campos a nulo **e** com três bloqueios manuais de valor nulo. Em produção
+ * ainda não aconteceu — a via da moderação produziu um bloqueio em toda a
+ * história da base, e as 7 submissões aprovadas não traziam nenhum dos três.
+ * A porta é que estava aberta, e o `portal-freguesia` põe `parish` em todos os
+ * eventos que devolve, em 26 fontes.
+ */
+describe('o que o formulário não pergunta não se apaga', () => {
+  const formulario = (campos: Record<string, string>): FormData => {
+    const dados = new FormData();
+    for (const [nome, valor] of Object.entries(campos)) dados.set(nome, valor);
+    return dados;
+  };
+
+  it('um campo que o formulário não trouxe não vira nulo — fica de fora', () => {
+    const evento = readEvent(formulario({ title: 'Noite de fados' }));
+
+    expect('parish' in evento).toBe(false);
+    expect('subtitle' in evento).toBe(false);
+    expect('series_id' in evento).toBe(false);
+  });
+
+  it('e por isso não se tranca contra a recolha', () => {
+    // O `is_free` vai no proposto porque o `proposedFromPayload` põe-no
+    // sempre: é booleano, e um booleano não tem ausência.
+    const proposto = {
+      title: 'Noite de fados',
+      parish: 'Minde',
+      subtitle: 'Um serão',
+      is_free: false,
+    };
+    const editado = readEvent(formulario({ title: 'Noite de fados' }));
+
+    expect(changedFields(proposto, editado)).toEqual([]);
+  });
+
+  /*
+   * O controlo que separa as duas coisas: um campo que o formulário **trouxe**
+   * e o editor esvaziou continua a trancar. Isso é uma decisão de uma pessoa, e
+   * a recolha não lha desfaz na noite seguinte.
+   */
+  it('mas um campo que o editor esvaziou de propósito continua a trancar', () => {
+    const proposto = { title: 'Noite de fados', location_name: 'Casa da Cultura', is_free: false };
+    const editado = readEvent(formulario({ title: 'Noite de fados', location_name: '  ' }));
+
+    expect(editado.location_name).toBeNull();
+    expect(changedFields(proposto, editado)).toEqual(['location_name']);
+  });
+
+  /*
+   * E a caixa fica de fora da regra, porque em HTML uma caixa por picar não é
+   * submetida: a ausência dela é a resposta, não uma pergunta que ninguém fez.
+   */
+  it('uma caixa por picar continua a ser «não», e não «não perguntei»', () => {
+    expect(readEvent(formulario({ title: 'x' })).is_free).toBe(false);
+    expect(readEvent(formulario({ title: 'x' })).is_ongoing).toBe(false);
+  });
+});
+
+/**
+ * A caixa «Em cartaz», e as duas formas do payload.
+ *
+ * O payload chega aninhado quando vem da recolha e liso quando vem da
+ * extração. A página lia só a forma lisa — e as 49 submissões que este sistema
+ * recebeu são **todas** da recolha, por isso a caixa vinha desmarcada mesmo
+ * para os períodos. Quem aprovasse sem reparar transformava três semanas de
+ * exposição em dois espetáculos, o de abrir e o de fechar.
+ */
+describe('propostoEmCartaz', () => {
+  it('lê a forma aninhada, que é a da recolha', () => {
+    expect(propostoEmCartaz({ event: { is_ongoing: true } })).toBe(true);
+    expect(propostoEmCartaz({ ...DA_RECOLHA })).toBe(false);
+  });
+
+  it('e a forma lisa, que é a da extração', () => {
+    expect(propostoEmCartaz({ is_ongoing: true })).toBe(true);
+    expect(propostoEmCartaz({ is_ongoing: false })).toBe(false);
+  });
+
+  it('e um payload que não diz nada é «não», e não um talvez', () => {
+    expect(propostoEmCartaz({})).toBe(false);
+    expect(propostoEmCartaz({ event: {} })).toBe(false);
+  });
+});
+
+/**
+ * Todo o campo editável tem uma caixa no formulário.
+ *
+ * Este é o guarda que faltava, e é ele que fecha a classe em vez do caso. A
+ * lista de campos editáveis e o formulário que os pergunta viviam em ficheiros
+ * diferentes, sem nada a ligá-los: acrescentar um a `EDITABLE_FIELDS` sem lhe
+ * desenhar a caixa compila, passa nos testes, e faz a aprovação escrever nulo
+ * nesse campo — e trancá-lo contra a recolha. Foi o que aconteceu ao subtítulo,
+ * à freguesia e ao ciclo.
+ *
+ * Lê a página do disco, como os testes acima leem as migrações. É grosseiro de
+ * propósito: um `name=` é o que o navegador submete, e é exactamente isso que o
+ * `readEvent` vai procurar. Um teste mais esperto provaria outra coisa.
+ */
+describe('o formulário de revisão pergunta por tudo o que se pode editar', () => {
+  const pagina = readFileSync(
+    fileURLToPath(new URL('../../../app/admin/fila/[id]/page.tsx', import.meta.url)),
+    'utf8',
+  );
+  const comCaixa = new Set(
+    [...pagina.matchAll(/name="([a-z_]+)"/g)].map((encontro) => encontro[1]),
+  );
+
+  it.each(EDITABLE_FIELDS)('%s tem uma caixa', (campo) => {
+    expect(comCaixa.has(campo)).toBe(true);
   });
 });
