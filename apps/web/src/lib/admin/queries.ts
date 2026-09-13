@@ -500,8 +500,10 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
     const ids = await idsSemHora(filter);
     if (ids.length === 0) return [];
     query = query.in('id', ids);
-  } else if (filter.falta === 'sitio') query = query.is('venue_id', null).is('location_name', null);
-  else if (filter.falta === 'espaco') query = query.is('venue_id', null);
+    // Não há ramo para «sem sítio nenhum», e é de propósito: a restrição
+    // `events_has_location` da 0004 exige espaço **ou** texto solto, pelo que
+    // a condição nunca é verdadeira. Ver `lacunas.ts`.
+  } else if (filter.falta === 'espaco') query = query.is('venue_id', null);
   else if (filter.falta === 'imagem') query = query.is('image_url', null);
   else if (filter.falta === 'descricao') query = query.or('description.is.null,description.eq.');
   // `is_free` é `not null default false` desde a 0004, e por isso o

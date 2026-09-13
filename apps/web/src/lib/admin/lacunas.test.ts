@@ -73,6 +73,36 @@ describe('as lacunas do catálogo', () => {
     ).toEqual(LACUNAS.map((l) => l.chave).sort());
   });
 
+  /**
+   * O filtro «sem sítio nenhum» esteve no selector a prometer uma lista que a
+   * base nunca podia encher: `events_has_location`, da 0004, exige espaço ou
+   * texto solto, e a condição `venue_id is null and location_name is null` é
+   * falsa para todas as linhas que a base aceita gravar.
+   *
+   * Zero em produção, e não por o trabalho estar feito — por não poder haver
+   * trabalho. Saiu. Este teste é o que decide se pode voltar: o dia em que
+   * alguém largar a restrição, a pergunta volta a fazer sentido, e é aqui que
+   * fica escrito porquê.
+   */
+  it('não prometem uma lista que a base não pode encher', () => {
+    const pasta = `${raiz}supabase/migrations/`;
+    const temGuarda = readdirSync(pasta)
+      .filter((nome) => nome.endsWith('.sql'))
+      .some((nome) =>
+        /constraint events_has_location check/.test(readFileSync(pasta + nome, 'utf8')),
+      );
+
+    expect(
+      temGuarda,
+      'A restrição `events_has_location` desapareceu das migrações. Enquanto ela existia, ' +
+        'um evento sem espaço e sem texto solto não podia ser gravado, e por isso o filtro ' +
+        '«sem sítio nenhum» saiu de `lacunas.ts` — era uma fila de trabalho que nunca podia ' +
+        'ter trabalho. Sem ela, a pergunta volta a fazer sentido e a lacuna pode voltar.',
+    ).toBe(true);
+
+    expect(LACUNAS.map((l) => l.chave)).not.toContain('sitio');
+  });
+
   it('não repetem chave nem coluna', () => {
     expect(new Set(LACUNAS.map((l) => l.chave)).size).toBe(LACUNAS.length);
     const colunas = LACUNAS_COM_COLUNA.map((l) => l.coluna);
