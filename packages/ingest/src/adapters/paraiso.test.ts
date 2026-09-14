@@ -7,6 +7,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { lerResumo, lerSinopse, paraisoAdapter } from './paraiso.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * Corre contra a entrada verdadeira do sítio, capturada a 28 de agosto de 2026.
  *
@@ -41,7 +42,7 @@ function stubHttp(corpo: string): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.resolve(new Response(corpo, { status: 200 })),
+    fetchImpl: comRobots(() => Promise.resolve(new Response(corpo, { status: 200 }))),
   });
 }
 

@@ -6,6 +6,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { icalAdapter, parseIcalEvents } from './ical.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * O calendário inventado de `../__fixtures__/agenda-inventada.ics`, lido
  * com «hoje» fixo a 1 de setembro de 2026 — o dia em que o arraial de agosto
@@ -52,7 +53,7 @@ function stubHttp(corpo: string, status = 200): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.resolve(new Response(corpo, { status })),
+    fetchImpl: comRobots(() => Promise.resolve(new Response(corpo, { status }))),
   });
 }
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceRow } from '../adapter.js';
 import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
+import { comRobots } from '../robots-de-teste.js';
 import {
   lerCusto,
   lerDatasTribe,
@@ -77,12 +78,12 @@ function stubPorUrl(
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => {
+    fetchImpl: comRobots((input) => {
       const url = String(input);
       pedidos.push(url);
       const resposta = responder(url);
       return Promise.resolve(new Response(resposta.body, { status: resposta.status ?? 200 }));
-    },
+    }),
   });
 }
 

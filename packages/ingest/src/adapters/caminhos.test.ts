@@ -8,6 +8,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { caminhosAdapter, lerFicha, lerGrelha, lerSessoes, partirTitulo } from './caminhos.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * Corre contra as páginas verdadeiras de caminhos.mediotejo.pt, capturadas a
  * 28 de agosto de 2026. Quando um destes testes falhar, a hipótese mais
@@ -46,7 +47,9 @@ function stubHttp(porUrl: (url: string) => string): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => Promise.resolve(new Response(porUrl(String(input)), { status: 200 })),
+    fetchImpl: comRobots((input) =>
+      Promise.resolve(new Response(porUrl(String(input)), { status: 200 })),
+    ),
   });
 }
 

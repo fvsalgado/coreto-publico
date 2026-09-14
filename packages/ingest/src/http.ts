@@ -21,6 +21,15 @@
  * nos registos, e duas cópias da mesma frase divergem sempre.
  */
 import { USER_AGENT } from '@coreto/core';
+import {
+  caminhoDe,
+  lerRobots,
+  podeLer,
+  PRODUTO,
+  robotsDe,
+  SEM_RESTRICOES,
+  type RegrasDoRobots,
+} from './robots.js';
 
 export { USER_AGENT };
 
@@ -173,6 +182,16 @@ export class HttpClient {
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly minHostIntervalMs: number;
+  /**
+   * O `robots.txt` de cada hospedeiro, lido uma vez por recolha.
+   *
+   * Guarda-se a promessa e não o resultado: dois pedidos ao mesmo hospedeiro
+   * lançados ao mesmo tempo esperam pela mesma leitura em vez de pedirem o
+   * ficheiro duas vezes. Uma recolha toca cada hospedeiro muitas vezes — a
+   * listagem e uma ficha por evento — e um pedido a mais por cada uma delas
+   * seria dobrar o que se pede a uma câmara.
+   */
+  private readonly robotsPorHospedeiro = new Map<string, Promise<RegrasDoRobots>>();
   private readonly userAgent: string;
 
   /** Hospedeiro → instante a partir do qual o próximo pedido pode sair. */
@@ -251,8 +270,97 @@ export class HttpClient {
     }
   }
 
+  /**
+   * O `robots.txt` do hospedeiro deste endereço, lido uma vez e guardado.
+   *
+   * **O que se faz com cada desfecho, e porquê.**
+   *
+   * *Respondeu.* Lê-se e obedece-se. É o caso das quarenta fontes desta casa:
+   * a 14 de setembro de 2026 mediram-se as trinta e duas alcançáveis, e as
+   * trinta e duas deixam ler a agenda. Cumprir não custou uma fonte.
+   *
+   * *404, ou qualquer outro 4xx.* Não há ficheiro, e não haver ficheiro é não
+   * haver restrições. É o que a norma manda e é o que o Ourém e o Abrantes
+   * servem.
+   *
+   * *5xx, ou a ligação não chega lá.* A RFC 9309 manda ler isto como proibição
+   * total. **Aqui não se faz assim, e a diferença é deliberada.** Uma proibição
+   * silenciosa é indistinguível de uma agenda vazia, e foi exatamente por aí
+   * que dezassete fontes gravaram sucesso sem lerem um byte, a 5 e a 9 de
+   * setembro. Nesta casa «não consegui saber» não se arruma como se fosse
+   * «não»: atira-se, a fonte falha à vista, e a agenda de ontem fica de pé.
+   * O efeito prático é o mesmo da norma — não se lê nada —, mas fica escrito
+   * porquê em vez de desaparecer.
+   *
+   * *E o erro vai inteiro.* Se a ligação morrer, a mensagem leva o código de
+   * sistema que o `describeError` extraiu — `ECONNRESET`, `ENOTFOUND`, o que
+   * for. Sem isso, o pedido do `robots.txt` passava a falhar primeiro e a
+   * tapar o diagnóstico do que vem a seguir: são esses códigos que sustentam
+   * a carta às oito fontes caladas do Médio Tejo.
+   */
+  private async regrasDoRobots(url: string): Promise<RegrasDoRobots> {
+    const host = hostOf(url);
+    const guardado = this.robotsPorHospedeiro.get(host);
+    if (guardado) return guardado;
+
+    const endereco = robotsDe(url);
+    if (!endereco) return SEM_RESTRICOES;
+
+    const promessa = (async (): Promise<RegrasDoRobots> => {
+      await this.throttle(endereco);
+      let resposta: Response;
+      try {
+        resposta = await this.fetchImpl(endereco, {
+          redirect: 'follow',
+          signal: AbortSignal.timeout(this.timeoutMs),
+          headers: { 'user-agent': this.userAgent, accept: 'text/plain,*/*;q=0.8' },
+        });
+      } catch (error) {
+        throw new Error(`não consegui ler o ${endereco}: ${describeError(error)}`);
+      }
+
+      if (resposta.status >= 500) {
+        throw new Error(`não consegui ler o ${endereco}: o servidor deu ${resposta.status}`);
+      }
+      // 4xx é ausência de ficheiro, e ausência de ficheiro é ausência de
+      // regras. É a leitura da norma, e é a única que não inventa proibições.
+      if (!resposta.ok) return SEM_RESTRICOES;
+
+      const texto = await resposta.text();
+      // Um 200 que devolve HTML não é um `robots.txt`: é a página de erro de
+      // quem não sabe dar 404. Lê-la como regras seria ler tags como caminhos.
+      if (/^\s*<(?:!doctype|html)\b/i.test(texto)) return SEM_RESTRICOES;
+
+      return lerRobots(texto, PRODUTO);
+    })();
+
+    this.robotsPorHospedeiro.set(host, promessa);
+    // Uma leitura falhada não fica guardada como veredicto: fica guardada a
+    // promessa, e quem lhe pegar a seguir recebe o mesmo erro. É o que impede
+    // quarenta fontes de baterem quarenta vezes no mesmo ficheiro em baixo.
+    return promessa;
+  }
+
   async get(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
     let last: HttpResponse = { ok: false, status: 0, body: '', error: 'pedido não executado', url };
+
+    // Antes de pedir a página, perguntar se se pode. O `robots.txt` do próprio
+    // hospedeiro é a única excepção, porque perguntar-lhe a ele se pode ser
+    // lido seria uma pergunta sem fim.
+    if (!url.endsWith('/robots.txt')) {
+      const regras = await this.regrasDoRobots(url);
+      if (!podeLer(regras, caminhoDe(url))) {
+        return {
+          ok: false,
+          status: 0,
+          body: '',
+          error: `o robots.txt deste sítio não deixa ler ${caminhoDe(url)}${
+            regras.grupo ? ` (grupo «${regras.grupo}»)` : ''
+          }`,
+          url,
+        };
+      }
+    }
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       await this.throttle(url);

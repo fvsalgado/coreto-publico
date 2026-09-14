@@ -8,6 +8,7 @@ import { HttpClient } from '../http';
 import type { SourceRow } from '../adapter';
 import { extractBySelectors, genericHtmlAdapter } from './generic-html';
 
+import { comRobots } from '../robots-de-teste.js';
 /** Um registo mudo: estes testes olham para o que sai, não para os avisos. */
 const registo = () => new RunLogger({ sourceId: 'ccgv-sardoal', output: () => undefined });
 
@@ -288,10 +289,11 @@ describe('genericHtmlAdapter com followLinks', () => {
       http: new HttpClient({
         minHostIntervalMs: 0,
         sleep: () => Promise.resolve(),
-        fetchImpl: (input) =>
+        fetchImpl: comRobots((input) =>
           Promise.resolve(
             new Response(String(input) === CCGV_URL ? CCGV : EVENTO, { status: 200 }),
           ),
+        ),
       }),
       log: registo(),
     });

@@ -19,8 +19,8 @@ const BARE_PAGE = `
    * Tudo o que o layout de raiz desenha à volta do conteúdo sai daqui — e a
    * regra é pela negativa de propósito. Enumerar o cabeçalho e o rodapé
    * deixava passar o que viesse a seguir, e foi o que aconteceu por duas
-   * vezes: a saia do lambrequim apareceu como uma fita escura no topo do
-   * sítio da câmara, e a barra de navegação do telemóvel apareceu-lhe
+   * vezes: a faixa decorativa do topo apareceu como uma fita escura no
+   * topo do sítio da câmara, e a barra de navegação do telemóvel apareceu-lhe
    * colada ao fundo do ecrã. Assim, o que for acrescentado à casa fica de
    * fora do widget sem ninguém se lembrar de vir aqui.
    *
