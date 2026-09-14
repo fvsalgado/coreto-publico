@@ -1230,6 +1230,59 @@ presente(
 }
 
 /*
+ * Uma fonte à mão não fala pelas quarenta.
+ *
+ * **Isto aconteceu, e calou o alarme.** A 13 de setembro de 2026, às 22:30, uma
+ * corrida à mão de uma fonte só — a `cm-tomar`, que está bloqueada — comentou no
+ * aviso de falha. Um minuto depois, outra corrida à mão de outra fonte só — a
+ * `jf-valhascos`, que responde — **fechou o aviso**, com a frase «A recolha de
+ * 2026-09-13T22:31+00:00 correu bem». Nessa noite havia oito fontes bloqueadas,
+ * o Sardoal partido e o Teatro Virgínia já para lá do disjuntor.
+ *
+ * Uma fonte escolhida a dedo declarou as quarenta saudáveis, e o dono ficou sem
+ * sinal nenhum de que havia o que ver. O `scrape.yml` já avisava, num
+ * comentário, que um aviso que fica aberto depois de a recolha voltar mente
+ * sobre o estado de hoje. Esta é a outra metade da mesma frase, e é a cara: um
+ * aviso que **fecha** sem o estado ter mudado não se aprende a ignorar —
+ * desaparece, e ninguém fica a saber que havia o que ignorar.
+ *
+ * A guarda é sobre os três passos que mexem no alarme. `!inputs.fonte` é
+ * verdadeiro no `schedule` e no `workflow_dispatch` de campo vazio, que são as
+ * duas formas de correr as quarenta; é falso quando alguém pediu uma fonte.
+ */
+{
+  const ficheiro = '.github/workflows/scrape.yml';
+  const yml = ler(ficheiro);
+
+  // Cada passo é «- name: …» seguido de «if: …» na linha a seguir.
+  const condicaoDe = (nome) => {
+    const re = new RegExp(`- name: ${nome}[^\\n]*\\n\\s*if: ([^\\n]+)`);
+    return re.exec(yml)?.[1]?.trim() ?? '';
+  };
+
+  const PASSOS = [
+    ['Abrir ou atualizar o aviso de falha', 'failure()'],
+    ['Tocar a campainha', 'failure()'],
+    ['Fechar o aviso quando a recolha voltar', 'success()'],
+  ];
+
+  const soltos = PASSOS.filter(([nome, gatilho]) => {
+    const cond = condicaoDe(nome);
+    return !cond || !cond.includes(gatilho) || !/!\s*inputs\.fonte/.test(cond);
+  }).map(([nome]) => `${nome} → «${condicaoDe(nome) || 'não encontrei o passo'}»`);
+
+  afirmar({
+    afirmacao: 'só uma recolha das quarenta fontes abre ou fecha o aviso de falha',
+    porque:
+      'a 13/9 uma corrida à mão de uma fonte que responde fechou o aviso com oito fontes bloqueadas por resolver — um alarme que fecha sem o estado ter mudado não se aprende a ignorar, desaparece, e ninguém fica a saber que havia o que ignorar',
+    onde: ficheiro,
+    ok: soltos.length === 0,
+    esperava: 'os três passos do alarme condicionados a `!inputs.fonte`',
+    encontrei: soltos.length ? soltos.join(' · ') : 'os três presos à recolha completa',
+  });
+}
+
+/*
  * A porta de quem decide não pode ser um caminho para o painel.
  *
  * O `/balanco` abre com um segredo de leitura e existe porque dar o relatório

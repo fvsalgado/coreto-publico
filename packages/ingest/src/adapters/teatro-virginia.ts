@@ -247,12 +247,18 @@ export const teatroVirginiaAdapter: Adapter = {
     const events: RawEvent[] = [];
     const vistos = new Set<string>();
 
+    let responderam = 0;
     for (const url of urls) {
       const response = await context.http.get(url, pedido);
       if (!response.ok) {
+        // Uma recusa não é uma agenda vazia — ver a nota do `portal-freguesia`:
+        // a 5 e a 9 de setembro de 2026 dezassete fontes gravaram sucesso sem
+        // terem lido um byte, porque uma recusa saltada dá o mesmo resultado
+        // que uma agenda sem nada marcado.
         context.log.warn(`página sem resposta utilizável: ${url}`, response.error ?? undefined);
         continue;
       }
+      responderam += 1;
 
       let sessoes = lerPagina(response.body);
 
@@ -305,6 +311,12 @@ export const teatroVirginiaAdapter: Adapter = {
     }
 
     if (events.length === 0) context.log.warn('nenhuma sessão de cinema em nenhuma das páginas');
+
+    if (responderam === 0) {
+      throw new Error(
+        `a página do cinema não respondeu (${urls.length} ${urls.length === 1 ? 'endereço tentado' : 'endereços tentados'}) — não se leu nada, e zero sessões aqui não quer dizer sala fechada`,
+      );
+    }
 
     return events;
   },

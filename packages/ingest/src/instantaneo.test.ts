@@ -122,10 +122,30 @@ describe('recolherDeInstantaneos', () => {
     expect(correccoesOrfas).toEqual(['eb-999']);
   });
 
-  it('não vai à rede: uma página que não está no instantâneo não dá evento nenhum', async () => {
+  /**
+   * Um instantâneo sem a página não é uma agenda vazia.
+   *
+   * Este teste dizia `expect(eventos).toEqual([])`, e estava a consagrar a
+   * metade errada do que provava. O que ele tem de provar é que a importação
+   * **não vai à rede** — isso continua a ser verdade, e o cliente de
+   * instantâneos só lê do mapa. O que ele não devia afirmar é que não
+   * conseguir ler uma página dá o mesmo resultado que ler uma página sem
+   * eventos.
+   *
+   * A diferença custou caro: a 5 e a 9 de setembro de 2026, dezassete fontes
+   * gravaram `status = 'success'`, com `last_success_at` atualizado e
+   * `last_error` nulo, depois de terem levado HTTP 403 e lido zero bytes.
+   * O painel ficou verde vindo da própria avaria. O caminho era exatamente
+   * este: resposta não utilizável, salto, lista vazia, e uma lista vazia lida
+   * como «não há programação».
+   *
+   * Agora o adaptador falha alto quando nenhuma listagem responde, e a
+   * importação de um instantâneo que não traz a página falha com ele — que é a
+   * resposta certa a «não consegui ler», e é diferente de «não há».
+   */
+  it('não vai à rede — e um instantâneo sem a página falha, em vez de dar agenda vazia', async () => {
     const semNada = new Map<string, string>();
-    const { eventos } = await recolherDeInstantaneos(plano(), semNada, log());
-    expect(eventos).toEqual([]);
+    await expect(recolherDeInstantaneos(plano(), semNada, log())).rejects.toThrow(/não respondeu/);
   });
 });
 

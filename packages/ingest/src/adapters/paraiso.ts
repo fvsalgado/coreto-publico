@@ -165,12 +165,15 @@ export const paraisoAdapter: Adapter = {
     const vistos = new Set<string>();
     let semData = 0;
 
+    let responderam = 0;
     for (const url of urls) {
       const response = await context.http.get(url);
       if (!response.ok) {
+        // Uma recusa não é uma agenda vazia — ver a nota do `portal-freguesia`.
         context.log.warn(`entrada sem resposta utilizável: ${url}`, response.error ?? undefined);
         continue;
       }
+      responderam += 1;
 
       const blocos = selectAll(response.body, BLOCK_SELECTOR, limite);
       if (blocos.length === 0) {
@@ -244,6 +247,12 @@ export const paraisoAdapter: Adapter = {
     }
 
     if (events.length === 0) context.log.warn('nenhum evento com data na entrada do sítio');
+
+    if (responderam === 0) {
+      throw new Error(
+        `a listagem não respondeu (${urls.length} ${urls.length === 1 ? 'endereço tentado' : 'endereços tentados'}) — não se leu nada, e zero eventos aqui não quer dizer agenda vazia`,
+      );
+    }
 
     return events;
   },

@@ -144,8 +144,13 @@ export const rssEventosAdapter: Adapter = {
     const { config } = parseAdapterConfig(source.config);
     const resposta = await http.get(source.url);
     if (!resposta.ok) {
-      log.warn(`feed sem resposta utilizável: ${source.url}`, resposta.error ?? undefined);
-      return [];
+      // Um feed que não responde não é um feed vazio. Ver a nota do
+      // `caminhos.ts`: `return []` por um erro de rede é o caminho por onde
+      // dezassete fontes gravaram sucesso sem lerem um byte, a 5 e a 9 de
+      // setembro de 2026.
+      throw new Error(
+        `o feed não respondeu: ${resposta.error ?? resposta.status} — não se leu nada, e zero eventos aqui não quer dizer agenda vazia`,
+      );
     }
 
     const eventos = parseRssEvents(resposta.body, {
