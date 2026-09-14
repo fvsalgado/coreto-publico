@@ -803,6 +803,43 @@ describe('runPipeline', () => {
     expect(outcome.status).toBe('partial');
     expect(outcome.layoutDrift).toBe(false);
     expect(outcome.error).toContain('costumava dar 4');
+    // **Esta linha faltava, e a falta custou quinze dias.** O teste dizia que a
+    // corrida ficava `partial`, e ficava — mas ninguém perguntou o que é que
+    // isso escrevia na ficha da fonte. Escrevia sucesso.
+    expect(db.health[0]?.succeeded).toBe(false);
+  });
+
+  /*
+   * A terceira vez que o mesmo defeito apareceu, com os números da produção.
+   *
+   * Medido a 14 de setembro de 2026: a `jf-assentiz` trazia zero eventos desde
+   * 30 de agosto e a `jf-fontes` desde 6 de setembro, e as duas tinham
+   * `last_success_at` do próprio dia — quinze e oito dias a dizer que estavam
+   * bem. A corrida ficava `partial` e a ficha da fonte ficava verde.
+   *
+   * O caminho é a linha de base pequena: com 1, a `avaliarContagem` devolve
+   * `'normal'` sem comparar nada, porque abaixo de `DRIFT_MIN_BASELINE` uma
+   * freguesia sossegada não pode pôr o painel amarelo para sempre. Era o
+   * `status` que sabia, e ninguém lho perguntava.
+   */
+  it('uma fonte de linha de base pequena que traz zero não se dá por lida', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(makeSource({ baseline_item_count: 1 }), db, stubHttp('<ul></ul>'));
+
+    // A contagem continua a dizer «normal» — e está certa, não se mexeu nela.
+    expect(outcome.contagem).toBe('normal');
+    expect(outcome.status).toBe('partial');
+    expect(outcome.error).toContain('costumava dar 1');
+
+    // O que muda é a ficha: não há sucesso a gravar numa corrida incompleta,
+    // e a linha de base não aprende com um zero.
+    expect(db.health[0]?.succeeded).toBe(false);
+    expect(db.health[0]?.updateBaseline).toBe(false);
+
+    // E **não alimenta o disjuntor**: a fonte respondeu. Quem conta falhas é o
+    // `leu`, e trancar uma freguesia por ela ter esvaziado a agenda foi
+    // exactamente o que prendeu o Sardoal.
+    expect(db.health[0]?.leu).toBe(true);
   });
 
   it('uma alteração de layout não apaga o que já lá estava', async () => {

@@ -594,3 +594,63 @@ describe('cabecalho e o robots.txt', () => {
     expect(pedidos).toEqual(['https://cm-x.pt/cartaz.jpg']);
   });
 });
+
+describe('o que os contadores contam', () => {
+  /*
+   * **A guarda que apanha uma fonte calada exige `failures > 0`.**
+   *
+   * O `nuncaRespondeu` do pipeline é `http.responses === 0 && http.failures > 0`.
+   * Quando a verificação do `robots.txt` entrou, a 14 de setembro de 2026, abriu
+   * um caminho novo: se o `robots.txt` não responde, o `get` devolve sem nunca
+   * chegar a pedir a página — e sem mexer em contador nenhum. A corrida gravava
+   * zero respostas E zero falhas, que se lê como «não se tentou» em vez de
+   * «tentou-se e não atenderam», e a guarda não disparava.
+   *
+   * São estes números que sustentam a carta às oito fontes caladas do Médio
+   * Tejo. Perdê-los era perder a prova.
+   */
+  it('um robots.txt que não responde conta uma falha', async () => {
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      maxAttempts: 1,
+      sleep: () => Promise.resolve(),
+      fetchImpl: () => Promise.reject(new Error('read ECONNRESET')),
+    });
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    expect(resposta.ok).toBe(false);
+    expect(resposta.error).toContain('ECONNRESET');
+    expect(client.counters()).toEqual({ responses: 0, failures: 1 });
+  });
+
+  it('um robots.txt que dá 5xx conta uma falha', async () => {
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      maxAttempts: 1,
+      sleep: () => Promise.resolve(),
+      fetchImpl: () => Promise.resolve(new Response('', { status: 503 })),
+    });
+
+    await client.get('https://cm-x.pt/agenda');
+
+    expect(client.counters()).toEqual({ responses: 0, failures: 1 });
+  });
+
+  /*
+   * A outra metade da assimetria, e a que parte tudo se alguém a «corrigir»:
+   * um `robots.txt` que responde **não** conta como resposta. Se contasse, o
+   * `http_responses` nunca seria zero e o `nuncaRespondeu` morria para todas as
+   * fontes de uma vez — incluindo as oito que estão caladas agora.
+   */
+  it('um robots.txt que responde não conta como resposta da fonte', async () => {
+    const { client } = servidorDeEnderecos({
+      'https://cm-x.pt/agenda': { status: 200, body: 'a agenda' },
+    });
+
+    await client.get('https://cm-x.pt/agenda');
+
+    // Um pedido ao robots.txt e um à agenda; só a agenda conta.
+    expect(client.counters()).toEqual({ responses: 1, failures: 0 });
+  });
+});

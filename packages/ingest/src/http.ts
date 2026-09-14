@@ -370,16 +370,39 @@ export class HttpClient {
           headers: { 'user-agent': this.userAgent, accept: 'text/plain,*/*;q=0.8' },
         });
       } catch (error) {
+        // **Um pedido que se fez e não respondeu é uma falha, seja para que
+        // ficheiro for.** Sem esta linha, uma fonte cujo `robots.txt` não
+        // responde grava zero respostas E zero falhas — e isso lê-se no painel
+        // como «não se tentou», quando o que houve foi «tentou-se e não
+        // atenderam». Pior: o `nuncaRespondeu` do pipeline exige
+        // `failures > 0`, por isso a guarda que escreve «a fonte não respondeu»
+        // deixava de disparar. São estes números que sustentam a carta à CIM
+        // sobre as oito fontes caladas; perdê-los era perder a prova.
+        this.failures += 1;
         throw new Error(`não consegui ler o ${endereco} — ${describeError(error)}`);
       }
 
       if (resposta.status >= 500) {
+        // Houve resposta, e é uma resposta que não serve. Conta como falha
+        // pela mesma razão, e **não** como resposta: ver o comentário do
+        // `responses` mais abaixo.
+        this.failures += 1;
         throw new Error(`não consegui ler o ${endereco}: o servidor deu ${resposta.status}`);
       }
       // 4xx é ausência de ficheiro, e ausência de ficheiro é ausência de
       // regras. É a leitura da norma, e é a única que não inventa proibições.
       if (!resposta.ok) return SEM_RESTRICOES;
 
+      // **E um `robots.txt` que responde NÃO conta como resposta.** A
+      // assimetria com as duas falhas acima é deliberada, e inverter uma delas
+      // parte alguma coisa. Os contadores respondem a uma pergunta só: «leu-se
+      // alguma coisa DESTA FONTE?». O `robots.txt` de uma câmara pode atender
+      // na perfeição e a agenda não atender nenhuma vez — se isso contasse
+      // como resposta, o `http_responses` nunca seria zero, e o
+      // `nuncaRespondeu` do pipeline (que exige `responses === 0`) morria para
+      // todas as fontes de uma vez. Não atender, ao contrário, é da fonte
+      // inteira: não se leu nada, e é isso que o número tem de dizer.
+      //
       // Não se lê um ficheiro inteiro de sete megabytes vindo de uma máquina
       // que não é nossa: a §2.5 manda analisar pelo menos 512 KiB, e o `slice`
       // do `lerRobots` corta aí.

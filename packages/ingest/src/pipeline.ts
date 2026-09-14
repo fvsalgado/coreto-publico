@@ -322,7 +322,9 @@ export async function runSource(
     const estado = nuncaRespondeu ? 'failed' : result.status;
     const derivaDeLayout = nuncaRespondeu ? false : result.layoutDrift;
     const nota = nuncaRespondeu
-      ? `a fonte não respondeu a nenhum dos ${http.failures} pedidos — não se leu nada, e zero itens aqui não quer dizer agenda vazia`
+      ? `a fonte não respondeu ${
+          http.failures === 1 ? 'ao pedido que se lhe fez' : `a nenhum dos ${http.failures} pedidos`
+        } — não se leu nada, e zero itens aqui não quer dizer agenda vazia`
       : result.note;
 
     await ignoreFailure(log, 'fechar a execução', () =>
@@ -355,7 +357,34 @@ export async function runSource(
      * treinar a linha de base é a contagem em que não se confia o suficiente
      * para dizer que está tudo bem.
      */
-    const leituraBoa = !nuncaRespondeu && result.contagem === 'normal';
+    /*
+     * **A terceira vez que este mesmo defeito apareceu, e a terceira condição.**
+     *
+     * Medido a 14 de setembro de 2026, em produção: a `jf-assentiz` traz zero
+     * eventos desde 30 de agosto e a `jf-fontes` desde 6 de setembro, e as
+     * duas escreveram `last_success_at = hoje` todas as noites desde então —
+     * quinze dias e oito dias de verde vindo, outra vez, da própria avaria.
+     *
+     * O caminho: as duas têm linha de base 1, e a `avaliarContagem` devolve
+     * `'normal'` sem sequer comparar contagens quando a linha de base é menor
+     * do que `DRIFT_MIN_BASELINE` (5) — e é assim de propósito, porque uma
+     * freguesia sossegada não pode pôr o painel amarelo para sempre. Só que o
+     * `status` da corrida, esse, ficava `'partial'`, com a nota «a fonte
+     * respondeu mas não devolveu eventos». A corrida dizia uma coisa e a ficha
+     * da fonte dizia outra.
+     *
+     * Daí a terceira condição. **A ficha da fonte não pode dizer-se bem quando
+     * a corrida se deu por incompleta**: se o `status` não é `'success'`, não
+     * há sucesso a gravar. Não se mexeu na `avaliarContagem` — a freguesia
+     * sossegada continua a ser sossegada, porque com linha de base 0 o
+     * `nadaOndeSeEsperavaAlgo` é falso e o `status` continua `'success'`.
+     *
+     * E **não alimenta o disjuntor**: quem conta falhas é o `leu`, que olha só
+     * para se houve resposta, e houve. Esta fonte respondeu — o que ela não
+     * fez foi trazer o que costuma trazer.
+     */
+    const leituraBoa =
+      !nuncaRespondeu && result.contagem === 'normal' && result.status === 'success';
 
     await ignoreFailure(log, 'atualizar o estado da fonte', async () => {
       await context.db?.updateSourceHealth(source.id, {
