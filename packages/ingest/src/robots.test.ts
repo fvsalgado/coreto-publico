@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { caminhoDe, lerRobots, podeLer, robotsDe, SEM_RESTRICOES } from './robots.js';
+import {
+  autoridadeDe,
+  caminhoDe,
+  lerRobots,
+  MAX_ROBOTS_BYTES,
+  podeLer,
+  robotsDe,
+  SEM_RESTRICOES,
+} from './robots.js';
 
 /** Lê e pergunta de uma vez, que é como isto se usa. */
 function deixa(ficheiro: string, caminho: string, produto?: string): boolean {
@@ -273,5 +281,168 @@ describe('os ficheiros que as fontes servem de facto', () => {
     expect(deixa(wp, '/wp-admin/')).toBe(false);
     // A excepção do próprio ficheiro, que é o caso do `Allow` mais comprido.
     expect(deixa(wp, '/wp-admin/admin-ajax.php')).toBe(true);
+  });
+});
+
+/**
+ * O que seis agentes encontraram a atacar isto antes de entrar.
+ *
+ * Três a partir, três a julgar o que os primeiros diziam, com a RFC 9309
+ * aberta e o analisador de referência da Google ao lado. O que se segue é o
+ * que sobreviveu ao julgamento — cada um reproduzido, e cada um a falhar com
+ * a versão anterior.
+ */
+describe('o que o ataque encontrou', () => {
+  /**
+   * **Uma linha de quarenta e cinco bytes segurava as quarenta fontes.**
+   *
+   * Cada `*` do padrão virava `.*` numa expressão regular, e o motor faz
+   * retrocesso exponencial sobre isso. Medido contra um caminho de quarenta
+   * caracteres: seis `*` levavam 14 ms, oito 165 ms, dez 1 s, doze 4 s,
+   * catorze 9 s. Quadruplica a cada dois. Vinte são horas.
+   *
+   * O `podeLer` é síncrono e a recolha é um processo só: sem erro, sem
+   * registo, sem tempo esgotado — a recolha simplesmente parava. E vinha de
+   * um ficheiro que, por definição, é escrito por outra pessoa; a §3 da norma
+   * diz-lho por extenso: «treat the content of a robots.txt file as untrusted
+   * content».
+   *
+   * O algoritmo passou a ser o do analisador de referência: conjunto de
+   * posições candidatas, que nunca recua.
+   */
+  it('não se pendura num padrão com muitos «*»', () => {
+    const regras = lerRobots('User-agent: *\nDisallow: /' + '*a'.repeat(20) + 'z');
+    const caminho = '/' + 'a'.repeat(60);
+
+    const antes = performance.now();
+    const resposta = podeLer(regras, caminho);
+    const demorou = performance.now() - antes;
+
+    expect(typeof resposta).toBe('boolean');
+    // Com a expressão regular isto não acabava. Cem milissegundos é folga
+    // larga para o algoritmo linear, e aperto impossível para o antigo.
+    expect(demorou).toBeLessThan(100);
+  });
+
+  /**
+   * O `$` conta na especificidade, e a versão anterior descontava-o.
+   *
+   * O comentário que escrevi dizia que «a norma manda contar os caracteres do
+   * padrão, e o `*` conta como um». A primeira metade é verdade; a segunda era
+   * invenção minha. A §2.2.2 diz só: «The most specific match is the match
+   * that has the most octets.»
+   *
+   * O que isso custava está aqui: sete contra sete davam empate, o desempate
+   * dava o `Allow`, e lia-se uma página que o sítio tinha fechado à mão.
+   */
+  it('conta o «$» na especificidade, e por isso o Disallow ganha', () => {
+    const ficheiro = ['User-agent: *', 'Allow: /agenda', 'Disallow: /agenda$'].join('\n');
+    expect(podeLer(lerRobots(ficheiro), '/agenda')).toBe(false);
+    // E o `$` não casa o que vem depois, por isso a subpágina continua livre.
+    expect(podeLer(lerRobots(ficheiro), '/agenda/setembro')).toBe(true);
+  });
+
+  /**
+   * **`User-agent: Coreto/1.0` é o que alguém escreve de facto.**
+   *
+   * O agente desta casa apresenta-se como `Coreto/1.0 (+https://…)`, e é dos
+   * registos do servidor que um administrador copia o nome quando nos quer
+   * travar. A ABNF da §2.2.1 diz que um `product-token` é só letras, `_` e
+   * `-`; a versão anterior comparava o valor inteiro por igualdade, não
+   * casava, e caía no `*` — que nestas fontes é permissivo.
+   *
+   * O único grupo que alguém escrevia para nós era o único que ignorávamos.
+   */
+  it('reconhece o nosso nome mesmo com a versão colada', () => {
+    const ficheiro = ['User-agent: *', 'Disallow:', '', 'User-agent: Coreto/1.0', 'Disallow: /'];
+    const regras = lerRobots(ficheiro.join('\n'));
+    expect(regras.grupo).toBe('coreto');
+    expect(podeLer(regras, '/agenda')).toBe(false);
+  });
+
+  it('mas continua a não apanhar um nome que não é o nosso', () => {
+    expect(lerRobots('User-agent: CoretoBot\nDisallow: /').grupo).toBe(null);
+  });
+
+  /**
+   * Um `\r` sozinho é terminador de linha em ficheiros antigos.
+   *
+   * Com `\r?\n`, um ficheiro servido assim vinha como **uma linha só** — e
+   * um `robots.txt` que proíbe tudo passava a não proibir nada, porque a
+   * primeira linha nunca acabava.
+   */
+  it('lê um ficheiro terminado só com «\\r»', () => {
+    const regras = lerRobots('User-agent: *\rDisallow: /privado\r');
+    expect(podeLer(regras, '/privado/x')).toBe(false);
+    expect(podeLer(regras, '/agenda')).toBe(true);
+  });
+
+  /**
+   * O caminho chega percent-encodado e a regra chega em texto.
+   *
+   * O `caminhoDe` devolve o que o `URL` lhe dá — `/programa%C3%A7%C3%A3o/` — e
+   * o padrão vem do ficheiro tal como foi escrito. Sem normalizar os dois
+   * lados nunca se encontram, e perde-se **nos dois sentidos**: uma proibição
+   * acentuada não prende, e um `Allow:` acentuado não liberta.
+   */
+  it('casa uma regra acentuada com o caminho encodado', () => {
+    const proibe = lerRobots('User-agent: *\nDisallow: /programação/');
+    expect(podeLer(proibe, caminhoDe('https://x.pt/programação/setembro'))).toBe(false);
+
+    const liberta = lerRobots('User-agent: *\nDisallow: /\nAllow: /programação/');
+    expect(podeLer(liberta, caminhoDe('https://x.pt/programação/setembro'))).toBe(true);
+    expect(podeLer(liberta, caminhoDe('https://x.pt/outra-coisa'))).toBe(false);
+  });
+
+  /**
+   * **As regressões que a correção óbvia teria partido.**
+   *
+   * A correção que parecia certa — «encodar tudo o que seja reservado» —
+   * transformava `Disallow: /*?*` em `/*%3F*`, que não proíbe nada. E
+   * `/index.php?` e `/search?` são das linhas mais comuns que há num
+   * `robots.txt`. A Figura 4 da §2.2.2 mostra `?` e `=` a ficarem como estão.
+   *
+   * Estes vêm primeiro, e de propósito: se algum deles passar a deixar ler, a
+   * normalização está errada e vê-se antes de ir para produção.
+   */
+  it('não estraga as regras de consulta ao normalizar', () => {
+    const casos: Array<[string, string]> = [
+      ['/*?*', '/agenda?mes=9'],
+      ['/index.php?', '/index.php?x=1'],
+      ['/search?', '/search?q=festa'],
+      ['/*&*', '/a?b&c'],
+      ['/a+b/', '/a+b/c'],
+      ['/~utilizador/', '/~utilizador/pagina'],
+    ];
+    for (const [regra, caminho] of casos) {
+      expect(podeLer(lerRobots(`User-agent: *\nDisallow: ${regra}`), caminho), regra).toBe(false);
+    }
+  });
+
+  /** A linha 5 da Figura 4 da §2.2.2: `%62%61%7A` é `baz`. */
+  it('desfaz um percent-encoding que esconde um carácter comum', () => {
+    const regras = lerRobots('User-agent: *\nDisallow: /foo/bar/%62%61%7A');
+    expect(podeLer(regras, '/foo/bar/baz')).toBe(false);
+  });
+
+  /**
+   * A autoridade é o esquema mais o hospedeiro, e não só o hospedeiro.
+   *
+   * Com `http://x.pt` e `https://x.pt` a partilharem a entrada da cache, o
+   * ficheiro de um mandava no outro — e do lado permissivo, que é o que custa
+   * a quem confia na promessa.
+   */
+  it('distingue http de https na autoridade', () => {
+    expect(autoridadeDe('http://x.pt/agenda')).toBe('http://x.pt');
+    expect(autoridadeDe('https://x.pt/agenda')).toBe('https://x.pt');
+    expect(autoridadeDe('https://x.pt/a')).toBe(autoridadeDe('https://x.pt/b'));
+  });
+
+  /** A §2.5 manda analisar pelo menos 500 KiB; não manda ler sete megabytes. */
+  it('tem um tecto de tamanho, e o que passa do tecto não conta', () => {
+    const enchimento = '# ' + 'x'.repeat(MAX_ROBOTS_BYTES) + '\n';
+    const regras = lerRobots(enchimento + 'User-agent: *\nDisallow: /');
+    // A regra ficou para lá do corte, e o que não se leu não proíbe.
+    expect(podeLer(regras, '/agenda')).toBe(true);
   });
 });

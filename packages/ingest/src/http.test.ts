@@ -163,6 +163,20 @@ describe('HttpClient', () => {
 });
 
 /**
+ * Dois destes testes exigiam que o `get` atirasse, e passaram a exigir o
+ * contrário.
+ *
+ * Não é o teste a ceder ao código: é o código a voltar ao contrato que sempre
+ * teve. O topo deste ficheiro promete, desde que existe, que «nada aqui atira
+ * exceções» — e onze chamadas a `get` nos adaptadores foram escritas contra
+ * essa promessa, com `if (!resposta.ok) { log.warn; continue; }`. A primeira
+ * versão da verificação do `robots.txt` atirava, e uma exceção a sair do meio
+ * dessas onze levava a fonte inteira abaixo por causa de uma ficha de detalhe
+ * alojada noutro sítio.
+ *
+ * E não é preciso atirar para a fonte falhar à vista: uma listagem que devolve
+ * `ok: false` cai na guarda do `responderam === 0` do adaptador, e essa atira.
+ *
  * O `robots.txt` deixou de ser uma coisa que esta casa não lia.
  *
  * Durante meses a `/fontes` confessava, por escrito, que a recolha não o lia.
@@ -259,20 +273,27 @@ describe('o robots.txt, agora que se cumpre', () => {
    * se arruma como se fosse «não».
    */
   it('um 5xx no ficheiro não passa por permissão nem por proibição calada', async () => {
+    const pedidos: string[] = [];
     const client = new HttpClient({
       minHostIntervalMs: 0,
       sleep: () => Promise.resolve(),
-      fetchImpl: (input) =>
-        Promise.resolve(
+      fetchImpl: (input) => {
+        pedidos.push(String(input));
+        return Promise.resolve(
           String(input).endsWith('/robots.txt')
             ? new Response('', { status: 503 })
             : new Response('a agenda', { status: 200 }),
-        ),
+        );
+      },
     });
 
-    await expect(client.get('https://www.cm-exemplo.pt/agenda')).rejects.toThrow(
-      /não consegui ler o .*robots\.txt.*503/,
-    );
+    const resposta = await client.get('https://www.cm-exemplo.pt/agenda');
+
+    // Devolve, não atira — ver a nota no `get`. A página não é pedida, e a
+    // razão fica escrita para quem for ler o registo.
+    expect(resposta.ok).toBe(false);
+    expect(resposta.error).toMatch(/não consegui ler o .*robots\.txt.*503/);
+    expect(pedidos).toEqual(['https://www.cm-exemplo.pt/robots.txt']);
   });
 
   /**
@@ -295,9 +316,9 @@ describe('o robots.txt, agora que se cumpre', () => {
       fetchImpl: () => Promise.reject(fora),
     });
 
-    await expect(client.get('https://www.cm-tomar.pt/comunicacao/agenda')).rejects.toThrow(
-      /ECONNRESET/,
-    );
+    const resposta = await client.get('https://www.cm-tomar.pt/comunicacao/agenda');
+    expect(resposta.ok).toBe(false);
+    expect(resposta.error).toMatch(/ECONNRESET/);
   });
 
   it('o próprio robots.txt não se pergunta a si mesmo se pode ser lido', async () => {
