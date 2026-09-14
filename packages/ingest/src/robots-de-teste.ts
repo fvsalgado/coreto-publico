@@ -15,7 +15,9 @@
  *
  * Por omissão responde «pode tudo», que é o que trinta e duas das quarenta
  * fontes desta casa respondem de facto. Quem quiser testar uma proibição passa
- * o ficheiro que quer.
+ * o ficheiro que quer — ou uma função do endereço, para dar ficheiros
+ * diferentes a hospedeiros diferentes, que é o que faz falta para exercitar um
+ * redirecionamento de um sítio para outro.
  */
 
 type FetchImpl = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -31,12 +33,16 @@ export const ROBOTS_PERMISSIVO = 'User-agent: *\nDisallow:\n';
  * é por isso que se pode acrescentar a regra sem reescrever as asserções que
  * contam quantas vezes se bateu à porta.
  */
-export function comRobots(fetchImpl: FetchImpl, ficheiro = ROBOTS_PERMISSIVO): FetchImpl {
+export function comRobots(
+  fetchImpl: FetchImpl,
+  ficheiro: string | ((url: string) => string) = ROBOTS_PERMISSIVO,
+): FetchImpl {
   return (input, init) => {
     const url = typeof input === 'string' ? input : String(input);
     if (url.endsWith('/robots.txt')) {
+      const corpo = typeof ficheiro === 'function' ? ficheiro(url) : ficheiro;
       return Promise.resolve(
-        new Response(ficheiro, { status: 200, headers: { 'content-type': 'text/plain' } }),
+        new Response(corpo, { status: 200, headers: { 'content-type': 'text/plain' } }),
       );
     }
     return fetchImpl(input, init);
