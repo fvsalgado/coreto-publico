@@ -242,8 +242,29 @@ jobs:
       # oitenta, num registo que ninguém abre de manhã. O alarme estava
       # montado; faltava-lhe o motivo para tocar. Ver `contarProblemas` em
       # `packages/ingest/src/cli.ts`.
+      #
+      # **Só a recolha completa mexe no aviso, e isso custou um alarme calado.**
+      # A 13 de setembro, às 22:30, uma corrida à mão de uma fonte só
+      # (`cm-tomar`, que está bloqueada) comentou aqui; um minuto depois, outra
+      # corrida à mão de outra fonte só (`jf-valhascos`, que responde) **fechou
+      # o aviso** com a frase «A recolha de 2026-09-13T22:31+00:00 correu bem».
+      # Nessa noite havia oito fontes bloqueadas, o Sardoal partido e o Teatro
+      # Virgínia já em pausa. Uma fonte escolhida a dedo declarou as quarenta
+      # saudáveis.
+      #
+      # O comentário acima diz que um aviso que fica aberto depois de a recolha
+      # voltar mente sobre o estado de hoje. Isto é a outra metade da mesma
+      # frase, e é a metade cara: um aviso que **fecha** sem que o estado tenha
+      # mudado não se aprende a ignorar — desaparece, e ninguém fica a saber
+      # que havia o que ignorar.
+      #
+      # `!inputs.fonte` é verdadeiro quando ninguém pediu uma fonte em
+      # particular: no `schedule`, onde `inputs` nem existe, e no
+      # `workflow_dispatch` com o campo vazio, que é o que corre `--all`. Uma
+      # corrida dirigida a uma fonte é diagnóstico — quem a dispara está a olhar
+      # para o resultado — e não fala pelas outras trinta e nove.
       - name: Abrir ou atualizar o aviso de falha
-        if: failure()
+        if: failure() && !inputs.fonte
         env:
           GH_TOKEN: ${{ github.token }}
           EXECUCAO: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -277,7 +298,7 @@ jobs:
       # a agenda de ontem continua a servir. O que não pode é passar a noite
       # inteira sem ninguém saber. Ver `scripts/avisar.sh`.
       - name: Tocar a campainha
-        if: failure()
+        if: failure() && !inputs.fonte
         env:
           NTFY_URL: ${{ secrets.NTFY_URL }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
@@ -291,7 +312,7 @@ jobs:
       # `if: success()` é o inverso exato do `if: failure()` que o abre, e o
       # aviso fica aberto se e só se a última execução falhou.
       - name: Fechar o aviso quando a recolha voltar
-        if: success()
+        if: success() && !inputs.fonte
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

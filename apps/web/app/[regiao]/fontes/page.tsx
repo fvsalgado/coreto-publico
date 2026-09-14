@@ -423,6 +423,22 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           ))}
         </dl>
         {/*
+         * «Falhe» era vago, e a vagueza escondia um laço.
+         *
+         * Esta frase dizia «uma fonte que falhe cinco dias seguidos fica em
+         * pausa». Enquanto «falhar» quis dizer as duas coisas — não responder,
+         * e responder com menos —, a promessa era verdadeira e a casa estava
+         * partida: a Câmara do Sardoal publicou seis eventos, depois cinco,
+         * depois quatro, depois três, e ao fim de cinco leituras assim o
+         * disjuntor abriu. O concelho deixou de ser lido por ter menos
+         * programação, e a saída estava fechada por dentro — para voltar a
+         * «normal» a contagem precisava dos itens que já não existiam.
+         *
+         * O disjuntor passou a contar só o que não se conseguiu ler. A frase
+         * diz agora a mesma coisa que o código faz, e a segunda metade é nova
+         * porque a garantia é nova.
+         */}
+        {/*
          * A cadência diz-se, a hora não se promete.
          *
          * Estas duas frases prometiam a madrugada e contavam em noites a pausa
@@ -441,9 +457,11 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           <p>
             Uma recolha que traga muito menos do que o costume não escreve nada: é o sinal de que o
             site mudou de forma, e nesse caso é preferível manter o que se tinha ontem a esvaziar a
-            página. Uma fonte que falhe {FALHAS_ATE_PAUSA} dias seguidos fica em pausa{' '}
-            {HORAS_EM_PAUSA} horas e volta a ser tentada sozinha depois disso — o erro fica
-            guardado, para quem for ver saber o que aconteceu.
+            página. Uma fonte que <strong className="font-semibold text-fg">não responda</strong>{' '}
+            {FALHAS_ATE_PAUSA} dias seguidos fica em pausa {HORAS_EM_PAUSA} horas e volta a ser
+            tentada sozinha depois disso — o erro fica guardado, para quem for ver saber o que
+            aconteceu. Uma fonte que responda e traga menos eventos do que o costume não é posta em
+            pausa nenhuma: continua a ser lida todos os dias, e o que se vê fica registado.
           </p>
           <p>
             Um evento que acontece não é apagado: é arquivado. Sai da agenda, dos feeds e do mapa,
