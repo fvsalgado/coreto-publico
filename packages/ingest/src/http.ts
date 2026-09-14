@@ -51,6 +51,37 @@ const MAX_RETRY_AFTER_MS = 30_000;
 /** Uma agenda em HTML não tem 4 MB. O que passa disto é ficheiro, não página. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+/**
+ * Quantos «vai antes ali» se seguem antes de desistir.
+ *
+ * Cinco é o costume da web e chega de sobra: a 14 de setembro de 2026 mediram-se
+ * as quarenta fontes desta casa e as trinta e duas alcançáveis respondem **sem
+ * um único salto**. O número existe para o dia em que alguém encadeie um ciclo,
+ * não para os endereços de hoje.
+ */
+const MAX_REDIRECIONAMENTOS = 5;
+
+/** Os códigos que mandam ir buscar a mesma coisa a outro sítio. */
+const REDIRECIONAMENTOS = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * Para onde este redirecionamento aponta, ou `null` se não for um.
+ *
+ * Um 3xx sem `Location` não é um destino — é um servidor a responder mal, e
+ * lê-se como resposta final em vez de se adivinhar para onde ele queria mandar.
+ * Um `Location` que não dá endereço válido tem o mesmo fim, pela mesma razão.
+ */
+function destinoDe(response: Response, origem: string): string | null {
+  if (!REDIRECIONAMENTOS.has(response.status)) return null;
+  const location = response.headers.get('location');
+  if (!location) return null;
+  try {
+    return new URL(location, origem).toString();
+  } catch {
+    return null;
+  }
+}
+
 export interface HttpResponse {
   ok: boolean;
   /** Zero quando o pedido nem chegou a ter resposta (DNS, TLS, tempo esgotado). */
@@ -246,19 +277,32 @@ export class HttpClient {
     bytes: number,
     options: RequestOptions = {},
   ): Promise<Uint8Array | null> {
+    // Um cartaz é um ficheiro no servidor de outra pessoa como qualquer outro.
+    // Até 14 de setembro de 2026 este caminho não perguntava nada ao
+    // `robots.txt` — ficou escrito como limite conhecido no PR #160, e é aqui
+    // que fecha. Um `Disallow` que apanhe a pasta dos cartazes passa a valer,
+    // e o efeito é o mesmo de qualquer cartaz que não se consegue medir: a
+    // vitrine reserva o espaço como sempre reservou.
+    const recusa = await this.porqueNaoPode(url);
+    if (recusa) return null;
+
     await this.throttle(url);
     try {
-      const response = await this.fetchImpl(url, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs),
-        headers: {
+      const seguido = await this.pedirSeguindo(
+        url,
+        {
           'user-agent': this.userAgent,
           accept: 'image/*',
           range: `bytes=0-${bytes - 1}`,
           ...options.headers,
         },
-      });
-      this.responses += 1;
+        options.timeoutMs ?? this.timeoutMs,
+        () => {
+          this.responses += 1;
+        },
+      );
+      if (!('response' in seguido)) return null;
+      const { response } = seguido;
       // 206 é o corte pedido; 200 é o servidor a ignorar o `Range` e a mandar
       // tudo. Os dois servem — o que não serve é um 404 ou um 503, e desses
       // não se lê nada.
@@ -315,6 +359,11 @@ export class HttpClient {
       await this.throttle(endereco);
       let resposta: Response;
       try {
+        // Aqui **segue-se** automaticamente, ao contrário do resto do
+        // ficheiro. Não é descuido: a §2.3.1.2 manda seguir pelo menos cinco
+        // redirecionamentos a caminho do `robots.txt`, e perguntar ao
+        // `robots.txt` do destino se se pode ler o `robots.txt` do destino não
+        // teria fim.
         resposta = await this.fetchImpl(endereco, {
           redirect: 'follow',
           signal: AbortSignal.timeout(this.timeoutMs),
@@ -349,6 +398,97 @@ export class HttpClient {
     return promessa;
   }
 
+  /**
+   * A razão por que este endereço não se pode pedir, ou `null` se se pode.
+   *
+   * **Vive à parte porque tem três sítios a chamá-la, e não um.** A pergunta
+   * era feita uma vez, no `get`, antes do primeiro pedido — e isso deixava
+   * dois caminhos por perguntar: o destino de um redirecionamento, e as
+   * medidas dos cartazes. Os dois estavam escritos como limites conhecidos no
+   * PR #160, e é isto que os fecha.
+   *
+   * O `/robots.txt` é a única excepção: perguntar-lhe a ele se pode ser lido
+   * não teria fim, e a §2.2.2 diz o mesmo — «The /robots.txt URI is
+   * implicitly allowed».
+   *
+   * Devolve texto e não um booleano de propósito. «Não deixa» e «não consegui
+   * saber» são duas respostas diferentes, e quem chama escreve-as as duas na
+   * mesma linha de erro — a primeira com o grupo que decidiu, a segunda com o
+   * código de sistema que o `describeError` extraiu.
+   */
+  private async porqueNaoPode(url: string): Promise<string | null> {
+    if (caminhoDe(url) === '/robots.txt') return null;
+
+    let regras: RegrasDoRobots;
+    try {
+      regras = await this.regrasDoRobots(url);
+    } catch (error) {
+      return describeError(error);
+    }
+
+    if (podeLer(regras, caminhoDe(url))) return null;
+    return `o robots.txt deste sítio não deixa ler ${caminhoDe(url)}${
+      regras.grupo ? ` (grupo «${regras.grupo}»)` : ''
+    }`;
+  }
+
+  /**
+   * Faz o pedido e segue os «vai antes ali» à mão, perguntando ao `robots.txt`
+   * de cada destino **antes** de lá bater.
+   *
+   * **Porque é que não se usa `redirect: 'follow'`.** Porque o seguir
+   * automático é cego: bate no destino e só depois é que se sabe onde se
+   * foi parar. Se o destino for outro hospedeiro, o pedido já saiu quando
+   * ainda ninguém leu o `robots.txt` de lá — e um ficheiro que se lê depois
+   * de já se ter pedido a página não é uma regra, é um relatório.
+   *
+   * **O que isto custa hoje: nada.** Mediram-se as quarenta fontes a 14 de
+   * setembro de 2026 e as trinta e duas que respondem chegam ao destino em
+   * zero saltos. Não há aqui um pedido a mais nem um segundo de espera a
+   * mais do que havia — há a garantia para o dia em que uma câmara mudar a
+   * agenda de casa.
+   *
+   * Cada salto passa pelo estrangulamento do hospedeiro novo, porque do outro
+   * lado é outra máquina e ela não tem culpa de nós já termos batido à porta
+   * do vizinho.
+   *
+   * Não conta respostas nem falhas, e não apanha exceções: quem chama é que
+   * sabe se um cartaz que não responde conta para o mesmo sítio que uma
+   * agenda que não responde. (Não conta.)
+   */
+  private async pedirSeguindo(
+    url: string,
+    headers: Record<string, string>,
+    timeoutMs: number,
+    conta: () => void,
+  ): Promise<{ response: Response; url: string } | { recusa: string; url: string }> {
+    let atual = url;
+
+    for (let salto = 0; salto <= MAX_REDIRECIONAMENTOS; salto += 1) {
+      const response = await this.fetchImpl(atual, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(timeoutMs),
+        headers,
+      });
+      conta();
+
+      const destino = destinoDe(response, atual);
+      if (!destino) return { response, url: atual };
+
+      const recusa = await this.porqueNaoPode(destino);
+      if (recusa) return { recusa: `mandou-me a ${destino}, e ${recusa}`, url: destino };
+
+      await this.throttle(destino);
+      atual = destino;
+    }
+
+    // Um ciclo não se desfaz com paciência. Quem chama não volta a tentar.
+    return {
+      recusa: `mais de ${MAX_REDIRECIONAMENTOS} redirecionamentos a partir de ${url}`,
+      url: atual,
+    };
+  }
+
   async get(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
     let last: HttpResponse = { ok: false, status: 0, body: '', error: 'pedido não executado', url };
 
@@ -368,31 +508,8 @@ export class HttpClient {
     // gravarem sucesso sem lerem um byte — e essa guarda atira. A fonte falha,
     // com a razão escrita, e um detalhe que não se pode ler continua a custar
     // a descrição e não o evento.
-    //
-    // O `/robots.txt` é a única excepção à pergunta: perguntar-lhe a ele se
-    // pode ser lido não teria fim, e a §2.2.2 diz o mesmo — «The /robots.txt
-    // URI is implicitly allowed».
-    if (caminhoDe(url) !== '/robots.txt') {
-      let regras: RegrasDoRobots;
-      try {
-        regras = await this.regrasDoRobots(url);
-      } catch (error) {
-        // «Não consegui saber» não se arruma como se fosse «não»: fica
-        // escrito, com o código de sistema que o `describeError` extraiu.
-        return { ok: false, status: 0, body: '', error: describeError(error), url };
-      }
-      if (!podeLer(regras, caminhoDe(url))) {
-        return {
-          ok: false,
-          status: 0,
-          body: '',
-          error: `o robots.txt deste sítio não deixa ler ${caminhoDe(url)}${
-            regras.grupo ? ` (grupo «${regras.grupo}»)` : ''
-          }`,
-          url,
-        };
-      }
-    }
+    const recusa = await this.porqueNaoPode(url);
+    if (recusa) return { ok: false, status: 0, body: '', error: recusa, url };
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       await this.throttle(url);
@@ -441,19 +558,34 @@ export class HttpClient {
     const timeoutMs = options.timeoutMs ?? this.timeoutMs;
 
     try {
-      const response = await this.fetchImpl(url, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(timeoutMs),
-        headers: {
+      const seguido = await this.pedirSeguindo(
+        url,
+        {
           'user-agent': this.userAgent,
           accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
           'accept-language': 'pt-PT,pt;q=0.9',
           ...options.headers,
         },
-      });
+        timeoutMs,
+        () => {
+          this.responses += 1;
+        },
+      );
 
-      this.responses += 1;
-      const finalUrl = response.url || url;
+      // O caminho parou a meio: ou o destino tem um `robots.txt` que o proíbe,
+      // ou os saltos não acabavam. Houve resposta — conta como resposta, e é
+      // por isso que o `status` fica a zero e não a 200: não se leu página
+      // nenhuma.
+      if (!('response' in seguido)) {
+        return {
+          response: { ok: false, status: 0, body: '', error: seguido.recusa, url: seguido.url },
+          retryable: false,
+          retryAfterMs: null,
+        };
+      }
+
+      const { response } = seguido;
+      const finalUrl = seguido.url;
       const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), this.now());
 
       const declared = Number(response.headers.get('content-length') ?? '0');

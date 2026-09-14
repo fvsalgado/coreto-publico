@@ -47,7 +47,7 @@ const REGRAS: readonly { titulo: string; texto: string }[] = [
   {
     titulo: 'O robots.txt manda',
     texto:
-      'Antes de pedir uma página, pergunta-se ao robots.txt do servidor se se pode. O que ele proibir não é pedido, e um bloco escrito para o nosso agente vale sozinho. Se o ficheiro não responder, não se lê nada — não consegui saber não é uma autorização.',
+      'Antes de pedir seja o que for — a página, o cartaz, ou o sítio para onde um redirecionamento mandar — pergunta-se ao robots.txt desse servidor se se pode. O que ele proibir não é pedido, e um bloco escrito para o nosso agente vale sozinho. Se o ficheiro não responder, não se lê nada — não consegui saber não é uma autorização.',
   },
   {
     titulo: 'Devagar, e identificados',
