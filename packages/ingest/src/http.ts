@@ -22,8 +22,10 @@
  */
 import { USER_AGENT } from '@coreto/core';
 import {
+  autoridadeDe,
   caminhoDe,
   lerRobots,
+  MAX_ROBOTS_BYTES,
   podeLer,
   PRODUTO,
   robotsDe,
@@ -299,8 +301,11 @@ export class HttpClient {
    * a carta às oito fontes caladas do Médio Tejo.
    */
   private async regrasDoRobots(url: string): Promise<RegrasDoRobots> {
-    const host = hostOf(url);
-    const guardado = this.robotsPorHospedeiro.get(host);
+    // Chaveia pela autoridade e não pelo hospedeiro: `http://x.pt` e
+    // `https://x.pt` são autoridades diferentes para a norma, e partilhar a
+    // entrada fazia o ficheiro de uma mandar na outra.
+    const autoridade = autoridadeDe(url);
+    const guardado = this.robotsPorHospedeiro.get(autoridade);
     if (guardado) return guardado;
 
     const endereco = robotsDe(url);
@@ -316,7 +321,7 @@ export class HttpClient {
           headers: { 'user-agent': this.userAgent, accept: 'text/plain,*/*;q=0.8' },
         });
       } catch (error) {
-        throw new Error(`não consegui ler o ${endereco}: ${describeError(error)}`);
+        throw new Error(`não consegui ler o ${endereco} — ${describeError(error)}`);
       }
 
       if (resposta.status >= 500) {
@@ -326,7 +331,10 @@ export class HttpClient {
       // regras. É a leitura da norma, e é a única que não inventa proibições.
       if (!resposta.ok) return SEM_RESTRICOES;
 
-      const texto = await resposta.text();
+      // Não se lê um ficheiro inteiro de sete megabytes vindo de uma máquina
+      // que não é nossa: a §2.5 manda analisar pelo menos 512 KiB, e o `slice`
+      // do `lerRobots` corta aí.
+      const texto = (await resposta.text()).slice(0, MAX_ROBOTS_BYTES);
       // Um 200 que devolve HTML não é um `robots.txt`: é a página de erro de
       // quem não sabe dar 404. Lê-la como regras seria ler tags como caminhos.
       if (/^\s*<(?:!doctype|html)\b/i.test(texto)) return SEM_RESTRICOES;
@@ -334,7 +342,7 @@ export class HttpClient {
       return lerRobots(texto, PRODUTO);
     })();
 
-    this.robotsPorHospedeiro.set(host, promessa);
+    this.robotsPorHospedeiro.set(autoridade, promessa);
     // Uma leitura falhada não fica guardada como veredicto: fica guardada a
     // promessa, e quem lhe pegar a seguir recebe o mesmo erro. É o que impede
     // quarenta fontes de baterem quarenta vezes no mesmo ficheiro em baixo.
@@ -344,11 +352,35 @@ export class HttpClient {
   async get(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
     let last: HttpResponse = { ok: false, status: 0, body: '', error: 'pedido não executado', url };
 
-    // Antes de pedir a página, perguntar se se pode. O `robots.txt` do próprio
-    // hospedeiro é a única excepção, porque perguntar-lhe a ele se pode ser
-    // lido seria uma pergunta sem fim.
-    if (!url.endsWith('/robots.txt')) {
-      const regras = await this.regrasDoRobots(url);
+    // Antes de pedir a página, perguntar se se pode.
+    //
+    // **Devolve, não atira.** A primeira versão disto atirava quando o
+    // `robots.txt` não respondia, e partia a promessa que está no topo deste
+    // ficheiro: «nada aqui atira exceções». Onze chamadas a `get` nos
+    // adaptadores foram escritas contra essa promessa — `if (!resposta.ok) {
+    // log.warn; continue; }` — e uma exceção a sair do meio delas leva a
+    // fonte inteira abaixo por causa de uma ficha de detalhe alojada noutro
+    // sítio.
+    //
+    // Não é preciso atirar para a fonte falhar à vista. Uma listagem que
+    // devolve `ok: false` faz o adaptador cair na guarda do `responderam === 0`
+    // — a que se acrescentou a 14 de setembro, depois de dezassete fontes
+    // gravarem sucesso sem lerem um byte — e essa guarda atira. A fonte falha,
+    // com a razão escrita, e um detalhe que não se pode ler continua a custar
+    // a descrição e não o evento.
+    //
+    // O `/robots.txt` é a única excepção à pergunta: perguntar-lhe a ele se
+    // pode ser lido não teria fim, e a §2.2.2 diz o mesmo — «The /robots.txt
+    // URI is implicitly allowed».
+    if (caminhoDe(url) !== '/robots.txt') {
+      let regras: RegrasDoRobots;
+      try {
+        regras = await this.regrasDoRobots(url);
+      } catch (error) {
+        // «Não consegui saber» não se arruma como se fosse «não»: fica
+        // escrito, com o código de sistema que o `describeError` extraiu.
+        return { ok: false, status: 0, body: '', error: describeError(error), url };
+      }
       if (!podeLer(regras, caminhoDe(url))) {
         return {
           ok: false,
