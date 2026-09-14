@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceRow } from '../adapter';
 import { HttpClient } from '../http';
 import { RunLogger } from '../run-logger';
+import { comRobots } from '../robots-de-teste.js';
 import {
   pareceNomeDeEspaco,
   parseDetalhe,
@@ -215,11 +216,11 @@ function rede(listagem: string, detalhe = DETALHE): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => {
+    fetchImpl: comRobots((input) => {
       const url = typeof input === 'string' ? input : String(input);
       const corpo = url === BASE ? listagem : detalhe;
       return Promise.resolve(new Response(corpo, { status: 200 }));
-    },
+    }),
   });
 }
 

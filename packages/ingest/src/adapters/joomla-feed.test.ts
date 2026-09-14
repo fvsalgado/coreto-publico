@@ -7,6 +7,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { joomlaEventBookingAdapter } from './joomla-eventbooking.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * A segunda leitura da mesma agenda.
  *
@@ -46,11 +47,11 @@ function stubHttp(paginas: Record<string, string>): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => {
+    fetchImpl: comRobots((input) => {
       const corpo = paginas[String(input)];
       if (corpo === undefined) return Promise.resolve(new Response('', { status: 404 }));
       return Promise.resolve(new Response(corpo, { status: 200 }));
-    },
+    }),
   });
 }
 

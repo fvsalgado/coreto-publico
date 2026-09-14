@@ -7,6 +7,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { lerCoordenadas, lerDatas, lerImagem, lerLocal, ouremApiAdapter } from './ourem-api.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * Corre contra a resposta verdadeira da API, capturada a 28 de agosto de 2026.
  *
@@ -43,7 +44,7 @@ function stubHttp(corpo: string, status = 200): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.resolve(new Response(corpo, { status })),
+    fetchImpl: comRobots(() => Promise.resolve(new Response(corpo, { status }))),
   });
 }
 
