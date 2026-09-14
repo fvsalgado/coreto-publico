@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HttpClient, backoffMs, parseRetryAfter, USER_AGENT } from './http.js';
 
-import { comRobots } from './robots-de-teste.js';
+import { comRobots, ROBOTS_PERMISSIVO } from './robots-de-teste.js';
 interface Recorder {
   urls: string[];
   headers: Array<Record<string, string>>;
@@ -437,5 +437,160 @@ describe('a descrição de um erro de rede', () => {
     const fora = new Error('fetch failed') as Error & { cause?: unknown };
     fora.cause = meio;
     expect(await descricaoDe(fora)).toContain('EPROTO');
+  });
+});
+
+/**
+ * Um servidor de mentira que responde pelo endereço, e não pela ordem.
+ *
+ * O `makeClient` lá de cima serve as respostas guionadas por ordem de chegada,
+ * e isso chega para tentativas repetidas ao mesmo sítio. Um redirecionamento
+ * não é isso: é o servidor a mandar bater a **outra porta**, e o que interessa
+ * medir é qual das portas é que levou pancada.
+ */
+function servidorDeEnderecos(
+  paginas: Record<string, { status: number; body?: string; headers?: Record<string, string> }>,
+  robots: string | ((url: string) => string) = ROBOTS_PERMISSIVO,
+): { client: HttpClient; pedidos: string[] } {
+  const pedidos: string[] = [];
+  const client = new HttpClient({
+    minHostIntervalMs: 0,
+    now: () => 0,
+    sleep: () => Promise.resolve(),
+    fetchImpl: comRobots((input) => {
+      const url = String(input);
+      pedidos.push(url);
+      const pagina = paginas[url];
+      if (!pagina) return Promise.resolve(new Response('', { status: 404 }));
+      return Promise.resolve(
+        new Response(pagina.body ?? '', {
+          status: pagina.status,
+          headers: pagina.headers ?? {},
+        }),
+      );
+    }, robots),
+  });
+  return { client, pedidos };
+}
+
+/** Serve «pode tudo» a um hospedeiro e «não podes nada» a todos os outros. */
+function soEsteHospedeiro(permitido: string): (url: string) => string {
+  return (url) => (url.startsWith(permitido) ? ROBOTS_PERMISSIVO : 'User-agent: *\nDisallow: /\n');
+}
+
+describe('redirecionamentos', () => {
+  it('segue e devolve o corpo e o endereço do destino', async () => {
+    const { client, pedidos } = servidorDeEnderecos({
+      'https://cm-x.pt/agenda': { status: 301, headers: { location: '/agenda/' } },
+      'https://cm-x.pt/agenda/': { status: 200, body: 'a agenda' },
+    });
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    expect(resposta.ok).toBe(true);
+    expect(resposta.body).toBe('a agenda');
+    expect(resposta.url).toBe('https://cm-x.pt/agenda/');
+    expect(pedidos).toEqual(['https://cm-x.pt/agenda', 'https://cm-x.pt/agenda/']);
+  });
+
+  it('pergunta ao robots.txt do destino antes de lá bater', async () => {
+    const { client, pedidos } = servidorDeEnderecos(
+      {
+        'https://cm-x.pt/agenda': { status: 302, headers: { location: 'https://outra.pt/agenda' } },
+        'https://outra.pt/agenda': { status: 200, body: 'isto não se devia ler' },
+      },
+      soEsteHospedeiro('https://cm-x.pt'),
+    );
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    // A prova está aqui: o destino **não levou pedido nenhum**. Um cliente que
+    // seguisse às cegas teria o corpo na mão antes de ler a regra que o proíbe.
+    expect(pedidos).toEqual(['https://cm-x.pt/agenda']);
+    expect(resposta.ok).toBe(false);
+    expect(resposta.body).toBe('');
+    expect(resposta.error).toContain('mandou-me a https://outra.pt/agenda');
+    expect(resposta.error).toContain('não deixa ler /agenda');
+  });
+
+  it('vai ao outro hospedeiro quando o robots.txt de lá deixa', async () => {
+    const { client, pedidos } = servidorDeEnderecos({
+      'https://cm-x.pt/agenda': { status: 302, headers: { location: 'https://outra.pt/agenda' } },
+      'https://outra.pt/agenda': { status: 200, body: 'mudámos de casa' },
+    });
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    expect(resposta.ok).toBe(true);
+    expect(resposta.body).toBe('mudámos de casa');
+    expect(resposta.url).toBe('https://outra.pt/agenda');
+    expect(pedidos).toEqual(['https://cm-x.pt/agenda', 'https://outra.pt/agenda']);
+  });
+
+  it('desiste de um ciclo em vez de o percorrer', async () => {
+    const { client, pedidos } = servidorDeEnderecos({
+      'https://cm-x.pt/a': { status: 302, headers: { location: '/b' } },
+      'https://cm-x.pt/b': { status: 302, headers: { location: '/a' } },
+    });
+
+    const resposta = await client.get('https://cm-x.pt/a');
+
+    expect(resposta.ok).toBe(false);
+    expect(resposta.error).toContain('mais de 5 redirecionamentos');
+    // Seis pedidos: o primeiro mais os cinco saltos. E **não volta a tentar** —
+    // a paciência não desfaz um ciclo.
+    expect(pedidos).toHaveLength(6);
+  });
+
+  it('lê um 3xx sem Location como resposta final, em vez de adivinhar', async () => {
+    const { client, pedidos } = servidorDeEnderecos({
+      'https://cm-x.pt/agenda': { status: 302 },
+    });
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    expect(resposta.ok).toBe(false);
+    expect(resposta.status).toBe(302);
+    expect(pedidos).toEqual(['https://cm-x.pt/agenda']);
+  });
+});
+
+describe('cabecalho e o robots.txt', () => {
+  it('não mede um cartaz que o robots.txt proíbe', async () => {
+    const { client, pedidos } = servidorDeEnderecos(
+      { 'https://cm-x.pt/cartazes/a.jpg': { status: 200, body: 'bytes' } },
+      'User-agent: *\nDisallow: /cartazes/\n',
+    );
+
+    expect(await client.cabecalho('https://cm-x.pt/cartazes/a.jpg', 32)).toBeNull();
+    expect(pedidos).toEqual([]);
+  });
+
+  it('mede o cartaz quando o robots.txt deixa', async () => {
+    const { client, pedidos } = servidorDeEnderecos({
+      'https://cm-x.pt/cartazes/a.jpg': { status: 206, body: 'oito bytes' },
+    });
+
+    const lidos = await client.cabecalho('https://cm-x.pt/cartazes/a.jpg', 4);
+
+    expect(lidos).not.toBeNull();
+    expect(lidos).toHaveLength(4);
+    expect(pedidos).toEqual(['https://cm-x.pt/cartazes/a.jpg']);
+  });
+
+  it('não segue um cartaz para um hospedeiro que o proíbe', async () => {
+    const { client, pedidos } = servidorDeEnderecos(
+      {
+        'https://cm-x.pt/cartaz.jpg': {
+          status: 302,
+          headers: { location: 'https://cdn.pt/cartaz.jpg' },
+        },
+        'https://cdn.pt/cartaz.jpg': { status: 200, body: 'bytes' },
+      },
+      soEsteHospedeiro('https://cm-x.pt'),
+    );
+
+    expect(await client.cabecalho('https://cm-x.pt/cartaz.jpg', 32)).toBeNull();
+    expect(pedidos).toEqual(['https://cm-x.pt/cartaz.jpg']);
   });
 });
