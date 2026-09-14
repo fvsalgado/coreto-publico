@@ -442,12 +442,18 @@ export const joomlaEventBookingAdapter: Adapter = {
     const seen = new Set<string>();
     let detalhesLidos = 0;
 
+    let responderam = 0;
     for (const url of urls) {
       const response = await context.http.get(url);
       if (!response.ok) {
+        // Uma recusa não é uma agenda vazia. A 5 e a 9 de setembro de 2026,
+        // vinte e sete fontes levaram 403 na mesma manhã e dezassete gravaram
+        // sucesso sem terem lido um byte. O contador abaixo é o que separa
+        // «não há» de «não consegui ler».
         context.log.warn(`listagem sem resposta utilizável: ${url}`, response.error ?? undefined);
         continue;
       }
+      responderam += 1;
 
       const feed = config.skipFeed ? null : await lerFeed(context, url);
       const blocks = selectAll(response.body, BLOCK_SELECTOR, limit);
@@ -534,6 +540,16 @@ export const joomlaEventBookingAdapter: Adapter = {
       }
 
       if (events.length >= limit) break;
+    }
+
+    if (responderam === 0) {
+      // A verificação cruzada com o feed, que é o que torna este adaptador
+      // fiável, vive depois da porta do `ok` — num 403 nunca chega a correr.
+      // Sem esta guarda, oito câmaras devolviam zero eventos com ar de agenda
+      // vazia, e o painel ficava verde vindo da própria avaria.
+      throw new Error(
+        `a listagem não respondeu (${urls.length} ${urls.length === 1 ? 'endereço tentado' : 'endereços tentados'}) — não se leu nada, e zero eventos aqui não quer dizer agenda vazia`,
+      );
     }
 
     return events;

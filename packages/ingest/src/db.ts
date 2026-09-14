@@ -409,6 +409,35 @@ export interface SourceHealthInput {
   baseline: number | null;
   /** Não recalibra a linha de base quando a leitura não é de confiança. */
   updateBaseline: boolean;
+  /**
+   * Se a fonte chegou a ser lida — que é coisa diferente de a leitura ser boa.
+   *
+   * **O disjuntor e a linha de base andavam pelo mesmo booleano, e isso
+   * trancou um concelho.** O `succeeded` governa três coisas ao mesmo tempo:
+   * quando a linha de base treina, quando `last_success_at` avança, e quando o
+   * disjuntor conta uma falha. Para as duas primeiras está certo — uma
+   * contagem em que não se confia não treina nada. Para a terceira está
+   * errado, e o Sardoal mostrou porquê.
+   *
+   * O disjuntor existe para deixar de martelar um servidor que não responde:
+   * recuar vinte e quatro horas dá-lhe tempo de voltar. Uma fonte que
+   * responde depressa e traz menos itens do que o costume não precisa de
+   * descanso nenhum — recuar não muda a contagem, só esconde a fonte. E como
+   * o mesmo booleano congela a linha de base, a contagem que abriu o disjuntor
+   * é a mesma que nunca mais pode descer: para voltar a «normal» a fonte
+   * precisaria dos itens que já não tem. Laço fechado, sem saída pelo código.
+   *
+   * Medido: a Câmara do Sardoal publicou seis eventos, depois cinco, depois
+   * quatro, depois três — programação a encolher, sem defeito nenhum de
+   * extração (o adaptador lê hoje os quatro blocos que a página tem, e um
+   * deles é uma reunião de câmara que o nosso próprio `excludeTitles` tira).
+   * Ao fim de cinco leituras assim o disjuntor abriu, e o concelho deixou de
+   * ser lido — por ter menos programação.
+   *
+   * `leu` separa «não consegui ler» de «li e havia menos». Só a primeira conta
+   * para o disjuntor.
+   */
+  leu: boolean;
 }
 
 /**
@@ -421,6 +450,44 @@ export const CIRCUIT_FAILURE_THRESHOLD = FALHAS_ATE_PAUSA;
 
 /** Quanto tempo o disjuntor fica aberto. Pela mesma razão, mora em core. */
 export const CIRCUIT_OPEN_HOURS = HORAS_EM_PAUSA;
+
+/**
+ * O que muda na ficha de saúde de uma fonte depois de uma leitura.
+ *
+ * Está fora da classe, e é `export`, porque a regra que aqui mora nunca esteve
+ * ao alcance de um teste: o `updateSourceHealth` só era exercido pelo duplo do
+ * `FakeDatabase`, que se limita a guardar o que recebe. A regra verdadeira —
+ * quando o disjuntor abre — corria só em produção, e foi lá que se partiu.
+ */
+export function estadoDaFonte(input: SourceHealthInput, agora: Date): Record<string, unknown> {
+  const now = agora.toISOString();
+
+  // O disjuntor conta leituras que não se conseguiram fazer, e não leituras
+  // que trouxeram menos do que o costume. Ver `leu` em `SourceHealthInput`.
+  const failures = input.leu ? 0 : input.consecutiveFailures + 1;
+
+  const patch: Record<string, unknown> = {
+    last_run_at: now,
+    last_error: input.error,
+    consecutive_failures: failures,
+  };
+
+  // Uma leitura feita fecha o disjuntor, mesmo que a contagem não agrade: o
+  // servidor respondeu, e é disso que o disjuntor trata.
+  if (input.leu) patch['circuit_open_until'] = null;
+
+  if (input.succeeded) {
+    patch['last_success_at'] = now;
+    if (input.updateBaseline)
+      patch['baseline_item_count'] = nextBaseline(input.baseline, input.itemsFound);
+  } else if (!input.leu && failures >= CIRCUIT_FAILURE_THRESHOLD) {
+    patch['circuit_open_until'] = new Date(
+      agora.getTime() + CIRCUIT_OPEN_HOURS * 3_600_000,
+    ).toISOString();
+  }
+
+  return patch;
+}
 
 export interface IngestDatabase extends RunStore {
   loadSources(ids?: readonly string[]): Promise<SourceRow[]>;
@@ -817,26 +884,7 @@ class SupabaseIngestDatabase implements IngestDatabase {
   }
 
   async updateSourceHealth(sourceId: string, input: SourceHealthInput): Promise<void> {
-    const now = new Date().toISOString();
-    const failures = input.succeeded ? 0 : input.consecutiveFailures + 1;
-
-    const patch: Record<string, unknown> = {
-      last_run_at: now,
-      last_error: input.error,
-      consecutive_failures: failures,
-    };
-
-    if (input.succeeded) {
-      patch['last_success_at'] = now;
-      patch['circuit_open_until'] = null;
-      if (input.updateBaseline)
-        patch['baseline_item_count'] = nextBaseline(input.baseline, input.itemsFound);
-    } else if (failures >= CIRCUIT_FAILURE_THRESHOLD) {
-      patch['circuit_open_until'] = new Date(
-        Date.now() + CIRCUIT_OPEN_HOURS * 3_600_000,
-      ).toISOString();
-    }
-
+    const patch = estadoDaFonte(input, new Date());
     const { error } = await this.client.from('sources').update(patch).eq('id', sourceId);
     if (error) fail('atualizar estado da fonte', error.message);
   }

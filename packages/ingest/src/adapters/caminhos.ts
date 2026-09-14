@@ -292,8 +292,20 @@ export const caminhosAdapter: Adapter = {
 
     const grelha = await context.http.get(listUrl);
     if (!grelha.ok) {
-      context.log.warn(`grelha sem resposta utilizável: ${listUrl}`, grelha.error ?? undefined);
-      return [];
+      // **Falhar alto, e não devolver lista vazia.** Devolver `[]` aqui dizia
+      // «a rede intermunicipal não tem programação», que é uma afirmação sobre
+      // o CAMINHOS feita sem se ter conseguido lê-lo. A 5 e a 9 de setembro de
+      // 2026, dezassete fontes gravaram sucesso por este caminho, sem terem
+      // lido um byte — o painel ficou verde vindo da própria avaria.
+      //
+      // Esta fonte está hoje a levar `ECONNRESET` todas as noites. O que a
+      // salvou de gravar sucesso foi ter linha de base 9: como esperava
+      // alguma coisa, o zero deu na vista. Uma fonte nova, com linha de base
+      // zero, não teria essa sorte — e é por isso que a guarda vive aqui, e
+      // não na contagem.
+      throw new Error(
+        `a grelha não respondeu: ${grelha.error ?? grelha.status} — não se leu nada, e zero eventos aqui não quer dizer rede sem programação`,
+      );
     }
 
     const cartoes = lerGrelha(grelha.body);

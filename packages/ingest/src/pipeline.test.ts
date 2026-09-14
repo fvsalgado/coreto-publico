@@ -1229,6 +1229,63 @@ describe('uma fonte que não responde falha, e não se chama agenda vazia', () =
     expect(saude?.updateBaseline).toBe(false);
   });
 
+  /**
+   * O 403 é uma resposta, e foi por aí que dezassete fontes ficaram verdes.
+   *
+   * A guarda acima — `nuncaRespondeu` — vigia `http_responses === 0`, e apanha
+   * bem as oito bloqueadas, que dão `ECONNRESET` e nunca chegam a ter estado.
+   * **Um 403 não é esse caso.** O `HttpClient` conta a resposta no instante em
+   * que o `fetch` devolve, antes de olhar ao estado; logo `http_responses` é 1,
+   * `nuncaRespondeu` é falso, e a guarda não vê nada.
+   *
+   * O que acontecia a seguir estava medido em produção: a 5 e a 9 de setembro
+   * de 2026, **vinte e sete fontes levaram 403 na mesma manhã e dezassete
+   * gravaram `status = 'success'`**, com `last_success_at` atualizado e
+   * `last_error` nulo. Zero bytes lidos, painel verde. Foram as dezassete que
+   * tinham `baseline_item_count = 0` — sem linha de base, não havia contagem
+   * que desse pelo buraco, e o adaptador devolvia `[]`, que se lê como «não há
+   * programação».
+   *
+   * A guarda que faltava não é da contagem: é do adaptador, que agora falha
+   * alto quando nenhuma listagem responde. Estes dois testes são o sítio onde
+   * a avaria tem de voltar a falhar se alguém lhe tirar a guarda.
+   */
+  describe('e uma recusa também não é uma agenda vazia', () => {
+    const comoAsDezassete = () =>
+      makeSource({
+        id: 'jf-exemplo',
+        name: 'Junta de Freguesia de Exemplo',
+        kind: 'parish_site',
+        adapter: 'portal-freguesia',
+        url: 'https://www.jf-exemplo.pt/freguesia/agenda',
+        config: {},
+        // O que as dezoito freguesias tinham, e o que as deixou passar: sem
+        // linha de base, nenhuma contagem podia dar pelo zero.
+        baseline_item_count: 0,
+        min_expected_items: 0,
+      });
+
+    it('um 403 na listagem não passa por agenda vazia', async () => {
+      const db = new FakeDatabase();
+      const outcome = await run(comoAsDezassete(), db, stubHttp('proibido', 403));
+
+      expect(outcome.status).not.toBe('success');
+      expect(outcome.error).toContain('não respondeu');
+    });
+
+    it('e a fonte não fica marcada como lida com sucesso', async () => {
+      const db = new FakeDatabase();
+      const outcome = await run(comoAsDezassete(), db, stubHttp('proibido', 403));
+
+      // A prova de que a guarda antiga não chegava: houve resposta contada.
+      expect(outcome.http.responses).toBeGreaterThan(0);
+
+      const saude = db.health.at(-1);
+      expect(saude?.succeeded).toBe(false);
+      expect(saude?.updateBaseline).toBe(false);
+    });
+  });
+
   it('mas uma agenda que responde vazia continua a ser contagem em baixo', async () => {
     // O controlo que separa as duas: aqui a página **respondeu**, e estava
     // vazia. Isso é sobre a agenda, e continua a ler-se como sempre se leu.

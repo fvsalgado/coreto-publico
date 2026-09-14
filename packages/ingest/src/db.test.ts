@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EventRow } from '@coreto/core';
-import { mergeEventUpdate } from './db.js';
+import { CIRCUIT_FAILURE_THRESHOLD, estadoDaFonte, mergeEventUpdate } from './db.js';
+import type { SourceHealthInput } from './db.js';
 
 function makeEvent(overrides: Partial<EventRow> = {}): EventRow {
   return {
@@ -264,5 +265,93 @@ describe('mergeEventUpdate e o preço em bloco', () => {
     expect(merged.price_max).toBe(10);
     expect(merged.price_display).toBe('7,50 € – 10 €');
     expect(merged.price_raw).toBe('Bilhetes: 10€ (desconto 7,50€)');
+  });
+});
+
+/**
+ * O disjuntor conta o que não se conseguiu ler, e não o que se leu a menos.
+ *
+ * **Esta regra nunca esteve ao alcance de um teste, e trancou um concelho.**
+ * O `updateSourceHealth` só era exercido pelo duplo do `FakeDatabase`, que se
+ * limita a guardar o que recebe; a decisão de abrir o disjuntor corria só em
+ * produção. Por isso foi lá que se partiu, e em silêncio.
+ *
+ * O que se partiu: um único booleano — `succeeded` — governava três coisas
+ * diferentes ao mesmo tempo. Se a linha de base treina, se `last_success_at`
+ * avança, e se o disjuntor conta uma falha. Para as duas primeiras está
+ * certo. Para a terceira estava errado.
+ *
+ * A Câmara do Sardoal publicou seis eventos, depois cinco, depois quatro,
+ * depois três. Programação a encolher, sem defeito nenhum de extração — o
+ * adaptador lê os quatro blocos que a página tem, e um deles é uma reunião de
+ * câmara que o nosso próprio `excludeTitles` tira. Ao fim de cinco leituras
+ * assim o disjuntor abriu e o concelho deixou de ser lido, por ter menos
+ * programação. E a saída estava fechada por dentro: para voltar a «normal», a
+ * contagem precisava dos itens que já não existiam, e a linha de base que a
+ * julgava estava congelada pelo mesmo booleano que a condenava.
+ */
+describe('estadoDaFonte — o que abre e o que fecha o disjuntor', () => {
+  const AGORA = new Date('2026-09-14T09:00:00.000Z');
+
+  const leitura = (overrides: Partial<SourceHealthInput> = {}): SourceHealthInput => ({
+    succeeded: false,
+    error: null,
+    itemsFound: 3,
+    consecutiveFailures: 0,
+    baseline: 6,
+    updateBaseline: false,
+    leu: true,
+    ...overrides,
+  });
+
+  it('uma contagem em baixo não conta como falha, por mais noites que dure', () => {
+    // O caso do Sardoal: respondeu, trouxe menos, e é isso.
+    let falhas = 0;
+    for (let noite = 0; noite < CIRCUIT_FAILURE_THRESHOLD + 3; noite += 1) {
+      const patch = estadoDaFonte(
+        leitura({ consecutiveFailures: falhas, error: 'queda na contagem: 3 contra 6' }),
+        AGORA,
+      );
+      falhas = patch['consecutive_failures'] as number;
+      expect(patch['circuit_open_until'], `noite ${noite + 1}`).toBeNull();
+    }
+    expect(falhas).toBe(0);
+  });
+
+  it('mas uma fonte que não se consegue ler abre o disjuntor à quinta', () => {
+    let falhas = 0;
+    let aberto: unknown = null;
+    for (let noite = 0; noite < CIRCUIT_FAILURE_THRESHOLD; noite += 1) {
+      const patch = estadoDaFonte(leitura({ leu: false, consecutiveFailures: falhas }), AGORA);
+      falhas = patch['consecutive_failures'] as number;
+      aberto = patch['circuit_open_until'];
+      if (noite < CIRCUIT_FAILURE_THRESHOLD - 1) expect(aberto).toBeUndefined();
+    }
+    expect(falhas).toBe(CIRCUIT_FAILURE_THRESHOLD);
+    expect(aberto).toBe('2026-09-15T09:00:00.000Z');
+  });
+
+  it('e uma leitura que se fez fecha o disjuntor, mesmo com a contagem em baixo', () => {
+    // A saída que faltava. O servidor voltou a responder: é disso que o
+    // disjuntor trata, e não do número de eventos que a casa publica.
+    const patch = estadoDaFonte(leitura({ leu: true, consecutiveFailures: 6 }), AGORA);
+
+    expect(patch['circuit_open_until']).toBeNull();
+    expect(patch['consecutive_failures']).toBe(0);
+    // Mas não se declara sucesso nem se treina a linha de base com uma
+    // contagem em que não se confia — isso continua como estava.
+    expect(patch['last_success_at']).toBeUndefined();
+    expect(patch['baseline_item_count']).toBeUndefined();
+  });
+
+  it('uma leitura boa avança o sucesso e treina a linha de base', () => {
+    const patch = estadoDaFonte(
+      leitura({ succeeded: true, updateBaseline: true, itemsFound: 6, baseline: 6 }),
+      AGORA,
+    );
+
+    expect(patch['last_success_at']).toBe(AGORA.toISOString());
+    expect(patch['baseline_item_count']).toBe(6);
+    expect(patch['circuit_open_until']).toBeNull();
   });
 });

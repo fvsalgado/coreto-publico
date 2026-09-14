@@ -359,12 +359,32 @@ export const portalFreguesiaAdapter: Adapter = {
     const limite = Math.min(config.maxItems ?? MAX_ITENS, MAX_ITENS);
 
     const itens: ItemDaListagem[] = [];
+    // Quantas listagens chegaram mesmo a responder.
+    //
+    // **Sem esta conta, uma recusa passava por agenda vazia — e passou.** A 5 e
+    // a 9 de setembro de 2026, vinte e sete fontes levaram HTTP 403 na mesma
+    // manhã; dezassete delas gravaram `status = 'success'` com `last_error`
+    // nulo e `last_success_at` atualizado. Zero bytes lidos, painel verde. O
+    // caminho era este: a resposta não vinha `ok`, o `continue` saltava-a, o
+    // ciclo acabava sem itens, e o `return []` lá em baixo dizia «agenda sem
+    // eventos marcados» — que é uma afirmação sobre a freguesia, feita sem se
+    // ter conseguido lê-la.
+    //
+    // A guarda da mobília, logo a seguir, não cobria isto: ela só corre sobre
+    // respostas que passaram. Quem é recusado à porta nunca chega a ser medido.
+    //
+    // O `generic-html.ts` já fazia esta conta («nenhuma página de listagem
+    // respondeu»); faltava aqui, onde estão vinte e seis das quarenta fontes, e
+    // dezoito delas com linha de base zero — precisamente as que, por terem
+    // linha de base zero, não disparavam nenhum outro alarme.
+    let responderam = 0;
     for (const lista of listas) {
       const resposta = await http.get(lista);
       if (!resposta.ok) {
         log.warn(`listagem sem resposta utilizável: ${lista}`, resposta.error ?? undefined);
         continue;
       }
+      responderam += 1;
       // Antes de contar eventos, confirmar que se está na página certa. Sem
       // isto, um sítio que mude de rotas devolvia zero eventos com ar de
       // agenda vazia, e a recolha apagava a programação da freguesia em
@@ -379,9 +399,21 @@ export const portalFreguesiaAdapter: Adapter = {
       }
     }
 
+    if (responderam === 0) {
+      // «Não consegui ler» e «não há nada» são duas respostas diferentes, e
+      // esta é a primeira. Falhar alto põe a fonte em falha, impede o
+      // `reconcile` de retirar o que está publicado, e deixa a agenda de ontem
+      // de pé — que é o que se quer quando não se sabe.
+      throw new Error(
+        `a listagem não respondeu (${listas.length} ${listas.length === 1 ? 'endereço tentado' : 'endereços tentados'}) — não se leu nada, e zero eventos aqui não quer dizer agenda vazia`,
+      );
+    }
+
     if (itens.length === 0) {
       // Uma freguesia sem nada marcado é normal — e a mobília acima já provou
-      // que a página é a certa. Zero eventos é uma leitura, não uma avaria.
+      // que a página é a certa, porque agora sabemos que houve pelo menos uma
+      // resposta para a mobília julgar. Zero eventos é uma leitura, não uma
+      // avaria.
       log.info(`agenda de ${source.name} sem eventos marcados`);
       return [];
     }

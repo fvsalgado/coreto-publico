@@ -368,6 +368,10 @@ export async function runSource(
         // seria a deteção de alteração de layout a habituar-se ao problema.
         // Itens recusados não a invalidam — o que a invalida é a contagem.
         updateBaseline: leituraBoa,
+        // Mas o disjuntor é outra coisa, e não é por esta porta que se abre:
+        // aqui houve resposta. Uma contagem em baixo fica à vista no painel e
+        // na nota; martelar menos não a faz subir. Ver `leu` em `db.ts`.
+        leu: !nuncaRespondeu,
       });
     });
 
@@ -397,6 +401,9 @@ export async function runSource(
         consecutiveFailures: source.consecutive_failures,
         baseline: source.baseline_item_count,
         updateBaseline: false,
+        // O adaptador atirou: não se leu a fonte. É esta a falha que o
+        // disjuntor conta, e a única.
+        leu: false,
       });
     });
 
