@@ -20,6 +20,8 @@
  * administrador de sistemas do outro lado exatamente o que lhe vai aparecer
  * nos registos, e duas cópias da mesma frase divergem sempre.
  */
+import { lookup } from 'node:dns/promises';
+
 import { USER_AGENT } from '@coreto/core';
 import {
   autoridadeDe,
@@ -108,6 +110,14 @@ export interface HttpClientOptions {
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /**
+   * Como se descobre em que máquina vive um nome. Ver a `chaveDoRitmo`.
+   *
+   * Injetável pela mesma razão que o `fetchImpl`: um teste que exercite o
+   * estrangulamento não pode ficar à espera de uma consulta de DNS a um
+   * domínio inventado.
+   */
+  resolverIp?: ResolvedorDeIp;
 }
 
 export interface RequestOptions {
@@ -142,13 +152,19 @@ export function parseRetryAfter(value: string | null | undefined, nowMs: number)
   return Math.max(0, asDate - nowMs);
 }
 
-function hostOf(url: string): string {
+/** O nome do hospedeiro sem a porta, que é o que o DNS aceita. */
+function nomeDe(url: string): string {
   try {
-    return new URL(url).host.toLowerCase();
+    return new URL(url).hostname.toLowerCase();
   } catch {
     return url;
   }
 }
+
+/** Resolve um nome no endereço para onde ele aponta. Injetável nos testes. */
+export type ResolvedorDeIp = (nome: string) => Promise<string>;
+
+const RESOLVEDOR: ResolvedorDeIp = async (nome) => (await lookup(nome)).address;
 
 /**
  * O que correu mal, dito com o detalhe que serve para agir.
@@ -227,8 +243,18 @@ export class HttpClient {
   private readonly robotsPorHospedeiro = new Map<string, Promise<RegrasDoRobots>>();
   private readonly userAgent: string;
 
-  /** Hospedeiro → instante a partir do qual o próximo pedido pode sair. */
+  /** Máquina → instante a partir do qual o próximo pedido pode sair. */
   private readonly nextAllowedAt = new Map<string, number>();
+
+  /**
+   * Nome → endereço da máquina onde ele vive, resolvido uma vez por recolha.
+   *
+   * Guarda-se a promessa e não o resultado, pela mesma razão do `robots.txt`:
+   * dois pedidos lançados ao mesmo tempo esperam pela mesma consulta.
+   */
+  private readonly ipPorNome = new Map<string, Promise<string>>();
+
+  private readonly resolverIp: ResolvedorDeIp;
 
   private responses = 0;
   private failures = 0;
@@ -241,6 +267,7 @@ export class HttpClient {
     this.maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
     this.minHostIntervalMs = options.minHostIntervalMs ?? DEFAULT_HOST_INTERVAL_MS;
     this.userAgent = options.userAgent ?? USER_AGENT;
+    this.resolverIp = options.resolverIp ?? RESOLVEDOR;
   }
 
   counters(): HttpCounters {
@@ -557,8 +584,40 @@ export class HttpClient {
   }
 
   /**
-   * Segura o pedido até ter passado o intervalo mínimo desde o anterior ao
-   * mesmo hospedeiro.
+   * Em que fila este pedido se mete: a da **máquina**, e não a do nome.
+   *
+   * **Oito nomes podem ser um servidor só, e nesta região são.** As câmaras de
+   * Tomar, Alcanena, Constância, Entroncamento, Ferreira do Zêzere, Mação e
+   * Vila Nova da Barquinha, mais o portal CAMINHOS da CIM, vivem todas em
+   * `83.240.244.155`. Enquanto a chave do ritmo foi o nome, demos a cada uma
+   * o seu próprio segundo de intervalo — e tratámos como oito vizinhos o que
+   * é uma porta só. Ao mudar de fonte, o relógio recomeçava do zero.
+   *
+   * A 11 de setembro de 2026 isso viu-se ao natural: aquele servidor começou
+   * a falhar em páginas de detalhe, cada falha virou três tentativas, e a
+   * recolha passou de sete para dezanove minutos a bater-lhe à porta. No dia
+   * seguinte deixou de responder a esta origem. Não está provado que uma
+   * coisa tenha causado a outra — mas o intervalo mínimo existe precisamente
+   * para não termos de fazer essa pergunta.
+   *
+   * Uma consulta de DNS por nome e por recolha, guardada. Se a consulta
+   * falhar, volta-se ao nome: **um estrangulamento que não sabe agrupar é
+   * pior do que o de antes, mas um pedido que não sai por causa do DNS é pior
+   * do que os dois.**
+   */
+  private async chaveDoRitmo(url: string): Promise<string> {
+    const nome = nomeDe(url);
+    let promessa = this.ipPorNome.get(nome);
+    if (!promessa) {
+      promessa = this.resolverIp(nome).catch(() => nome);
+      this.ipPorNome.set(nome, promessa);
+    }
+    return promessa;
+  }
+
+  /**
+   * Segura o pedido até ter passado o intervalo mínimo desde o anterior à
+   * mesma máquina.
    *
    * A próxima janela é reservada antes da espera, e não depois: dois pedidos
    * lançados ao mesmo tempo têm de se pôr em fila, não de partilhar a mesma
@@ -566,10 +625,10 @@ export class HttpClient {
    */
   private async throttle(url: string): Promise<void> {
     if (this.minHostIntervalMs <= 0) return;
-    const host = hostOf(url);
+    const chave = await this.chaveDoRitmo(url);
     const now = this.now();
-    const earliest = this.nextAllowedAt.get(host) ?? 0;
-    this.nextAllowedAt.set(host, Math.max(now, earliest) + this.minHostIntervalMs);
+    const earliest = this.nextAllowedAt.get(chave) ?? 0;
+    this.nextAllowedAt.set(chave, Math.max(now, earliest) + this.minHostIntervalMs);
     const wait = earliest - now;
     if (wait > 0) await this.sleep(wait);
   }

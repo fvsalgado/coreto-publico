@@ -14,7 +14,7 @@ type Reply = { status: number; body?: string; headers?: Record<string, string> }
 /** Cliente com relógio, espera e rede substituídos — nada aqui sai da máquina. */
 function makeClient(
   replies: readonly Reply[],
-  options: { minHostIntervalMs?: number } = {},
+  options: { minHostIntervalMs?: number; ips?: Record<string, string> } = {},
 ): { client: HttpClient; recorder: Recorder } {
   const recorder: Recorder = { urls: [], headers: [], sleeps: [] };
   let clock = 0;
@@ -22,6 +22,11 @@ function makeClient(
 
   const client = new HttpClient({
     minHostIntervalMs: options.minHostIntervalMs ?? 0,
+    // Sem isto, um teste de estrangulamento faz uma consulta de DNS a sério a
+    // `www.cm-tomar.pt` — lenta, dependente da rede, e a medir o mundo em vez
+    // de medir o código. Por omissão cada nome é a sua própria máquina, que é
+    // o que era verdade antes desta chave existir.
+    resolverIp: (nome) => Promise.resolve(options.ips?.[nome] ?? nome),
     now: () => clock,
     sleep: (ms) => {
       recorder.sleeps.push(ms);
@@ -652,5 +657,78 @@ describe('o que os contadores contam', () => {
 
     // Um pedido ao robots.txt e um à agenda; só a agenda conta.
     expect(client.counters()).toEqual({ responses: 1, failures: 0 });
+  });
+});
+
+describe('a fila é da máquina, não do nome', () => {
+  /*
+   * **Oito nomes podem ser um servidor só, e no Médio Tejo são.**
+   *
+   * As câmaras de Tomar, Alcanena, Constância, Entroncamento, Ferreira do
+   * Zêzere, Mação e Vila Nova da Barquinha, mais o portal CAMINHOS da CIM,
+   * resolvem todas para `83.240.244.155`. Enquanto a chave do intervalo foi o
+   * nome, cada uma levava o seu próprio segundo — e ao mudar de fonte o
+   * relógio recomeçava do zero. Tratávamos como oito vizinhos o que é uma
+   * porta só.
+   */
+  it('dois nomes no mesmo IP esperam um pelo outro', async () => {
+    const { client, recorder } = makeClient([{ status: 200, body: 'ok' }], {
+      minHostIntervalMs: 1_000,
+      ips: {
+        'www.cm-tomar.pt': '83.240.244.155',
+        'www.cm-macao.pt': '83.240.244.155',
+      },
+    });
+
+    await client.get('https://www.cm-tomar.pt/agenda');
+    await client.get('https://www.cm-macao.pt/eventos');
+
+    // Três esperas. O primeiro pedido nunca espera — a fila começa vazia —, e
+    // as três seguintes pagam-na: agenda do Tomar, robots do Mação, eventos do
+    // Mação. **É a do meio que é a correção:** com a chave no nome, o Mação
+    // estreava o seu próprio relógio e essa saía a seco.
+    expect(recorder.sleeps).toEqual([1_000, 1_000, 1_000]);
+  });
+
+  it('dois nomes em máquinas diferentes não esperam um pelo outro', async () => {
+    const { client, recorder } = makeClient([{ status: 200, body: 'ok' }], {
+      minHostIntervalMs: 1_000,
+      ips: {
+        'www.cm-tomar.pt': '83.240.244.155',
+        'www.cm-sardoal.pt': '130.185.84.194',
+      },
+    });
+
+    await client.get('https://www.cm-tomar.pt/agenda');
+    await client.get('https://www.cm-sardoal.pt/agenda');
+
+    // Duas, e não três: o Sardoal está noutra máquina, estreia o seu próprio
+    // relógio, e o `robots.txt` dele sai a seco. É esta linha que impede a
+    // correção de exagerar — se subisse a três, estaríamos a juntar o que não
+    // é para juntar e a recolha ficava mais lenta sem razão nenhuma.
+    expect(recorder.sleeps).toEqual([1_000, 1_000]);
+  });
+
+  it('um nome que não resolve continua a ser estrangulado pelo nome', async () => {
+    // Um pedido que não sai por causa do DNS é pior do que um agrupamento
+    // imperfeito. A falha do resolvedor recua para o comportamento antigo.
+    const recorder: Recorder = { urls: [], headers: [], sleeps: [] };
+    let clock = 0;
+    const client = new HttpClient({
+      minHostIntervalMs: 1_000,
+      resolverIp: () => Promise.reject(new Error('ENOTFOUND')),
+      now: () => clock,
+      sleep: (ms) => {
+        recorder.sleeps.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+      fetchImpl: comRobots(() => Promise.resolve(new Response('ok', { status: 200 }))),
+    });
+
+    const resposta = await client.get('https://cm-x.pt/agenda');
+
+    expect(resposta.ok).toBe(true);
+    expect(recorder.sleeps).toEqual([1_000]);
   });
 });
