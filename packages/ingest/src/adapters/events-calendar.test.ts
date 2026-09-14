@@ -6,6 +6,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { eventsCalendarAdapter, parseEventsCalendar } from './events-calendar.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * A página em `../__fixtures__/events-calendar.html` é inventada, ao
  * contrário do resto das fixtures, e é por isso que serve: o que este
@@ -54,12 +55,12 @@ function stubPorUrl(
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => {
+    fetchImpl: comRobots((input) => {
       const url = String(input);
       pedidos.push(url);
       const resposta = responder(url);
       return Promise.resolve(new Response(resposta.body, { status: resposta.status ?? 200 }));
-    },
+    }),
   });
 }
 

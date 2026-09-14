@@ -48,6 +48,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { semComentarios } from './sem-comentarios.mjs';
 import http from 'node:http';
 import https from 'node:https';
 import { dirname, join, relative } from 'node:path';
@@ -130,16 +131,6 @@ function linhasCom(texto, padrao) {
  * quer manter. Os caracteres vão para espaço em vez de desaparecerem para os
  * números de linha continuarem a bater certo.
  */
-function semComentarios(texto) {
-  const branco = (m) => m.replace(/[^\n]/g, ' ');
-  return texto
-    .replace(/\/\*[\s\S]*?\*\//g, branco)
-    .split('\n')
-    .map((linha) =>
-      linha.replace(/(^|[^:'"`\\])\/\/.*$/, (m, antes) => antes + branco(m.slice(antes.length))),
-    )
-    .join('\n');
-}
 
 /** O sítio de onde uma frase é emitida, para a nomear numa falha de rota. */
 function origem(ficheiro, padrao) {
@@ -1127,18 +1118,25 @@ presente(
 }
 
 /*
- * A recolha não promete cumprir um `robots.txt` que não lê.
+ * A promessa do `robots.txt` tem de ter código por baixo.
  *
- * A `/fontes` diz por escrito, a quem administra o servidor do outro lado, que
- * **ainda não lemos o `robots.txt`** — e diz-lho porque é verdade: não há uma
- * linha sobre isso em `@coreto/ingest`. É a frase mais fácil de deixar
- * envelhecer de toda a página: no dia em que alguém ligar o cumprimento do
- * `robots.txt`, a página passa a dizer menos do que a casa faz, e um portal
- * que nos quisesse travar por aí continuaria a ser mandado escrever um email.
+ * **Esta asserção mudou de lado, e a mudança é a notícia.** Durante meses
+ * guardou uma confissão: a `/fontes` dizia que a recolha não lia o
+ * `robots.txt`, e esta guarda falhava no dia em que a recolha passasse a
+ * lê-lo — «ao falhar, traz boa notícia», estava escrito. Falhou a 14 de
+ * setembro de 2026, e é por isso que agora guarda o contrário.
  *
- * Ao contrário quase todas as asserções desta casa, esta protege uma frase
- * que confessa uma falta. Quando ela falhar, é boa notícia — e o que se muda
- * é a página.
+ * A decisão de cumprir veio depois da conta, e a conta é o que a torna barata:
+ * das quarenta fontes, **as trinta e duas alcançáveis deixam ler a agenda**.
+ * Zero perdidas. As oito que faltam estão bloqueadas pela máquina da CIM e não
+ * se conseguiu saber.
+ *
+ * O que esta guarda prende são as duas pontas, porque uma sem a outra é pior
+ * do que nenhuma: a página promete que se cumpre, e a recolha tem de ter por
+ * onde cumprir. Uma promessa servida ao público sem código por baixo é a
+ * frase falsa mais cara que esta casa pode escrever — e agora seria escrita
+ * numa página que um administrador de sistemas abre precisamente para a
+ * verificar.
  */
 {
   const pasta = 'packages/ingest/src';
@@ -1146,34 +1144,32 @@ presente(
     .map(String)
     .filter((nome) => nome.endsWith('.ts') && !nome.endsWith('.test.ts'));
 
-  // Sem comentários: esta secção da página existe *por causa* do robots.txt,
-  // e a recolha há-de ganhar prosa a explicar porque é que não o lê. Uma
-  // guarda que dispare com a explicação da ausência é uma guarda que se
-  // aprende a ignorar.
-  const leRobots = recolha.filter((nome) =>
-    /robots\.txt/i.test(semComentarios(ler(`${pasta}/${nome}`))),
-  );
+  // O leitor existe, e o cliente chama-o antes de pedir a página.
+  const temLeitor = recolha.includes('robots.ts');
+  const cliente = semComentarios(ler(`${pasta}/http.ts`));
+  const consulta = /podeLer\(/.test(cliente) && /regrasDoRobots\(/.test(cliente);
 
   const pagina = semComentarios(ler('apps/web/app/[regiao]/fontes/page.tsx'));
-  const confessa = /Ainda não lemos o seu/.test(pagina);
+  const promete = /Lemos o seu/.test(pagina) && /robots\.txt/.test(pagina);
+  // A confissão antiga não pode ficar para trás numa frase esquecida.
+  const aindaConfessa = /Ainda não lemos o seu/.test(pagina);
 
   afirmar({
-    afirmacao:
-      'a página confessa que a recolha não lê o robots.txt, e a recolha continua a não o ler',
+    afirmacao: 'a /fontes promete cumprir o robots.txt, e a recolha tem por onde o cumprir',
     porque:
-      'é uma frase que promete de menos de propósito; no dia em que a recolha passar a cumpri-lo, esta frase passa a esconder o que a casa faz de bem, e quem quisesse travar-nos por aí continuaria a ser mandado escrever um email',
-    onde: 'packages/ingest/src/** e apps/web/app/[regiao]/fontes/page.tsx',
-    ok: confessa && leRobots.length === 0,
-    esperava: 'a confissão na página, e nenhuma leitura de robots.txt na recolha',
+      'uma promessa servida ao público sem código por baixo é a frase falsa mais cara desta casa — e esta é servida numa página que um administrador de sistemas abre precisamente para a verificar',
+    onde: `${pasta}/robots.ts, ${pasta}/http.ts e apps/web/app/[regiao]/fontes/page.tsx`,
+    ok: temLeitor && consulta && promete && !aindaConfessa,
+    esperava: 'o leitor no pacote, a consulta no cliente, e a promessa na página',
     encontrei:
       [
-        confessa ? '' : 'a página já não confessa a falta',
-        leRobots.length
-          ? `a recolha passou a mexer em robots.txt: ${leRobots.join(', ')} — actualiza a página`
-          : '',
+        temLeitor ? '' : 'não há robots.ts na recolha',
+        consulta ? '' : 'o http.ts não consulta as regras antes de pedir',
+        promete ? '' : 'a página não promete cumprir',
+        aindaConfessa ? 'a página ainda diz «Ainda não lemos o seu robots.txt»' : '',
       ]
         .filter(Boolean)
-        .join(' · ') || 'confessada e por ligar',
+        .join(' · ') || 'prometida e cumprida',
   });
 }
 

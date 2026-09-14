@@ -7,6 +7,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { abrantesProxyAdapter, lerDataPt, lerDetalhe, paraRawEvent } from './abrantes-proxy.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * Corre contra as respostas verdadeiras do proxy, capturadas a 28 de agosto
  * de 2026 com o cabeçalho Origin autorizado pela CM de Abrantes. Quando um
@@ -48,12 +49,12 @@ function stubHttp(porUrl: (url: string) => string, pedidos: Pedido[] = []): Http
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input, init) => {
+    fetchImpl: comRobots((input, init) => {
       const url = String(input);
       const headers = new Headers(init?.headers);
       pedidos.push({ url, origin: headers.get('origin') });
       return Promise.resolve(new Response(porUrl(url), { status: 200 }));
-    },
+    }),
   });
 }
 

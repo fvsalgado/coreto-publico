@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HttpClient, backoffMs, parseRetryAfter, USER_AGENT } from './http.js';
 
+import { comRobots } from './robots-de-teste.js';
 interface Recorder {
   urls: string[];
   headers: Array<Record<string, string>>;
@@ -27,7 +28,7 @@ function makeClient(
       clock += ms;
       return Promise.resolve();
     },
-    fetchImpl: (input, init) => {
+    fetchImpl: comRobots((input, init) => {
       recorder.urls.push(String(input));
       const headers = init?.headers;
       recorder.headers.push(
@@ -41,7 +42,7 @@ function makeClient(
       return Promise.resolve(
         new Response(next.body ?? '', { status: next.status, headers: next.headers ?? {} }),
       );
-    },
+    }),
   });
 
   return { client, recorder };
@@ -125,7 +126,20 @@ describe('HttpClient', () => {
     expect(client.counters()).toEqual({ responses: 0, failures: 3 });
   });
 
-  it('espaça os pedidos ao mesmo hospedeiro e não os do seguinte', async () => {
+  /**
+   * Um pedido de cada vez por hospedeiro — e o `robots.txt` é um pedido.
+   *
+   * Este teste esperava uma espera só. Passou a esperar três, e a diferença
+   * não é do teste: é da casa. Desde que a recolha cumpre o `robots.txt`, o
+   * primeiro pedido a um hospedeiro é sempre o do ficheiro, e esse reserva a
+   * primeira janela — a página vem na segunda. É por isso que a espera
+   * aparece também antes do `/a`, que antes saía a seco.
+   *
+   * Custa um segundo por hospedeiro e por recolha, quarenta ao todo. Pagá-lo
+   * é o que faz a promessa ser verdade: do outro lado é a mesma máquina, e
+   * perguntar-lhe se se pode ler não é menos pedido do que ler.
+   */
+  it('espaça os pedidos ao mesmo hospedeiro, o robots.txt incluído, e não os do seguinte', async () => {
     const { client, recorder } = makeClient([{ status: 200, body: 'ok' }], {
       minHostIntervalMs: 1_000,
     });
@@ -134,7 +148,164 @@ describe('HttpClient', () => {
     await client.get('https://www.cm-tomar.pt/b');
     await client.get('https://www.cm-ourem.pt/c');
 
-    expect(recorder.sleeps).toEqual([1_000]);
+    // Três esperas: a que separa o robots.txt do `/a`, a que separa o `/a` do
+    // `/b`, e a que separa o robots.txt do Ourém do `/c`. Nenhuma delas é
+    // entre hospedeiros — o Ourém não esperou pelo Tomar.
+    expect(recorder.sleeps).toEqual([1_000, 1_000, 1_000]);
+    // E o duplo só viu as três páginas: o `comRobots` serve o ficheiro sem
+    // gastar uma resposta guionada.
+    expect(recorder.urls).toEqual([
+      'https://www.cm-tomar.pt/a',
+      'https://www.cm-tomar.pt/b',
+      'https://www.cm-ourem.pt/c',
+    ]);
+  });
+});
+
+/**
+ * O `robots.txt` deixou de ser uma coisa que esta casa não lia.
+ *
+ * Durante meses a `/fontes` confessava, por escrito, que a recolha não o lia.
+ * Era honesto e era pouco. A decisão de o cumprir foi tomada depois de se
+ * medir o que custava: a 14 de setembro de 2026, das quarenta fontes, as
+ * **trinta e duas alcançáveis deixam ler a agenda**. Zero perdidas. As outras
+ * oito estão bloqueadas pela máquina da CIM e não se conseguiu saber — que é
+ * resposta diferente de «não há».
+ *
+ * O que estes testes prendem é a parte que não se vê num ficheiro de regras:
+ * o que o cliente faz com elas.
+ */
+describe('o robots.txt, agora que se cumpre', () => {
+  /** Um cliente que serve o `robots.txt` pedido e a página a todo o resto. */
+  function comFicheiro(robots: string): { client: HttpClient; pedidos: string[] } {
+    const pedidos: string[] = [];
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      sleep: () => Promise.resolve(),
+      fetchImpl: (input) => {
+        const url = String(input);
+        pedidos.push(url);
+        if (url.endsWith('/robots.txt')) {
+          return Promise.resolve(new Response(robots, { status: 200 }));
+        }
+        return Promise.resolve(new Response('a agenda', { status: 200 }));
+      },
+    });
+    return { client, pedidos };
+  }
+
+  it('lê o ficheiro antes da página, e uma vez só por hospedeiro', async () => {
+    const { client, pedidos } = comFicheiro('User-agent: *\nDisallow:');
+
+    await client.get('https://www.cm-exemplo.pt/agenda');
+    await client.get('https://www.cm-exemplo.pt/agenda/setembro');
+
+    expect(pedidos[0]).toBe('https://www.cm-exemplo.pt/robots.txt');
+    // Duas páginas, um só robots.txt: a recolha toca cada hospedeiro dezenas
+    // de vezes, e pedir o ficheiro a cada uma seria dobrar o que se pede.
+    expect(pedidos.filter((u) => u.endsWith('/robots.txt'))).toHaveLength(1);
+    expect(pedidos).toHaveLength(3);
+  });
+
+  it('não vai buscar o que o ficheiro proíbe, e diz porquê', async () => {
+    const { client, pedidos } = comFicheiro('User-agent: *\nDisallow: /privado/');
+
+    const proibida = await client.get('https://www.cm-exemplo.pt/privado/agenda');
+    expect(proibida.ok).toBe(false);
+    expect(proibida.error).toContain('não deixa ler');
+    expect(proibida.error).toContain('/privado/agenda');
+
+    // E o pedido não chegou a sair: é isso que quer dizer cumprir.
+    expect(pedidos).not.toContain('https://www.cm-exemplo.pt/privado/agenda');
+
+    const permitida = await client.get('https://www.cm-exemplo.pt/agenda');
+    expect(permitida.ok).toBe(true);
+  });
+
+  it('obedece a um grupo escrito para nós, e não ao do «*»', async () => {
+    const { client } = comFicheiro(
+      ['User-agent: *', 'Disallow:', '', 'User-agent: Coreto', 'Disallow: /agenda'].join('\n'),
+    );
+
+    const resposta = await client.get('https://www.cm-exemplo.pt/agenda');
+    expect(resposta.ok).toBe(false);
+    expect(resposta.error).toContain('grupo «coreto»');
+  });
+
+  it('um 404 é ausência de ficheiro, e ausência de ficheiro é ausência de regras', async () => {
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      sleep: () => Promise.resolve(),
+      fetchImpl: (input) =>
+        Promise.resolve(
+          String(input).endsWith('/robots.txt')
+            ? new Response('não há', { status: 404 })
+            : new Response('a agenda', { status: 200 }),
+        ),
+    });
+
+    const resposta = await client.get('https://servicos.exemplo.pt/api/eventos');
+    expect(resposta.ok).toBe(true);
+  });
+
+  /**
+   * A RFC 9309 manda ler um 5xx como proibição total. **Aqui atira-se, e a
+   * diferença é deliberada.**
+   *
+   * O efeito prático é o mesmo — não se lê nada. O que muda é o que fica
+   * escrito. Uma proibição silenciosa é indistinguível de uma agenda vazia, e
+   * foi exatamente por aí que dezassete fontes gravaram `success` sem lerem um
+   * byte, a 5 e a 9 de setembro de 2026. Nesta casa «não consegui saber» não
+   * se arruma como se fosse «não».
+   */
+  it('um 5xx no ficheiro não passa por permissão nem por proibição calada', async () => {
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      sleep: () => Promise.resolve(),
+      fetchImpl: (input) =>
+        Promise.resolve(
+          String(input).endsWith('/robots.txt')
+            ? new Response('', { status: 503 })
+            : new Response('a agenda', { status: 200 }),
+        ),
+    });
+
+    await expect(client.get('https://www.cm-exemplo.pt/agenda')).rejects.toThrow(
+      /não consegui ler o .*robots\.txt.*503/,
+    );
+  });
+
+  /**
+   * E o erro leva o código de sistema atrás.
+   *
+   * Sem isto, o pedido do `robots.txt` passava a falhar primeiro e a tapar o
+   * diagnóstico do que vinha a seguir. São esses códigos — `ECONNRESET` em
+   * sete fontes, `UND_ERR_CONNECT_TIMEOUT` no Mação — que sustentam a carta à
+   * Comunidade Intermunicipal do Médio Tejo. Perdê-los aqui era perder a prova.
+   */
+  it('quando a ligação morre, o código de sistema não se perde pelo caminho', async () => {
+    const fora = new Error('fetch failed') as Error & { cause?: unknown };
+    const dentro = new Error('read ECONNRESET') as Error & { code: string };
+    dentro.code = 'ECONNRESET';
+    fora.cause = dentro;
+
+    const client = new HttpClient({
+      minHostIntervalMs: 0,
+      sleep: () => Promise.resolve(),
+      fetchImpl: () => Promise.reject(fora),
+    });
+
+    await expect(client.get('https://www.cm-tomar.pt/comunicacao/agenda')).rejects.toThrow(
+      /ECONNRESET/,
+    );
+  });
+
+  it('o próprio robots.txt não se pergunta a si mesmo se pode ser lido', async () => {
+    const { client, pedidos } = comFicheiro('User-agent: *\nDisallow: /');
+    // Com «Disallow: /» tudo está proibido — menos o ficheiro que o diz, senão
+    // a pergunta não tinha fim.
+    await client.get('https://www.cm-exemplo.pt/robots.txt');
+    expect(pedidos).toEqual(['https://www.cm-exemplo.pt/robots.txt']);
   });
 });
 

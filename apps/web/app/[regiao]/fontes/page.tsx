@@ -45,6 +45,11 @@ const REGRAS: readonly { titulo: string; texto: string }[] = [
       'Quando um servidor responde que não a quem o vem ler, pede-se autorização; não se dá a volta. Contornar um controlo de acesso sem autorização não é recolha.',
   },
   {
+    titulo: 'O robots.txt manda',
+    texto:
+      'Antes de pedir uma página, pergunta-se ao robots.txt do servidor se se pode. O que ele proibir não é pedido, e um bloco escrito para o nosso agente vale sozinho. Se o ficheiro não responder, não se lê nada — não consegui saber não é uma autorização.',
+  },
+  {
     titulo: 'Devagar, e identificados',
     texto:
       'Um pedido de cada vez por servidor, com um agente que diz quem é e onde nos encontrar. Do outro lado está quase sempre a máquina que também serve os balcões online do concelho.',
@@ -573,30 +578,46 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           </div>
         </dl>
         {/*
-         * O `robots.txt` diz-se em falta, e não se finge cumprido.
+         * O `robots.txt` passou de confissão a promessa, e foi medido antes.
          *
-         * A recolha não lê o `robots.txt` de ninguém — verificado no pacote
-         * `@coreto/ingest`, onde não existe uma linha sobre isso. Um agente
-         * bem-comportado costuma lê-lo, e quem lê esta página assume que sim.
-         * Deixar a suposição de pé seria a frase falsa mais fácil de escrever
-         * desta página inteira: ninguém precisava de a escrever para ela
+         * Esta página dizia, por escrito, que a recolha **não** lia o
+         * `robots.txt` de ninguém. Era verdade e era pouco, e ficou assim de
+         * propósito enquanto a decisão de o cumprir estivesse por tomar — um
+         * agente bem-comportado costuma lê-lo, e quem chega aqui assume que
+         * sim; deixar a suposição de pé era a frase falsa mais fácil desta
+         * página inteira, porque ninguém precisava de a escrever para ela
          * enganar.
          *
-         * Passar a cumpri-lo não é um remendo, é uma decisão de produto com
-         * um custo por medir — há portais municipais cujo `robots.txt` proíbe
-         * tudo o que não seja um motor de busca, e ligá-lo sem contar podia
-         * desligar fontes legítimas, já acordadas, numa noite e em silêncio.
-         * Essa decisão é do dono; está escrita como tal em
-         * `docs/O-QUE-FALTA-AO-DONO.md`. Até lá a página diz o que é verdade.
+         * A decisão foi tomada, e veio depois da conta. A 14 de setembro de
+         * 2026 leu-se o `robots.txt` das quarenta fontes: **trinta e duas
+         * responderam e as trinta e duas deixam ler a agenda**. Zero fontes
+         * perdidas. As outras oito estão bloqueadas pela máquina da CIM e não
+         * se conseguiu saber — que é resposta diferente de «não há», e fica
+         * dita como tal.
+         *
+         * O que a casa faz com um ficheiro que não responde está no
+         * `packages/ingest/src/http.ts` e afasta-se da RFC 9309 de propósito:
+         * a norma manda ler um 5xx como proibição total, e aqui a fonte falha
+         * à vista em vez de emudecer. Uma proibição silenciosa é
+         * indistinguível de uma agenda vazia, e é por aí que se perdem
+         * concelhos sem ninguém dar por isso.
          */}
         <p className="mt-5 max-w-2xl text-muted">
           <strong className="font-semibold text-fg">
-            Ainda não lemos o seu <code>robots.txt</code>.
+            Lemos o seu <code>robots.txt</code>, e obedecemos-lhe.
           </strong>{' '}
-          As fontes desta agenda são escolhidas e configuradas uma a uma, não por varrimento, e a
-          recolha não vai lá buscar regras — por isso não lhe prometemos que uma regra escrita aí
-          nos chegue. Para nos dizer que não, o caminho que funciona é o email acima, e funciona no
-          mesmo dia.
+          Antes de pedir qualquer página perguntamos ao ficheiro do seu servidor se podemos, uma vez
+          por dia e por servidor. O que ele proibir não é pedido. Se escrever um bloco{' '}
+          <code>User-agent: Coreto</code>, é esse que vale — e vale sozinho, mesmo que seja mais
+          largo do que o que escreveu para toda a gente.
+        </p>
+        <p className="mt-3 max-w-2xl text-muted">
+          Se o ficheiro não existir, lemos a agenda: não haver ficheiro é não haver regras. Se o seu
+          servidor não conseguir responder com ele,{' '}
+          <strong className="font-semibold text-fg">não lemos nada</strong> e a falha fica registada
+          do nosso lado — não tratamos «não consegui saber» como se fosse uma autorização. E o email
+          acima continua a funcionar no mesmo dia, para o que o <code>robots.txt</code> não souber
+          dizer.
         </p>
       </section>
 

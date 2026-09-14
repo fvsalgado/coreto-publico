@@ -5,6 +5,7 @@ import { RunLogger } from '../run-logger';
 import { jsonLdToRawEvent, municipalCmsAdapter, sessionsForRange } from './municipal-cms';
 import { readJsonLdEvents } from '../html';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * O adaptador que expandia um intervalo dia a dia.
  *
@@ -144,7 +145,7 @@ describe('municipalCmsAdapter', () => {
       http: new HttpClient({
         minHostIntervalMs: 0,
         sleep: () => Promise.resolve(),
-        fetchImpl: () => Promise.resolve(new Response(html, { status: 200 })),
+        fetchImpl: comRobots(() => Promise.resolve(new Response(html, { status: 200 }))),
       }),
       log: registo(),
     });

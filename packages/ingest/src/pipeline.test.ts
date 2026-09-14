@@ -14,6 +14,7 @@ import type {
 } from './db.js';
 import { HttpClient } from './http.js';
 import type { CloseRunInput, OpenRunInput } from './run-logger.js';
+import { comRobots } from './robots-de-teste.js';
 import {
   concelhoDoEspaco,
   deterministicEventId,
@@ -291,7 +292,7 @@ function stubHttp(body: string, status = 200): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.resolve(new Response(body, { status })),
+    fetchImpl: comRobots(() => Promise.resolve(new Response(body, { status }))),
   });
 }
 
@@ -307,7 +308,7 @@ function stubSemResposta(): HttpClient {
     minHostIntervalMs: 0,
     maxAttempts: 2,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.reject(new Error('socket hang up')),
+    fetchImpl: comRobots(() => Promise.reject(new Error('socket hang up'))),
   });
 }
 
@@ -475,10 +476,11 @@ describe('runPipeline', () => {
     const http = new HttpClient({
       minHostIntervalMs: 0,
       sleep: () => Promise.resolve(),
-      fetchImpl: (input) =>
+      fetchImpl: comRobots((input) =>
         Promise.resolve(
           new Response(String(input).includes('/programacao') ? grelha : detalhe, { status: 200 }),
         ),
+      ),
     });
 
     const db = new FakeDatabase();
@@ -1071,7 +1073,7 @@ describe('as medidas dos cartazes', () => {
     const http = new HttpClient({
       minHostIntervalMs: 0,
       sleep: () => Promise.resolve(),
-      fetchImpl: (input) => {
+      fetchImpl: comRobots((input) => {
         const url = String(input);
         if (url === CARTAZ) {
           pedidosAoCartaz.push(url);
@@ -1079,7 +1081,7 @@ describe('as medidas dos cartazes', () => {
           return Promise.resolve(new Response(corpoDoCartaz, { status: 206 }));
         }
         return Promise.resolve(new Response(LISTAGEM_COM_CARTAZ, { status: 200 }));
-      },
+      }),
     });
     return { http, pedidosAoCartaz };
   }

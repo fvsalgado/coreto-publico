@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceRow } from '../adapter.js';
 import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
+import { comRobots } from '../robots-de-teste.js';
 import {
   lerAno,
   lerPagina,
@@ -46,7 +47,7 @@ function stubHttp(corpo: string): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: () => Promise.resolve(new Response(corpo, { status: 200 })),
+    fetchImpl: comRobots(() => Promise.resolve(new Response(corpo, { status: 200 }))),
   });
 }
 
@@ -167,7 +168,9 @@ describe('quando a página não tem sessões', () => {
     const http = new HttpClient({
       minHostIntervalMs: 0,
       sleep: () => Promise.resolve(),
-      fetchImpl: () => Promise.resolve(new Response(respostas.shift() ?? '', { status: 200 })),
+      fetchImpl: comRobots(() =>
+        Promise.resolve(new Response(respostas.shift() ?? '', { status: 200 })),
+      ),
     });
 
     const eventos = await teatroVirginiaAdapter.fetchEvents({
@@ -193,12 +196,12 @@ describe('o tempo limite da fonte', () => {
     const http = new HttpClient({
       minHostIntervalMs: 0,
       sleep: () => Promise.resolve(),
-      fetchImpl: (_url, init) => {
+      fetchImpl: comRobots((_url, init) => {
         // O `AbortSignal.timeout` não expõe o prazo; o que se verifica é que
         // chega um sinal por pedido, e o valor vai no `get` acima.
         pedidos.push(init?.signal ? 1 : 0);
         return Promise.resolve(new Response(pagina(), { status: 200 }));
-      },
+      }),
     });
 
     const eventos = await teatroVirginiaAdapter.fetchEvents({

@@ -7,6 +7,7 @@ import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
 import { escolherCartaz, joomlaEventBookingAdapter } from './joomla-eventbooking.js';
 
+import { comRobots } from '../robots-de-teste.js';
 /**
  * Estes testes correm contra as páginas verdadeiras, capturadas dos sites das
  * câmaras. É de propósito: a alternativa — HTML escrito à mão dentro do teste —
@@ -45,12 +46,12 @@ function stubHttp(pages: Record<string, string>): HttpClient {
   return new HttpClient({
     minHostIntervalMs: 0,
     sleep: () => Promise.resolve(),
-    fetchImpl: (input) => {
+    fetchImpl: comRobots((input) => {
       const url = String(input);
       const body = pages[url];
       if (body === undefined) return Promise.resolve(new Response('', { status: 404 }));
       return Promise.resolve(new Response(body, { status: 200 }));
-    },
+    }),
   });
 }
 
