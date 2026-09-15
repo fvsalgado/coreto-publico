@@ -199,7 +199,12 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
   const outcomes = await runPipeline(sources, {
     db,
-    http: new HttpClient(),
+    http: new HttpClient({
+      // Um sítio que peça mais tempo entre pedidos do que estamos dispostos a
+      // esperar não pode passar despercebido: quem lê o registo da recolha tem
+      // de o ver.
+      onAviso: (mensagem) => console.warn(`  ! ${mensagem}`),
+    }),
     dryRun: options.dryRun,
     triggeredBy: options.dryRun ? 'dry-run' : 'cli',
   });

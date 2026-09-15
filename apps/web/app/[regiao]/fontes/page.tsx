@@ -52,7 +52,7 @@ const REGRAS: readonly { titulo: string; texto: string }[] = [
   {
     titulo: 'Devagar, e identificados',
     texto:
-      'Um pedido de cada vez por servidor, com um agente que diz quem é e onde nos encontrar. Do outro lado está quase sempre a máquina que também serve os balcões online do concelho.',
+      'Um pedido de cada vez por servidor, com pelo menos um segundo entre eles e um agente que diz quem é e onde nos encontrar. Se o robots.txt pedir mais tempo, é esse que vale — e a conta é por máquina, não por endereço, porque vários sítios podem partilhar o mesmo servidor. Do outro lado está quase sempre a máquina que também serve os balcões online do concelho.',
   },
   {
     titulo: 'Nunca fabricar',

@@ -45,10 +45,20 @@ export interface RegrasDoRobots {
   readonly regras: readonly Regra[];
   /** Que grupo ganhou — para se poder dizer porquê, num registo. */
   readonly grupo: string | null;
+  /**
+   * Segundos que este sítio pede entre pedidos, ou `null` se não pedir nada.
+   *
+   * O `Crawl-delay` não está na RFC 9309 e a Google ignora-o. **Esta casa
+   * obedece-lhe**, e a razão não é jurídica: é que um administrador que
+   * escreve aquela linha está a dizer «este servidor é frágil, tenham calma».
+   * Ignorá-la por não estar na norma seria ler o ficheiro à procura do que nos
+   * dá jeito, e a `/fontes` promete o contrário.
+   */
+  readonly atrasoSegundos: number | null;
 }
 
 /** Um ficheiro que não impõe nada. */
-export const SEM_RESTRICOES: RegrasDoRobots = { regras: [], grupo: null };
+export const SEM_RESTRICOES: RegrasDoRobots = { regras: [], grupo: null, atrasoSegundos: null };
 
 /** O nome por que esta casa se dá a conhecer num `robots.txt`. */
 export const PRODUTO = 'coreto';
@@ -67,6 +77,8 @@ export const MAX_ROBOTS_BYTES = 512 * 1024;
 interface Grupo {
   agentes: string[];
   regras: Regra[];
+  /** Segundos que este grupo pede entre pedidos, se os pedir. */
+  atraso: number | null;
 }
 
 /**
@@ -130,10 +142,9 @@ function normalizar(texto: string): string {
 /**
  * Lê o texto de um `robots.txt` e fica com o grupo que nos diz respeito.
  *
- * Tudo o que não seja `user-agent`, `allow` ou `disallow` é ignorado em
- * silêncio — `sitemap`, `crawl-delay` e o que mais lá venha. Ignorar não é
- * desprezar: são campos que esta função não promete tratar, e prometer de
- * menos é melhor do que fingir.
+ * Trata `user-agent`, `allow`, `disallow` e `crawl-delay`. O resto — o
+ * `sitemap` e o que mais lá venha — é ignorado em silêncio: são campos que
+ * esta função não promete tratar, e prometer de menos é melhor do que fingir.
  */
 export function lerRobots(texto: string, produto: string = PRODUTO): RegrasDoRobots {
   const grupos: Grupo[] = [];
@@ -159,12 +170,23 @@ export function lerRobots(texto: string, produto: string = PRODUTO): RegrasDoRob
 
     if (campo === 'user-agent' || campo === 'useragent') {
       if (!aColecionarAgentes || !atual) {
-        atual = { agentes: [], regras: [] };
+        atual = { agentes: [], regras: [], atraso: null };
         grupos.push(atual);
         aColecionarAgentes = true;
       }
       const token = tokenDe(valor);
       if (token) atual.agentes.push(token);
+      continue;
+    }
+
+    if (campo === 'crawl-delay' || campo === 'crawldelay') {
+      // Fecha a colheita de agentes como qualquer regra: `User-agent: a` /
+      // `Crawl-delay: 1` / `User-agent: b` são **dois** grupos, e sem esta
+      // linha o segundo agente entrava no primeiro grupo.
+      if (!atual) continue;
+      aColecionarAgentes = false;
+      const segundos = Number.parseFloat(valor.replace(',', '.'));
+      if (Number.isFinite(segundos) && segundos > 0) atual.atraso = segundos;
       continue;
     }
 
@@ -186,13 +208,56 @@ export function lerRobots(texto: string, produto: string = PRODUTO): RegrasDoRob
   // Um sítio pode escrever o mesmo agente em dois blocos separados; as regras
   // dos dois valem — a §2.2.1 manda combiná-las («the matching groups' rules
   // MUST be combined into one group»), e é isso que o `flatMap` faz.
-  if (especifico.length > 0) {
-    return { regras: especifico.flatMap((g) => g.regras), grupo: alvo };
-  }
-  if (genericos.length > 0) {
-    return { regras: genericos.flatMap((g) => g.regras), grupo: '*' };
-  }
-  return SEM_RESTRICOES;
+  const escolhido = especifico.length > 0 ? especifico : genericos.length > 0 ? genericos : null;
+  if (!escolhido) return SEM_RESTRICOES;
+
+  return {
+    regras: escolhido.flatMap((g) => g.regras),
+    grupo: especifico.length > 0 ? alvo : '*',
+    atrasoSegundos: atrasoDe(escolhido, grupos),
+  };
+}
+
+/**
+ * Quantos segundos este sítio nos pede entre pedidos.
+ *
+ * **A regra do nosso grupo primeiro, e o mínimo do ficheiro depois.** A
+ * segunda metade parece estranha e é a que faz falta, porque estes ficheiros
+ * são escritos à mão e agrupam mal. O do Cine-Teatro Paraíso, medido a 15 de
+ * setembro de 2026, é assim:
+ *
+ *     User-agent: *
+ *     Allow:
+ *     User-agent: Googlebot
+ *     Allow:
+ *     …
+ *     User-agent: Adsbot-Google
+ *     Allow:
+ *
+ *     Disallow: /admin/
+ *     Crawl-Delay: 10
+ *
+ * Lido à letra, aquele `Crawl-Delay: 10` pertence ao **Adsbot-Google** — é o
+ * último agente nomeado antes dele —, e a linha em branco não devolve nada ao
+ * grupo do `*`. Pela norma, não nos diz respeito. Pelo que ali está escrito à
+ * vista de qualquer pessoa, diz: quem escreveu aquilo quis dez segundos para
+ * toda a gente, e enganou-se na arrumação.
+ *
+ * **Escolher a leitura que nos deixa ir sete vezes mais depressa, por causa de
+ * uma linha em branco, é advocacia e não é leitura.** Por isso, quando o nosso
+ * grupo nada diz, vale o menor atraso declarado no ficheiro: é o mais pequeno
+ * compromisso que honra a intenção, e nunca inventa um número que lá não está.
+ *
+ * O mínimo, e não o máximo, protege do caso contrário — um ficheiro que peça
+ * um segundo para nós e uma hora para um robô específico não nos põe a esperar
+ * uma hora.
+ */
+function atrasoDe(escolhido: readonly Grupo[], todos: readonly Grupo[]): number | null {
+  const nosso = escolhido.map((g) => g.atraso).filter((a): a is number => a !== null);
+  if (nosso.length > 0) return Math.max(...nosso);
+
+  const quaisquer = todos.map((g) => g.atraso).filter((a): a is number => a !== null);
+  return quaisquer.length > 0 ? Math.min(...quaisquer) : null;
 }
 
 /**
