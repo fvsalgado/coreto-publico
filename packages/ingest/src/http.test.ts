@@ -732,3 +732,90 @@ describe('a fila é da máquina, não do nome', () => {
     expect(recorder.sleeps).toEqual([1_000]);
   });
 });
+
+describe('o crawl-delay morde', () => {
+  /*
+   * Ler o `Crawl-delay` e não o usar seria pior do que não o ler: ficava um
+   * número bonito num objeto e a recolha continuava a bater de segundo a
+   * segundo. É aqui que ele tem de aparecer.
+   */
+  it('um sítio que pede dez segundos leva dez segundos', async () => {
+    const recorder: Recorder = { urls: [], headers: [], sleeps: [] };
+    let clock = 0;
+    const client = new HttpClient({
+      minHostIntervalMs: 1_000,
+      resolverIp: (nome) => Promise.resolve(nome),
+      now: () => clock,
+      sleep: (ms) => {
+        recorder.sleeps.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+      fetchImpl: comRobots(
+        () => Promise.resolve(new Response('ok', { status: 200 })),
+        'User-agent: *\nCrawl-delay: 10\n',
+      ),
+    });
+
+    await client.get('https://cineteatro.cm-tomar.pt/a');
+    await client.get('https://cineteatro.cm-tomar.pt/b');
+
+    // O primeiro pedido — o do próprio robots.txt — sai a seco, porque nessa
+    // altura ainda não se sabia o que o sítio pedia. Os seguintes pagam os dez.
+    expect(recorder.sleeps).toEqual([10_000, 10_000]);
+  });
+
+  it('um crawl-delay mais curto do que o nosso mínimo não nos acelera', async () => {
+    const recorder: Recorder = { urls: [], headers: [], sleeps: [] };
+    let clock = 0;
+    const client = new HttpClient({
+      minHostIntervalMs: 1_000,
+      resolverIp: (nome) => Promise.resolve(nome),
+      now: () => clock,
+      sleep: (ms) => {
+        recorder.sleeps.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+      fetchImpl: comRobots(
+        () => Promise.resolve(new Response('ok', { status: 200 })),
+        'User-agent: *\nCrawl-delay: 0.1\n',
+      ),
+    });
+
+    await client.get('https://cm-x.pt/a');
+
+    // Um décimo de segundo é o que eles aceitam, não o que nós prometemos.
+    expect(recorder.sleeps).toEqual([1_000]);
+  });
+
+  it('um pedido absurdo é cortado no tecto, e o corte não é silencioso', async () => {
+    const avisos: string[] = [];
+    let clock = 0;
+    const sleeps: number[] = [];
+    const client = new HttpClient({
+      minHostIntervalMs: 1_000,
+      resolverIp: (nome) => Promise.resolve(nome),
+      onAviso: (m) => avisos.push(m),
+      now: () => clock,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+        return Promise.resolve();
+      },
+      fetchImpl: comRobots(
+        () => Promise.resolve(new Response('ok', { status: 200 })),
+        'User-agent: *\nCrawl-delay: 86400\n',
+      ),
+    });
+
+    await client.get('https://cm-x.pt/a');
+
+    // Trinta segundos, e não um dia: uma fonte não segura as outras trinta e
+    // nove. Mas quem lê o registo fica a saber que obedecemos só até ali.
+    expect(sleeps).toEqual([30_000]);
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toContain('86400s');
+    expect(avisos[0]).toContain('não deva ser lida todos os dias');
+  });
+});
