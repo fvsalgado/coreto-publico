@@ -375,9 +375,20 @@ export async function runSource(
      *
      * Daí a terceira condição. **A ficha da fonte não pode dizer-se bem quando
      * a corrida se deu por incompleta**: se o `status` não é `'success'`, não
-     * há sucesso a gravar. Não se mexeu na `avaliarContagem` — a freguesia
-     * sossegada continua a ser sossegada, porque com linha de base 0 o
-     * `nadaOndeSeEsperavaAlgo` é falso e o `status` continua `'success'`.
+     * há sucesso a gravar. Não se mexeu na `avaliarContagem`.
+     *
+     * **E aqui esteve escrito que a freguesia sossegada continuava sossegada
+     * «porque com linha de base 0 o `nadaOndeSeEsperavaAlgo` é falso».** Isso
+     * é verdade para a linha de base 0 e era a garantia errada: as duas
+     * freguesias deste parágrafo têm linha de base **1**. Verificou-se o ramo
+     * que não era o delas. O efeito foi passá-las de um verde falso para um
+     * vermelho permanente — a `nextBaseline` arredonda 1 para 1, a corrida
+     * ficava `partial` todas as noites, o `last_success_at` nunca mais
+     * avançava, e ao sétimo dia a vigilância do sítio passou a tocar de hora
+     * a hora. Trocar uma mentira por um alarme que ninguém pode calar não é
+     * corrigir. O que fechou o caso está mais abaixo, no
+     * `nadaOndeSeEsperavaAlgo`: a prova do adaptador vale mais do que a linha
+     * de base.
      *
      * E **não alimenta o disjuntor**: quem conta falhas é o `leu`, que olha só
      * para se houve resposta, e houve. Esta fonte respondeu — o que ela não
@@ -531,7 +542,18 @@ async function collectAndWrite(
   // qual é o evento e fica escrito no registo.
   const municipalityId = source.municipality_id;
 
-  const collected = await adapter.fetchEvents({ source, http: context.http, log });
+  // O adaptador é o único que pode distinguir uma agenda vazia de uma página
+  // que se deixou de saber ler — ver `confirmarAgendaVazia` em `adapter.ts`.
+  // Quem não souber provar não chama, e o silêncio vale «não sei».
+  let agendaVaziaConfirmada = false;
+  const collected = await adapter.fetchEvents({
+    source,
+    http: context.http,
+    log,
+    confirmarAgendaVazia: () => {
+      agendaVaziaConfirmada = true;
+    },
+  });
 
   const valid: RawEvent[] = [];
   for (const candidate of collected) {
@@ -973,8 +995,35 @@ async function collectAndWrite(
   // aqui é o zero que ela deixou passar — e a linha de base é precisamente o
   // registo do que esta fonte costuma dar. Sem linha de base não há queda:
   // há uma freguesia sossegada.
+  //
+  // **E a prova do adaptador vale mais do que a linha de base**, que é a parte
+  // que faltava e custou duas fontes paradas.
+  //
+  // «A linha de base é o registo do que esta fonte costuma dar» é verdade, e
+  // «maior do que zero» não é a mesma coisa que «linha de base a sério». A
+  // `jf-assentiz` e a `jf-fontes` têm linha de base **1** — um evento, uma
+  // vez. A `avaliarContagem` recusa-se a concluir seja o que for abaixo de
+  // `DRIFT_MIN_BASELINE` (5), de propósito; esta linha concluía na mesma, a
+  // partir de um número que a regra do lado diz não chegar para concluir.
+  //
+  // E concluía **para sempre**. A `nextBaseline` suaviza a 70/30 e arredonda:
+  // de 1 com zero itens dá `Math.round(0.7)`, que é 1 outra vez. Uma linha de
+  // base de 1 nunca desce a 0. Portanto `baseline > 0`, uma vez verdadeiro,
+  // não voltava a ser falso — e com a corrida a ficar `partial`, o
+  // `last_success_at` nunca mais avançava. Ao sétimo dia a fonte passava a
+  // «parada», o `/estado.json` passava a `mau`, e a vigilância do sítio
+  // tocava de hora a hora por causa de uma freguesia que simplesmente não
+  // tinha nada marcado. Um alarme assim é um alarme que se aprende a ignorar.
+  //
+  // O que resolve não é afrouxar o número — é perguntar a quem sabe. O
+  // adaptador leu a página e, quando consegue prová-lo, diz que o vazio é
+  // vazio. Quem não prova continua a ser apanhado aqui, tal e qual: uma
+  // câmara com linha de base 4 que devolve zero sem prova nenhuma continua a
+  // dar corrida incompleta, porque continua a não haver maneira de saber se
+  // aquilo é uma agenda vazia ou um seletor que caiu.
   const written = counters.itemsNew + counters.itemsUpdated + counters.itemsUnchanged;
-  const nadaOndeSeEsperavaAlgo = counters.itemsFound === 0 && (source.baseline_item_count ?? 0) > 0;
+  const nadaOndeSeEsperavaAlgo =
+    counters.itemsFound === 0 && (source.baseline_item_count ?? 0) > 0 && !agendaVaziaConfirmada;
   const status: RunStatus =
     nadaOndeSeEsperavaAlgo || counters.itemsRejected > written ? 'partial' : 'success';
 
