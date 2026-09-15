@@ -1484,12 +1484,28 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
    * continua a ser uma equivalência para o dia em que o flag sair: nesse dia
    * a reposição deixa de fazer sentido e sai com ele, e esta asserção falha
    * se ficar só uma das metades.
+   *
+   * **E o detetor deixou de nomear uma migração.** Aqui esteve escrito
+   * `0128_as_concessoes_de_leitura_escritas.sql`, e o nome era a parte errada:
+   * a 0128 concede uma coluna de doze, e mandá-la correr sozinha nunca repôs
+   * concessão nenhuma que servisse. O ensaio reprovava sempre — e reprovou à
+   * primeira vez que correu a sério, a 15 de setembro de 2026. Uma asserção
+   * que vigia o nome de um ficheiro dá verde a um passo partido, desde que o
+   * ficheiro lá esteja citado.
+   *
+   * Passa a vigiar o que o passo tem de FAZER: descobrir as migrações que
+   * concedem, extrair delas as instruções `grant`, e servi-las à base
+   * restaurada. Tirar qualquer uma das três reprova; acrescentar uma migração
+   * nova não mexe em nada.
    */
   const usaNoPrivileges =
     /--no-privileges/.test(ler('.github/workflows/backup.yml')) &&
     /--no-privileges/.test(ler('scripts/ensaiar-restauro.sh'));
   const ensaio = ler('scripts/ensaiar-restauro.sh');
-  const ensaioRepoe = /0128_as_concessoes_de_leitura_escritas\.sql/.test(ensaio);
+  const ensaioRepoe =
+    /mapfile -t CONCESSOES/.test(ensaio) &&
+    /grant\\b\[\^;\]\*;/.test(ensaio) &&
+    /"\$grants" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
@@ -1502,7 +1518,7 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
     onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml e docs/OPERACAO.md',
     ok: usaNoPrivileges === (ensaioRepoe && ensaioProva && manualRegista),
     esperava:
-      'o ensaio a aplicar a migração das concessões e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
+      'o ensaio a descobrir as migrações que concedem, a extrair-lhes as instruções grant, a servi-las à base restaurada e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
     encontrei: `cópia sem concessões: ${usaNoPrivileges ? 'sim' : 'não'} · ensaio repõe: ${ensaioRepoe ? 'sim' : 'não'} · ensaio prova: ${ensaioProva ? 'sim' : 'não'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
   });
 }
