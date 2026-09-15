@@ -170,9 +170,25 @@ anotar "Restaurada em $((SECONDS - inicio)) s."
 # Migrações não se reescrevem; corrigem-se a montante, e o que estava errado
 # era quem as mandava correr.
 #
+# **E repõem-se as concessões, não as migrações.** A primeira tentativa de
+# corrigir isto mandou correr as quatro migrações inteiras, por ordem, e
+# reprovou noutro sítio:
+#
+#     ERROR: policy "sources_public_read" for table "sources" already exists
+#
+# Porque o `pg_dump` perde umas coisas e traz outras, e a distinção é o centro
+# deste passo: **as políticas de RLS são objetos do esquema e vêm na cópia; as
+# concessões são privilégios de papéis e não vêm.** Reexecutar a migração
+# inteira repõe o que falta e tropeça no que já lá está.
+#
+# Por isso extraem-se as instruções `grant` e corre-se só isso. É exatamente o
+# que a cópia perde, nem mais nem menos, e um `grant` repetido é um não-evento
+# em Postgres — ao contrário de um `create policy`.
+#
 # Descobertas e não escritas à mão, de propósito: a próxima migração que
 # conceda uma coluna entra sozinha nesta lista. Escrever aqui os quatro nomes
-# era repetir o defeito daqui a um mês, com outro número.
+# era repetir o defeito daqui a um mês, com outro número. O `grant` é apanhado
+# só quando abre uma linha — um `-- grant …` num comentário não conta.
 # ---------------------------------------------------------------------------
 mapfile -t CONCESSOES < <(
   grep -rlZ --include='*.sql' -Pzo 'grant\s+select\s*(\([^)]*\)\s*)?on\s+public\.[a-z_]+\s+to\s+[^;]*(anon|authenticated)' \
@@ -180,11 +196,15 @@ mapfile -t CONCESSOES < <(
 )
 [ "${#CONCESSOES[@]}" -gt 0 ] \
   || falhar 'Não se encontrou uma única migração que conceda leitura ao público. Sem elas, uma base restaurada não serve o sítio.'
-for m in "${CONCESSOES[@]}"; do
-  "${PSQL[@]}" -f "$m" >/dev/null \
-    || falhar "A migração das concessões não aplicou sobre a base restaurada: ${m##*/}"
-done
-anotar "As concessões de leitura repostas (${#CONCESSOES[@]} migrações, por ordem)."
+
+grants="$(cat "${CONCESSOES[@]}" | perl -0777 -ne 'while (/^[ \t]*(grant\b[^;]*;)/gmi) { print "$1\n" }')"
+n_grants="$(printf '%s' "$grants" | grep -c ';' || true)"
+[ "${n_grants:-0}" -gt 0 ] \
+  || falhar "Encontraram-se ${#CONCESSOES[@]} migrações de concessões e nenhuma instrução \`grant\` dentro delas. O extrator deixou de casar."
+
+printf '%s\n' "$grants" | "${PSQL[@]}" >/dev/null \
+  || falhar 'As concessões não aplicaram sobre a base restaurada.'
+anotar "As concessões de leitura repostas (${n_grants} instruções, de ${#CONCESSOES[@]} migrações)."
 
 # ---------------------------------------------------------------------------
 # 5. As verificações do manual.
