@@ -446,3 +446,71 @@ describe('o que o ataque encontrou', () => {
     expect(podeLer(regras, '/agenda')).toBe(true);
   });
 });
+
+describe('crawl-delay', () => {
+  it('lê o pedido do nosso grupo', () => {
+    const r = lerRobots('User-agent: *\nCrawl-delay: 5\nDisallow: /x\n');
+    expect(r.atrasoSegundos).toBe(5);
+  });
+
+  it('não inventa um atraso onde não há nenhum', () => {
+    expect(lerRobots('User-agent: *\nDisallow: /x\n').atrasoSegundos).toBeNull();
+    expect(SEM_RESTRICOES.atrasoSegundos).toBeNull();
+  });
+
+  /*
+   * **O ficheiro verdadeiro do Cine-Teatro Paraíso, copiado tal como está a
+   * 15 de setembro de 2026.**
+   *
+   * Lido à letra, o `Crawl-Delay: 10` pertence ao `Adsbot-Google` — é o último
+   * agente nomeado antes dele, e a linha em branco não devolve nada ao grupo
+   * do `*`. Pela norma, não nos diz respeito.
+   *
+   * Escolher essa leitura, e ir sete vezes mais depressa por causa de uma
+   * linha em branco, é advocacia e não é leitura. Quem escreveu aquilo quis
+   * dez segundos para toda a gente.
+   */
+  it('honra o atraso mal arrumado do Paraíso', () => {
+    const paraiso = [
+      'Sitemap: https://cineteatro.cm-tomar/sitemap.txt',
+      '',
+      'User-agent: *',
+      'Allow:',
+      'User-agent: Googlebot',
+      'Allow:',
+      'User-agent: Adsbot-Google',
+      'Allow:',
+      '',
+      'Disallow: /admin/',
+      'Crawl-Delay: 10',
+    ].join('\n');
+
+    const r = lerRobots(paraiso);
+
+    expect(r.grupo).toBe('*');
+    expect(r.atrasoSegundos).toBe(10);
+    // E a agenda continua a poder ler-se: o `Disallow: /admin/` também caiu no
+    // grupo do Adsbot, e não é nosso.
+    expect(podeLer(r, '/')).toBe(true);
+  });
+
+  /*
+   * O contrário do caso do Paraíso, e a razão de ser o **mínimo** e não o
+   * máximo: um ficheiro que peça um segundo para toda a gente e uma hora a um
+   * robô específico não nos pode pôr a esperar uma hora.
+   */
+  it('o nosso grupo manda sobre o que está escrito para outros', () => {
+    const r = lerRobots(
+      'User-agent: *\nCrawl-delay: 1\nUser-agent: RoboMau\nCrawl-delay: 3600\nDisallow: /\n',
+    );
+    expect(r.atrasoSegundos).toBe(1);
+  });
+
+  it('um agente novo depois de um crawl-delay abre um grupo novo', () => {
+    // Sem isto, o `Disallow: /` do RoboMau caía no grupo do `*` e proibia-nos
+    // o sítio inteiro.
+    const r = lerRobots('User-agent: *\nCrawl-delay: 1\nUser-agent: RoboMau\nDisallow: /\n');
+    expect(r.grupo).toBe('*');
+    expect(podeLer(r, '/agenda')).toBe(true);
+  });
+});

@@ -61,6 +61,21 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
  * um único salto**. O número existe para o dia em que alguém encadeie um ciclo,
  * não para os endereços de hoje.
  */
+/**
+ * Maior `Crawl-delay` que se aceita de um `robots.txt`.
+ *
+ * Pela mesma razão do `MAX_RETRY_AFTER_MS`: o ficheiro é escrito por outra
+ * pessoa, e uma linha `Crawl-delay: 86400` seguraria a recolha das outras
+ * trinta e nove fontes à espera de uma. Trinta segundos é três vezes o maior
+ * pedido que se mediu no Médio Tejo (dez, do Cine-Teatro Paraíso).
+ *
+ * **Quando o ficheiro pede mais do que isto, fica um aviso na execução.**
+ * Cortar em silêncio seria obedecer só até onde dá jeito, e a diferença tem de
+ * estar à vista de quem lê os registos: uma fonte que peça um minuto entre
+ * pedidos talvez não deva ser lida todos os dias.
+ */
+const MAX_CRAWL_DELAY_MS = 30_000;
+
 const MAX_REDIRECIONAMENTOS = 5;
 
 /** Os códigos que mandam ir buscar a mesma coisa a outro sítio. */
@@ -118,6 +133,16 @@ export interface HttpClientOptions {
    * domínio inventado.
    */
   resolverIp?: ResolvedorDeIp;
+  /**
+   * Para onde vai um aviso que não pertence a nenhuma fonte em particular.
+   *
+   * O cliente é um só para as quarenta fontes e não sabe qual delas está a ser
+   * lida, por isso não pode escrever em `source_runs`. Mas **cortar em
+   * silêncio um pedido de um administrador seria obedecer só até onde dá
+   * jeito**, e isso tem de sair para algum lado. Por omissão não faz nada, e
+   * o CLI liga-o à consola.
+   */
+  onAviso?: (mensagem: string) => void;
 }
 
 export interface RequestOptions {
@@ -254,7 +279,19 @@ export class HttpClient {
    */
   private readonly ipPorNome = new Map<string, Promise<string>>();
 
+  /**
+   * Máquina → maior atraso que algum `robots.txt` dela nos pediu.
+   *
+   * Guarda-se pela mesma chave do estrangulamento — a máquina — porque é a
+   * máquina que sofre os pedidos. Dois nomes no mesmo servidor com atrasos
+   * diferentes ficam com o maior dos dois: entre respeitar de menos e esperar
+   * de mais, espera-se.
+   */
+  private readonly atrasoPorMaquina = new Map<string, number>();
+
   private readonly resolverIp: ResolvedorDeIp;
+
+  private readonly onAviso: (mensagem: string) => void;
 
   private responses = 0;
   private failures = 0;
@@ -268,6 +305,7 @@ export class HttpClient {
     this.minHostIntervalMs = options.minHostIntervalMs ?? DEFAULT_HOST_INTERVAL_MS;
     this.userAgent = options.userAgent ?? USER_AGENT;
     this.resolverIp = options.resolverIp ?? RESOLVEDOR;
+    this.onAviso = options.onAviso ?? (() => {});
   }
 
   counters(): HttpCounters {
@@ -438,7 +476,9 @@ export class HttpClient {
       // quem não sabe dar 404. Lê-la como regras seria ler tags como caminhos.
       if (/^\s*<(?:!doctype|html)\b/i.test(texto)) return SEM_RESTRICOES;
 
-      return lerRobots(texto, PRODUTO);
+      const regras = lerRobots(texto, PRODUTO);
+      await this.registarAtraso(endereco, regras);
+      return regras;
     })();
 
     this.robotsPorHospedeiro.set(autoridade, promessa);
@@ -539,6 +579,46 @@ export class HttpClient {
     };
   }
 
+  /**
+   * Fica com o `Crawl-delay` que este sítio pediu, preso à máquina dele.
+   *
+   * Chama-se com o endereço do próprio `robots.txt`, que vive na máquina a que
+   * as regras dizem respeito — é a mesma chave por onde o estrangulamento
+   * pergunta depois.
+   */
+  private async registarAtraso(endereco: string, regras: RegrasDoRobots): Promise<void> {
+    if (regras.atrasoSegundos === null) return;
+
+    const pedido = regras.atrasoSegundos * 1_000;
+    const aplicado = Math.min(pedido, MAX_CRAWL_DELAY_MS);
+    if (pedido > MAX_CRAWL_DELAY_MS) {
+      this.onAviso(
+        `o ${endereco} pede ${regras.atrasoSegundos}s entre pedidos e só se esperam ${
+          MAX_CRAWL_DELAY_MS / 1_000
+        }s — talvez esta fonte não deva ser lida todos os dias`,
+      );
+    }
+
+    const chave = await this.chaveDoRitmo(endereco);
+    this.atrasoPorMaquina.set(chave, Math.max(this.atrasoPorMaquina.get(chave) ?? 0, aplicado));
+
+    // **E estica a janela que o próprio `robots.txt` já tinha reservado.**
+    //
+    // A ordem dos acontecimentos é esta: estrangula-se, pede-se o
+    // `robots.txt`, e só aí se fica a saber o que o sítio quer. Nesse momento
+    // já há uma janela marcada com o nosso mínimo — e sem a corrigir, a
+    // primeira página vinha um segundo depois do ficheiro em vez dos dez que
+    // ele pediu. Obedecer a partir do segundo pedido não é obedecer.
+    //
+    // A janela marcada vale `base + minHostIntervalMs`; a que devia valer é
+    // `base + intervalo`. A subtração desfaz uma e põe a outra.
+    const marcado = this.nextAllowedAt.get(chave);
+    if (this.minHostIntervalMs > 0 && marcado !== undefined) {
+      const intervalo = Math.max(this.minHostIntervalMs, aplicado);
+      this.nextAllowedAt.set(chave, marcado - this.minHostIntervalMs + intervalo);
+    }
+  }
+
   async get(url: string, options: RequestOptions = {}): Promise<HttpResponse> {
     let last: HttpResponse = { ok: false, status: 0, body: '', error: 'pedido não executado', url };
 
@@ -626,9 +706,13 @@ export class HttpClient {
   private async throttle(url: string): Promise<void> {
     if (this.minHostIntervalMs <= 0) return;
     const chave = await this.chaveDoRitmo(url);
+    // O que o sítio pediu ganha ao nosso mínimo quando é maior. Nunca ao
+    // contrário: um `Crawl-delay: 0` não nos dá licença para ir mais depressa
+    // do que a nossa própria regra.
+    const intervalo = Math.max(this.minHostIntervalMs, this.atrasoPorMaquina.get(chave) ?? 0);
     const now = this.now();
     const earliest = this.nextAllowedAt.get(chave) ?? 0;
-    this.nextAllowedAt.set(chave, Math.max(now, earliest) + this.minHostIntervalMs);
+    this.nextAllowedAt.set(chave, Math.max(now, earliest) + intervalo);
     const wait = earliest - now;
     if (wait > 0) await this.sleep(wait);
   }
