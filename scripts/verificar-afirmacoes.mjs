@@ -1540,9 +1540,15 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   const ensaioRepoeStorage =
     /insert\\s\+into\\s\+storage\\\./.test(ensaio) &&
     /"\$mobilia" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
+  // E a segunda pergunta tem de ser sobre LINHAS. Exigir só que a consulta
+  // esteja lá deixava passar a versão antiga, que tratava a consulta bem
+  // sucedida como falha — e que esteve verde meses porque a base contra a qual
+  // corria tinha os privilégios mal repostos. A produção concede `select` a
+  // `anon` em `submissions`; o que fecha a fila é a RLS.
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
-    /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
+    /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio) &&
+    /\[ "\$fila_como_anon" = '0' \]/.test(ensaio);
   const manualRegista =
     /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
     /modelo de permissões/.test(ler('docs/OPERACAO.md'));

@@ -8,7 +8,7 @@
 # schema-checks), as tabelas que importam têm linhas, a cópia é fresca — a de
 # hoje ou a de ontem, com eventos vistos pela recolha há poucos dias — e a
 # base restaurada **serve-se como o sítio se serve**, ligando-se pelo papel
-# `anon` para ler eventos e ser recusada em `submissions`. Essa última faltou
+# `anon` para ler eventos e não ver uma linha da fila de moderação. Essa última faltou
 # durante meses, e era a que separava «a cópia está inteira» de «a cópia
 # funciona»: com `--no-privileges` dos dois lados, a base saía daqui sem uma
 # única concessão e o ensaio dava verde na mesma. Esse flag saiu dos dois
@@ -292,9 +292,9 @@ anotar "O evento visto mais recentemente é de ${ultimo}, ${folga} dia(s) antes 
 # não conseguia contar um evento.
 #
 # Duas perguntas, e as duas têm de dar a resposta certa. Ler os eventos como
-# `anon` prova que as concessões estão lá; ser recusado em `submissions` prova
-# que a reposição das concessões não abriu a fila de moderação ao público de
-# passagem — que seria a forma óbvia de fazer a primeira passar.
+# `anon` prova que as concessões vieram na cópia; não ver uma linha da fila de
+# moderação prova que o que veio não abriu o que devia continuar fechado — que
+# seria a forma óbvia de fazer a primeira passar.
 "${PSQL[@]}" <<'SQL' >/dev/null || falhar 'A base restaurada não tem os papéis do Supabase (ver o prelúdio).'
 select 1 from pg_roles where rolname = 'anon';
 SQL
@@ -307,10 +307,42 @@ eventos_como_anon="$("${PSQL[@]}" -tAc "
   || falhar "Como anon, a base restaurada devolve ${eventos_como_anon:-0} eventos. Com a RLS a valer e as concessões repostas, o sítio serviria uma agenda vazia."
 anotar "Como \`anon\`, a base restaurada devolve ${eventos_como_anon} eventos publicados."
 
-if "${PSQL[@]}" -tAc "set local role anon; select count(*) from public.submissions;" >/dev/null 2>&1; then
-  falhar 'Como anon, a fila de moderação é legível. As concessões repostas abriram o que devia continuar fechado.'
+# E a segunda pergunta é sobre LINHAS, não sobre permissão.
+#
+# Aqui esteve escrito que a leitura de `submissions` como `anon` tinha de ser
+# **recusada**, e que se não fosse era porque a reposição das concessões tinha
+# aberto o que devia continuar fechado. Estava errado, e esteve verde meses
+# porque a base contra a qual corria tinha os privilégios mal repostos — o
+# `anon` não tinha lá a concessão de leitura porque a reposição não a punha, e
+# não porque a produção não a tenha.
+#
+# A produção tem-na. É mobília do Supabase: o privilégio por omissão do projeto
+# concede `select` a `anon` em todas as tabelas novas criadas pelo `postgres` em
+# `public`, e `submissions` nasceu com ele. **O que fecha a fila de moderação
+# não é a falta da concessão; é a RLS**, ligada e sem uma única política — e é
+# exatamente assim que as `schema-checks` a vigiam, contando políticas que
+# exponham as tabelas internas ao público, não concessões.
+#
+# Medido em produção a 15 de setembro de 2026, com o papel `anon`:
+# `submissions` 0 linhas, `submission_attachments` 0, `admin_actions` 0,
+# `events` 222.
+#
+# Por isso pergunta-se o que interessa: **quantas linhas vê quem passa.** Zero,
+# venha isso de uma recusa à entrada ou de a RLS negar todas. Assim apanha-se o
+# que a versão antiga não apanhava — alguém desligar a RLS de `submissions`, ou
+# acrescentar-lhe uma política permissiva —, que é quando os endereços e os
+# hashes de IP de quem submeteu ficam à vista. Provado num Postgres local sobre
+# a tabela verdadeira: com a RLS ligada vem 0, desligada vem a linha, e sem a
+# concessão vem a recusa.
+fila_como_anon="$("${PSQL[@]}" -tAc "set local role anon; select count(*) from public.submissions;" 2>/dev/null)" \
+  || fila_como_anon='recusado'
+if [ "$fila_como_anon" = 'recusado' ]; then
+  anotar 'Como `anon`, a fila de moderação é recusada à entrada: nem a concessão de leitura existe.'
+else
+  [ "$fila_como_anon" = '0' ] \
+    || falhar "Como anon, a fila de moderação devolveu ${fila_como_anon} linhas. A RLS de public.submissions deixou de negar — desligada, ou com uma política permissiva. É a fila inteira, com os endereços e os hashes de IP de quem submeteu."
+  anotar 'Como `anon`, a fila de moderação devolve zero linhas: a RLS nega todas.'
 fi
-anotar 'Como `anon`, a fila de moderação continua recusada.'
 
 duracao=$((SECONDS - inicio))
 anotar "**Restaurada e verificada em ${duracao} s.**"
