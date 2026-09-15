@@ -251,21 +251,27 @@ A contribuição mais valiosa não é código. É corrigir um coreto que já nã
 existe, confirmar um espaço marcado como provisório, ou dizer-nos que a agenda
 de um concelho deixou de ser lida.
 
-## Autoria
+## Autoria e licença
 
-O Coreto — o nome, o código, o software — é desenvolvido por **Fábio Salgado**
-([salgado.zip](https://salgado.zip)), que é o titular dos direitos. Cada região
-é promovida pela sua Comunidade Intermunicipal — no Médio Tejo, pela CIM do
-Médio Tejo —, e essa distinção está escrita no próprio sítio, em
-`/informacoes`.
+O Coreto é desenvolvido por **Fábio Salgado**
+([salgado.zip](https://salgado.zip)). Cada região é promovida pela sua
+Comunidade Intermunicipal — no Médio Tejo, pela CIM do Médio Tejo —, e essa
+distinção está escrita no próprio sítio, em `/informacoes`.
 
-O nome e a marca «Coreto» **não são cobertos pela licença do código**: a
-licença dá direitos sobre o software, não sobre a identidade com que ele se
-apresenta.
+**O software é [AGPL-3.0-only](LICENSE).** Quem correr uma versão modificada
+deste sítio, ainda que só a sirva pela rede, tem de disponibilizar o código
+correspondente. É uma escolha deliberada: isto foi feito para um território e
+paga-se a devolver ao comum.
 
-## Licença
+**A compilação de dados da agenda é CC BY 4.0**, e é o que o produto já diz ao
+utilizador no rodapé, nos feeds e no ficheiro de dados. **A marca «Coreto» não
+é coberta por nenhuma das duas.**
 
-[AGPL-3.0-only](LICENSE). Quem correr uma versão modificada deste sítio, ainda
-que só a sirva pela rede, tem de disponibilizar o código correspondente. É uma
-escolha deliberada: isto foi feito para um território e paga-se a devolver ao
-comum.
+Aqui esteve escrito que ele «é o titular dos direitos», sem reserva nenhuma, e
+esta secção era uma segunda fonte de verdade sobre um assunto que não pode ter
+duas. Passou a haver uma só, e mais honesta: **[`AUTORIA.md`](AUTORIA.md)** diz
+o que é reclamado e o que não é; **[`docs/TERCEIROS.md`](docs/TERCEIROS.md)**
+inventaria o que está aqui dentro e é de outros; e
+**[`docs/TITULARIDADE.md`](docs/TITULARIDADE.md)** mostra como esta obra foi
+produzida — com assistência de IA, com os números medidos e as fontes citadas —
+e o que fica por confirmar com um advogado.
