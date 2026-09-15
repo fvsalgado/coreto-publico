@@ -304,7 +304,7 @@ eventos_como_anon="$("${PSQL[@]}" -tAc "
   select count(*) from public.events;
 ")" || falhar 'Como anon, a leitura de eventos foi recusada: a cópia restaurada não serviria o sítio.'
 [ "${eventos_como_anon:-0}" -gt 0 ] \
-  || falhar "Como anon, a base restaurada devolve ${eventos_como_anon:-0} eventos. Com a RLS a valer e as concessões repostas, o sítio serviria uma agenda vazia."
+  || falhar "Como anon, a base restaurada devolve ${eventos_como_anon:-0} eventos. Com a RLS a valer e as concessões que vieram na cópia, o sítio serviria uma agenda vazia."
 anotar "Como \`anon\`, a base restaurada devolve ${eventos_como_anon} eventos publicados."
 
 # E a segunda pergunta é sobre LINHAS, não sobre permissão.
