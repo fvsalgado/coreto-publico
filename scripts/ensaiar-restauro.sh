@@ -150,17 +150,41 @@ anotar "Restaurada em $((SECONDS - inicio)) s."
 # o esquema, as linhas, a frescura — estava certo. No dia do restauro a sério,
 # a agenda estava toda lá e o sítio respondia vazio a tudo.
 #
-# A migração 0128 é o que repõe as concessões, e é reaplicável de propósito.
-# Corrê-la aqui é ensaiar o restauro inteiro, e não meio: a cópia mais o passo
-# que a torna servível. Se ela desaparecer ou deixar de conceder, as duas
-# verificações a seguir reprovam.
+# **E são quatro migrações, não uma.** Aqui esteve escrito que «a migração 0128
+# é o que repõe as concessões», e isso era falso desde o dia em que se
+# escreveu. A 0128 concede UMA coluna — a `last_run_at` — e a seguir afirma que
+# a tabela tem onze concedidas ao todo. As outras dez vinham de trás: nove da
+# 0049, uma da 0107. Corrida sozinha sobre uma base sem concessões, a 0128
+# concede a sua e conta uma; esperava onze; rebenta.
+#
+# O ensaio nasceu assim a 7 de setembro e nunca passou. Correu pela primeira
+# vez a sério a 15 de setembro e reprovou — não por defeito da cópia, que
+# restaurou inteira em quatro segundos, mas por lhe faltar o resto do passo que
+# ele próprio diz ensaiar. **Um ensaio que não pode passar não é um ensaio: é
+# um alarme que toca sempre, e um alarme que toca sempre não avisa de nada.**
+#
+# As asserções das quatro estão certas EM SEQUÊNCIA, que é como uma migração é
+# feita para correr: quando a 0128 corre depois da 0049 e da 0107, encontra as
+# suas onze. Depois a 0139 acrescenta a `adapter` e passam a doze — e é por
+# isso que a 0128 sozinha também já não passaria contra a produção de hoje.
+# Migrações não se reescrevem; corrigem-se a montante, e o que estava errado
+# era quem as mandava correr.
+#
+# Descobertas e não escritas à mão, de propósito: a próxima migração que
+# conceda uma coluna entra sozinha nesta lista. Escrever aqui os quatro nomes
+# era repetir o defeito daqui a um mês, com outro número.
 # ---------------------------------------------------------------------------
-CONCESSOES="$ROOT/supabase/migrations/20260907120000_0128_as_concessoes_de_leitura_escritas.sql"
-[ -f "$CONCESSOES" ] \
-  || falhar 'Falta a migração das concessões (0128). Sem ela, uma base restaurada não serve o sítio.'
-"${PSQL[@]}" -f "$CONCESSOES" >/dev/null \
-  || falhar 'A migração das concessões não aplicou sobre a base restaurada.'
-anotar 'As concessões de leitura repostas (migração 0128).'
+mapfile -t CONCESSOES < <(
+  grep -rlZ --include='*.sql' -Pzo 'grant\s+select\s*(\([^)]*\)\s*)?on\s+public\.[a-z_]+\s+to\s+[^;]*(anon|authenticated)' \
+    "$ROOT/supabase/migrations" 2>/dev/null | tr '\0' '\n' | sort
+)
+[ "${#CONCESSOES[@]}" -gt 0 ] \
+  || falhar 'Não se encontrou uma única migração que conceda leitura ao público. Sem elas, uma base restaurada não serve o sítio.'
+for m in "${CONCESSOES[@]}"; do
+  "${PSQL[@]}" -f "$m" >/dev/null \
+    || falhar "A migração das concessões não aplicou sobre a base restaurada: ${m##*/}"
+done
+anotar "As concessões de leitura repostas (${#CONCESSOES[@]} migrações, por ordem)."
 
 # ---------------------------------------------------------------------------
 # 5. As verificações do manual.
