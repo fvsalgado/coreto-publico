@@ -842,6 +842,69 @@ describe('runPipeline', () => {
     expect(db.health[0]?.leu).toBe(true);
   });
 
+  /*
+   * E a quarta vez, que é a correção da terceira.
+   *
+   * As duas condições acima resolveram o verde falso e criaram um vermelho
+   * permanente. A conta é esta: a `nextBaseline` suaviza a 70/30 e arredonda,
+   * por isso de uma linha de base 1 com zero itens sai `Math.round(0.7)` — que
+   * é 1 outra vez. A linha de base nunca desce a zero, o
+   * `nadaOndeSeEsperavaAlgo` nunca volta a ser falso, a corrida fica `partial`
+   * todas as noites e o `last_success_at` nunca mais avança.
+   *
+   * Ao sétimo dia o `/estado.json` passa a `mau` e a vigilância do sítio
+   * começa a tocar de hora a hora. Foi o que aconteceu a 14 e 15 de setembro
+   * de 2026 com a `jf-assentiz` e a `jf-fontes`, com as agendas
+   * verdadeiramente vazias e a mobília das páginas no sítio.
+   *
+   * O que decide não é o tamanho da linha de base — é quem leu a página. A
+   * `portal-freguesia` prova pela mobília que está na página certa, e a partir
+   * daqui essa prova vale mais do que o número.
+   */
+  const AGENDA_VAZIA_COM_MOBILIA = `
+    <main>
+      <h1>Agenda de Eventos</h1>
+      <a href="/freguesia/agenda/todos">Todos</a>
+      <a href="/freguesia/agenda/concluidos">Eventos Concluídos</a>
+    </main>
+  `;
+
+  it('a freguesia que prova que a agenda está vazia dá-se por lida', async () => {
+    const db = new FakeDatabase();
+    const outcome = await run(
+      makeSource({ adapter: 'portal-freguesia', baseline_item_count: 1 }),
+      db,
+      stubHttp(AGENDA_VAZIA_COM_MOBILIA),
+    );
+
+    expect(outcome.counters.itemsFound).toBe(0);
+    expect(outcome.status).toBe('success');
+    expect(outcome.error).toBeNull();
+
+    // O que interessa é a ficha: sem isto, a fonte fica «parada» ao sétimo dia
+    // e a vigilância do sítio toca de hora a hora por causa de uma freguesia
+    // que apenas não tem nada marcado.
+    expect(db.health[0]?.succeeded).toBe(true);
+  });
+
+  it('mas a prova não passa por cima da deriva de uma fonte com história', async () => {
+    // A mesma página vazia e a mesma mobília, numa fonte que costumava dar
+    // vinte. Aí a `avaliarContagem` decide antes, e decide `deriva`: uma fonte
+    // com linha de base a sério que passa a zero não se escreve, prove o
+    // adaptador o que provar. A prova serve para não condenar quem nunca teve
+    // nada, não para absolver quem perdeu tudo.
+    const db = new FakeDatabase();
+    const outcome = await run(
+      makeSource({ adapter: 'portal-freguesia', baseline_item_count: 20 }),
+      db,
+      stubHttp(AGENDA_VAZIA_COM_MOBILIA),
+    );
+
+    expect(outcome.status).toBe('partial');
+    expect(outcome.layoutDrift).toBe(true);
+    expect(db.health[0]?.succeeded).toBe(false);
+  });
+
   it('uma alteração de layout não apaga o que já lá estava', async () => {
     const db = new FakeDatabase();
     await run(makeSource(), db);

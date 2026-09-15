@@ -353,7 +353,12 @@ function paraEvento(
 
 export const portalFreguesiaAdapter: Adapter = {
   id: 'portal-freguesia',
-  async fetchEvents({ source, http, log }: AdapterContext): Promise<RawEvent[]> {
+  async fetchEvents({
+    source,
+    http,
+    log,
+    confirmarAgendaVazia,
+  }: AdapterContext): Promise<RawEvent[]> {
     const { config } = parseAdapterConfig(source.config);
     const listas = config.listUrls?.length ? config.listUrls : [source.url];
     const limite = Math.min(config.maxItems ?? MAX_ITENS, MAX_ITENS);
@@ -414,7 +419,15 @@ export const portalFreguesiaAdapter: Adapter = {
       // que a página é a certa, porque agora sabemos que houve pelo menos uma
       // resposta para a mobília julgar. Zero eventos é uma leitura, não uma
       // avaria.
+      //
+      // E **diz-se lá fora**, que é a parte que faltava. Esta conclusão vivia
+      // e morria aqui dentro: o pipeline via zero, via a linha de base maior
+      // do que zero, e marcava a corrida de incompleta na mesma. A `jf-assentiz`
+      // e a `jf-fontes` ficaram assim desde 30 de agosto e 6 de setembro de
+      // 2026 — com a agenda verdadeiramente vazia, a mobília no sítio, e a
+      // ficha a dizer que a fonte estava parada.
       log.info(`agenda de ${source.name} sem eventos marcados`);
+      confirmarAgendaVazia?.();
       return [];
     }
 

@@ -3,7 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+  # `ready_for_review` não vem nos tipos por omissão, e sem ele a bateria
+  # pesada — que passa a esperar por esse momento — nunca chegava a correr.
+  # Os outros três são os de omissão, e escrevem-se porque declarar `types`
+  # substitui a lista inteira em vez de a acrescentar.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 # Uma execução por ramo. Um «push» novo torna a execução anterior irrelevante
 # antes de ela acabar, e deixá-la a correr só atrasa a que interessa.
@@ -266,9 +271,33 @@ jobs:
     # o lint ou os testes reprovam, os quatro minutos do Supabase efémero
     # deixam de arder para dizer o que já se sabe. Custa ver este resultado
     # dois minutos mais tarde.
+    #
+    # **E só depois de o PR sair de rascunho**, que é a parte que paga a conta.
+    #
+    # Medido na execução 34940897481, um PR com código, minutos faturados
+    # (o GitHub arredonda cada trabalho para cima):
+    #
+    #     Qualidade            162 s →  3
+    #     Migrações             43 s →  1
+    #     Regiões              256 s →  5   ← 192 s são levantar o Supabase
+    #     Auditorias do sítio  248 s →  5   ← 150 s são auditar a acessibilidade
+    #                                  ----
+    #                                   14 por empurrão
+    #
+    # Dez desses catorze são estes dois trabalhos, e corriam **a cada empurrão**
+    # para um ramo que ainda ninguém pode fundir. Um PR que leve cinco
+    # empurrões até ficar pronto pagava cinquenta minutos para provar cinco
+    # vezes a mesma coisa, e só a última contava.
+    #
+    # Em rascunho ficam os quatro minutos que dizem se o código está de pé —
+    # formatação, tipos, lint, testes, migrações — que é a resposta que se quer
+    # depressa. A bateria pesada corre quando o PR se diz pronto, e torna a
+    # correr a cada empurrão depois disso. Nada se funde sem ela: o que protege
+    # `main` é o que corre com o PR já fora de rascunho.
     needs: qualidade
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
       needs.qualidade.outputs.so_documentacao != 'sim'
 
     # A versão executável da promessa comercial: a segunda CIM nasce com um
@@ -395,9 +424,11 @@ jobs:
     # acessibilidade», nunca uma pela outra.
     #
     # Só em PR e só com código, pela razão escrita no trabalho anterior.
+    # Fora de rascunho também, pela conta escrita no trabalho anterior.
     needs: qualidade
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
       needs.qualidade.outputs.so_documentacao != 'sim'
 
     steps:
