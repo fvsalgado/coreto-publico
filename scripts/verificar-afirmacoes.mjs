@@ -1510,7 +1510,7 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   const ensaio = ler('scripts/ensaiar-restauro.sh');
   const ensaioRepoe =
     /mapfile -t PRIVILEGIOS/.test(ensaio) &&
-    /\(\?:grant\|revoke\)\\b\[\^;\]\*;/.test(ensaio) &&
+    /\(\?:grant\|revoke\|alter\\s\+default\\s\+privileges\)\\b\[\^;\]\*;/.test(ensaio) &&
     /"\$instrucoes" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
