@@ -21,7 +21,7 @@
  * docs/TITULARIDADE.md.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -51,7 +51,13 @@ function ler(caminho) {
 
 // --- Os documentos que têm de existir --------------------------------------
 
-const CANONICOS = ['AUTORIA.md', 'REUSE.toml', 'docs/TITULARIDADE.md', 'docs/TERCEIROS.md'];
+const CANONICOS = [
+  'AUTORIA.md',
+  'REUSE.toml',
+  'docs/TITULARIDADE.md',
+  'docs/TERCEIROS.md',
+  'docs/AUTORIZACOES.md',
+];
 for (const doc of CANONICOS) {
   afirmar(existsSync(join(RAIZ, doc)), `${doc} existe`);
 }
@@ -111,6 +117,34 @@ for (const pasta of ['packages/ingest/src/__fixtures__', 'instantaneos']) {
   if (!existsSync(join(RAIZ, pasta))) continue;
   afirmar(terceiros.includes(pasta), `docs/TERCEIROS.md declara \`${pasta}\``);
   afirmar(reuse.includes(pasta), `REUSE.toml declara \`${pasta}\``);
+}
+
+// --- Cada instantâneo diz ao abrigo de quê está aqui -------------------------
+//
+// Uma pasta de `instantaneos/` são páginas inteiras do sítio de outra entidade,
+// com o aviso de reserva de direitos dela no rodapé. Guardá-las sem dizer ao
+// abrigo de quê é a forma de o repositório acumular material alheio sem que
+// ninguém dê por isso — e foi assim que entraram as três de Torres Novas.
+//
+// Isto não julga se a autorização é boa: exige que exista uma entrada com o
+// nome da pasta em docs/AUTORIZACOES.md. Uma entrada que diga «por registar»
+// passa, de propósito: o que aqui se apanha é o silêncio, não a incompletude.
+// Quem quiser saber o que falta a cada uma lê o registo, que o diz linha a
+// linha.
+
+const autorizacoes = ler('docs/AUTORIZACOES.md');
+if (existsSync(join(RAIZ, 'instantaneos'))) {
+  const pastas = readdirSync(join(RAIZ, 'instantaneos'), { withFileTypes: true })
+    .filter((entrada) => entrada.isDirectory())
+    .map((entrada) => entrada.name);
+  afirmar(pastas.length > 0, 'instantaneos/ tem pelo menos uma pasta');
+  for (const pasta of pastas) {
+    afirmar(
+      autorizacoes.includes(pasta),
+      `docs/AUTORIZACOES.md tem entrada para \`instantaneos/${pasta}/\``,
+      'páginas de outra entidade guardadas sem dizer ao abrigo de quê',
+    );
+  }
 }
 
 // --- Todos os package.json declaram a licença -------------------------------
