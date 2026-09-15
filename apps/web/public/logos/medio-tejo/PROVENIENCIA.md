@@ -6,8 +6,8 @@ não vão na licença do resto do repositório.
 
 | Ficheiro                          | Origem                                                                                                                                                     | Recolhido  | Tratamento                                                                                       |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| `cim-medio-tejo-branco.png`       | `https://mediotejo.pt/images/logos/logo02.png` — versão a branco publicada pela própria CIM do Médio Tejo                                                  | 2026-08-29 | Margens transparentes aparadas; reduzido de 2027 px para 608 px de largura; guardado em `LA`     |
-| `cim-medio-tejo-escuro.png`       | O mesmo ficheiro acima, com a tinta trocada                                                                                                                | 2026-08-29 | Canal de tinta posto a `0x18` — a mesma máscara alfa, pixel a pixel; nada da marca se redesenhou |
+| `cim-branco.png`                  | `https://mediotejo.pt/images/logos/logo02.png` — versão a branco publicada pela própria CIM do Médio Tejo                                                  | 2026-08-29 | Margens transparentes aparadas; reduzido de 2027 px para 608 px de largura; guardado em `LA`     |
+| `cim-escuro.png`                  | O mesmo ficheiro acima, com a tinta trocada                                                                                                                | 2026-08-29 | Canal de tinta posto a `0x18` — a mesma máscara alfa, pixel a pixel; nada da marca se redesenhou |
 | `cofinanciamento-centro-2030.png` | `https://mediotejo.pt/images/2026/06/22/centro2030_barracofinan_ass_white_2600px.png` — barra de cofinanciamento a branco publicada pela CIM do Médio Tejo | 2026-08-29 | Margens transparentes aparadas; reduzido de 2356 px para 1200 px de largura; guardado em `LA`    |
 
 ## Porque é a barra do CENTRO 2030 e não a do CENTRO 2020
@@ -58,7 +58,7 @@ cerca de metade. O cabeçalho é servido em todas as páginas do sítio.
 São os mesmos três logótipos que a referência mostra — CENTRO, PORTUGAL,
 União Europeia —, na forma atual. Se a operação que financia o Coreto for
 mesmo do quadro anterior, troca-se o ficheiro e a linha que o nomeia em
-`apps/web/app/informacoes/page.tsx`.
+`apps/web/app/[regiao]/informacoes/page.tsx`.
 
 ## Onde é que estes ficheiros aparecem
 
@@ -67,9 +67,9 @@ medidas e o nome ao mesmo lado — a linha da região (`public.regions`, lida po
 `apps/web/src/lib/regiao.ts`). A tinta é que muda, porque o fundo muda:
 
 - na assinatura «Promovido por» do cabeçalho, em todas as páginas, sobre o
-  turquesa do toldo — `cim-medio-tejo-escuro.png`, o `sobreMarca`;
+  turquesa do toldo — `cim-escuro.png`, o `sobreMarca`;
 - no bloco «Quem faz e quem financia», em `/informacoes`, sobre o grafite —
-  `cim-medio-tejo-branco.png`, o `sobreGrafite`.
+  `cim-branco.png`, o `sobreGrafite`.
 
 A tira do cofinanciamento aparece só no segundo. A razão está escrita ao lado
-do bloco, em `apps/web/app/informacoes/page.tsx`.
+do bloco, em `apps/web/app/[regiao]/informacoes/page.tsx`.

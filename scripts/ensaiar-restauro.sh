@@ -150,17 +150,87 @@ anotar "Restaurada em $((SECONDS - inicio)) s."
 # o esquema, as linhas, a frescura — estava certo. No dia do restauro a sério,
 # a agenda estava toda lá e o sítio respondia vazio a tudo.
 #
-# A migração 0128 é o que repõe as concessões, e é reaplicável de propósito.
-# Corrê-la aqui é ensaiar o restauro inteiro, e não meio: a cópia mais o passo
-# que a torna servível. Se ela desaparecer ou deixar de conceder, as duas
-# verificações a seguir reprovam.
+# **E são quatro migrações, não uma.** Aqui esteve escrito que «a migração 0128
+# é o que repõe as concessões», e isso era falso desde o dia em que se
+# escreveu. A 0128 concede UMA coluna — a `last_run_at` — e a seguir afirma que
+# a tabela tem onze concedidas ao todo. As outras dez vinham de trás: nove da
+# 0049, uma da 0107. Corrida sozinha sobre uma base sem concessões, a 0128
+# concede a sua e conta uma; esperava onze; rebenta.
+#
+# O ensaio nasceu assim a 7 de setembro e nunca passou. Correu pela primeira
+# vez a sério a 15 de setembro e reprovou — não por defeito da cópia, que
+# restaurou inteira em quatro segundos, mas por lhe faltar o resto do passo que
+# ele próprio diz ensaiar. **Um ensaio que não pode passar não é um ensaio: é
+# um alarme que toca sempre, e um alarme que toca sempre não avisa de nada.**
+#
+# As asserções das quatro estão certas EM SEQUÊNCIA, que é como uma migração é
+# feita para correr: quando a 0128 corre depois da 0049 e da 0107, encontra as
+# suas onze. Depois a 0139 acrescenta a `adapter` e passam a doze — e é por
+# isso que a 0128 sozinha também já não passaria contra a produção de hoje.
+# Migrações não se reescrevem; corrigem-se a montante, e o que estava errado
+# era quem as mandava correr.
+#
+# **E repõem-se os privilégios — todos, e não só as concessões.**
+#
+# Isto levou três tentativas, e cada uma ensinou metade do problema.
+#
+# A primeira mandou correr as quatro migrações de concessões inteiras. Reprovou
+# com `policy "sources_public_read" already exists`: o `pg_dump` **traz** as
+# políticas de RLS, que são objetos do esquema, e **não traz** os privilégios,
+# que são de papéis. Reexecutar a migração inteira repõe o que falta e tropeça
+# no que já lá está.
+#
+# A segunda extraiu as instruções `grant` e correu só isso. Reprovou mais à
+# frente, nas `schema-checks`:
+#
+#     funções security definer ao alcance do anon ou do authenticated:
+#     add_region_license(), approve_submission(), create_region(), …
+#
+# Porque o `--no-privileges` não tira só o que se concede: tira também o que se
+# **revoga**. E em Postgres uma função nasce executável por `public` — a 0134
+# revoga esse execute a cinquenta e tal funções, e sem essas revogações a base
+# restaurada é mais aberta do que a de produção. Repor metade dos privilégios
+# não é repor privilégios: é fabricar uma terceira base que não é nem a cópia
+# nem a produção.
+#
+# Por isso replicam-se as instruções `grant` **e** `revoke` de todas as
+# migrações que as tenham, por ordem de nome — que é a ordem cronológica, e a
+# ordem importa: um `revoke` depois de um `grant` sobre o mesmo objeto é o que
+# dá o estado final certo. São hoje 127 instruções em 34 migrações.
+#
+# Descobertas e não escritas à mão, de propósito: a próxima migração que mexa
+# em privilégios entra sozinha nesta lista.
+#
+# **E ancoradas na coluna zero.** A quarta tentativa aceitava espaços à
+# esquerda e apanhou isto pelo meio:
+#
+#     alter default privileges in schema public
+#       revoke insert, update, delete, truncate on tables from anon, authenticated;
+#
+# — a linha de continuação, sem o `alter default privileges` que lhe dá
+# sentido. O que chegou ao Postgres foi `revoke … on tables from …`, e o erro
+# foi `relation "tables" does not exist`. Nesta casa uma instrução abre na
+# coluna zero e as continuações são indentadas; é nisso que se confia, e é a
+# única linha indentada de todo o repositório que começa por um destes verbos.
+# De caminho, um `  -- revoke …` num comentário também não conta.
 # ---------------------------------------------------------------------------
-CONCESSOES="$ROOT/supabase/migrations/20260907120000_0128_as_concessoes_de_leitura_escritas.sql"
-[ -f "$CONCESSOES" ] \
-  || falhar 'Falta a migração das concessões (0128). Sem ela, uma base restaurada não serve o sítio.'
-"${PSQL[@]}" -f "$CONCESSOES" >/dev/null \
-  || falhar 'A migração das concessões não aplicou sobre a base restaurada.'
-anotar 'As concessões de leitura repostas (migração 0128).'
+mapfile -t PRIVILEGIOS < <(
+  grep -lE '^(grant|revoke|alter default privileges)\b' "$ROOT"/supabase/migrations/*.sql 2>/dev/null | sort
+)
+[ "${#PRIVILEGIOS[@]}" -gt 0 ] \
+  || falhar 'Não se encontrou uma única migração que conceda ou revogue. Sem elas, a base restaurada não é a de produção.'
+
+instrucoes="$(
+  cat "${PRIVILEGIOS[@]}" \
+    | perl -0777 -ne 'while (/^((?:grant|revoke|alter\s+default\s+privileges)\b[^;]*;)/gmi) { print "$1\n" }'
+)"
+n_instrucoes="$(printf '%s' "$instrucoes" | grep -c ';' || true)"
+[ "${n_instrucoes:-0}" -gt 0 ] \
+  || falhar "Encontraram-se ${#PRIVILEGIOS[@]} migrações de privilégios e nenhuma instrução dentro delas. O extrator deixou de casar."
+
+printf '%s\n' "$instrucoes" | "${PSQL[@]}" >/dev/null \
+  || falhar 'Os privilégios não aplicaram sobre a base restaurada.'
+anotar "Privilégios repostos (${n_instrucoes} instruções, de ${#PRIVILEGIOS[@]} migrações)."
 
 # ---------------------------------------------------------------------------
 # 5. As verificações do manual.

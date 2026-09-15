@@ -119,6 +119,14 @@ jobs:
       - name: Afirmações públicas
         run: pnpm check:afirmacoes
 
+      # O dossiê de titularidade e o disco têm de concordar. Foi por não haver
+      # travão que o documento de proveniência dos logótipos pôde apontar
+      # durante semanas para ficheiros que não existem — e um documento de
+      # proveniência errado faz pior do que não existir, porque dá confiança a
+      # quem o lê.
+      - name: Proveniência
+        run: pnpm check:proveniencia
+
       - name: Compilação
         run: pnpm build
 
