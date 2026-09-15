@@ -170,41 +170,55 @@ anotar "Restaurada em $((SECONDS - inicio)) s."
 # Migrações não se reescrevem; corrigem-se a montante, e o que estava errado
 # era quem as mandava correr.
 #
-# **E repõem-se as concessões, não as migrações.** A primeira tentativa de
-# corrigir isto mandou correr as quatro migrações inteiras, por ordem, e
-# reprovou noutro sítio:
+# **E repõem-se os privilégios — todos, e não só as concessões.**
 #
-#     ERROR: policy "sources_public_read" for table "sources" already exists
+# Isto levou três tentativas, e cada uma ensinou metade do problema.
 #
-# Porque o `pg_dump` perde umas coisas e traz outras, e a distinção é o centro
-# deste passo: **as políticas de RLS são objetos do esquema e vêm na cópia; as
-# concessões são privilégios de papéis e não vêm.** Reexecutar a migração
-# inteira repõe o que falta e tropeça no que já lá está.
+# A primeira mandou correr as quatro migrações de concessões inteiras. Reprovou
+# com `policy "sources_public_read" already exists`: o `pg_dump` **traz** as
+# políticas de RLS, que são objetos do esquema, e **não traz** os privilégios,
+# que são de papéis. Reexecutar a migração inteira repõe o que falta e tropeça
+# no que já lá está.
 #
-# Por isso extraem-se as instruções `grant` e corre-se só isso. É exatamente o
-# que a cópia perde, nem mais nem menos, e um `grant` repetido é um não-evento
-# em Postgres — ao contrário de um `create policy`.
+# A segunda extraiu as instruções `grant` e correu só isso. Reprovou mais à
+# frente, nas `schema-checks`:
 #
-# Descobertas e não escritas à mão, de propósito: a próxima migração que
-# conceda uma coluna entra sozinha nesta lista. Escrever aqui os quatro nomes
-# era repetir o defeito daqui a um mês, com outro número. O `grant` é apanhado
-# só quando abre uma linha — um `-- grant …` num comentário não conta.
+#     funções security definer ao alcance do anon ou do authenticated:
+#     add_region_license(), approve_submission(), create_region(), …
+#
+# Porque o `--no-privileges` não tira só o que se concede: tira também o que se
+# **revoga**. E em Postgres uma função nasce executável por `public` — a 0134
+# revoga esse execute a cinquenta e tal funções, e sem essas revogações a base
+# restaurada é mais aberta do que a de produção. Repor metade dos privilégios
+# não é repor privilégios: é fabricar uma terceira base que não é nem a cópia
+# nem a produção.
+#
+# Por isso replicam-se as instruções `grant` **e** `revoke` de todas as
+# migrações que as tenham, por ordem de nome — que é a ordem cronológica, e a
+# ordem importa: um `revoke` depois de um `grant` sobre o mesmo objeto é o que
+# dá o estado final certo. São hoje 127 instruções em 34 migrações.
+#
+# Descobertas e não escritas à mão, de propósito: a próxima migração que mexa
+# em privilégios entra sozinha nesta lista. E são apanhadas só quando abrem uma
+# linha — um `-- revoke …` num comentário não conta.
 # ---------------------------------------------------------------------------
-mapfile -t CONCESSOES < <(
-  grep -rlZ --include='*.sql' -Pzo 'grant\s+select\s*(\([^)]*\)\s*)?on\s+public\.[a-z_]+\s+to\s+[^;]*(anon|authenticated)' \
-    "$ROOT/supabase/migrations" 2>/dev/null | tr '\0' '\n' | sort
+mapfile -t PRIVILEGIOS < <(
+  grep -lE '^[[:space:]]*(grant|revoke)\b' "$ROOT"/supabase/migrations/*.sql 2>/dev/null | sort
 )
-[ "${#CONCESSOES[@]}" -gt 0 ] \
-  || falhar 'Não se encontrou uma única migração que conceda leitura ao público. Sem elas, uma base restaurada não serve o sítio.'
+[ "${#PRIVILEGIOS[@]}" -gt 0 ] \
+  || falhar 'Não se encontrou uma única migração que conceda ou revogue. Sem elas, a base restaurada não é a de produção.'
 
-grants="$(cat "${CONCESSOES[@]}" | perl -0777 -ne 'while (/^[ \t]*(grant\b[^;]*;)/gmi) { print "$1\n" }')"
-n_grants="$(printf '%s' "$grants" | grep -c ';' || true)"
-[ "${n_grants:-0}" -gt 0 ] \
-  || falhar "Encontraram-se ${#CONCESSOES[@]} migrações de concessões e nenhuma instrução \`grant\` dentro delas. O extrator deixou de casar."
+instrucoes="$(
+  cat "${PRIVILEGIOS[@]}" \
+    | perl -0777 -ne 'while (/^[ \t]*((?:grant|revoke)\b[^;]*;)/gmi) { print "$1\n" }'
+)"
+n_instrucoes="$(printf '%s' "$instrucoes" | grep -c ';' || true)"
+[ "${n_instrucoes:-0}" -gt 0 ] \
+  || falhar "Encontraram-se ${#PRIVILEGIOS[@]} migrações de privilégios e nenhuma instrução dentro delas. O extrator deixou de casar."
 
-printf '%s\n' "$grants" | "${PSQL[@]}" >/dev/null \
-  || falhar 'As concessões não aplicaram sobre a base restaurada.'
-anotar "As concessões de leitura repostas (${n_grants} instruções, de ${#CONCESSOES[@]} migrações)."
+printf '%s\n' "$instrucoes" | "${PSQL[@]}" >/dev/null \
+  || falhar 'Os privilégios não aplicaram sobre a base restaurada.'
+anotar "Privilégios repostos (${n_instrucoes} instruções, de ${#PRIVILEGIOS[@]} migrações)."
 
 # ---------------------------------------------------------------------------
 # 5. As verificações do manual.
