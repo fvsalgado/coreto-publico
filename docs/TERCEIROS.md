@@ -31,9 +31,17 @@ aviso no rodapé:
 escreveu-as para a base de dados **servida ao público**. Não é material de
 calibração guardado num canto: é texto alheio republicado pelo produto.
 
-**O que resolve:** retirar, substituir por texto próprio, ou obter autorização
-escrita da câmara — de preferência através da CIM. As três coisas servem; não
-fazer nenhuma, não.
+**O que resolve:** retirar, substituir por texto próprio, ou autorização da
+câmara — de preferência através da CIM. As três coisas servem; não fazer
+nenhuma, não.
+
+**A 15 de setembro de 2026 o titular declarou ter essa autorização.** A
+declaração está registada, com data, em
+[`AUTORIZACOES.md`](AUTORIZACOES.md) — e é só isso que está: a forma do
+documento, quem o assinou, em que data e o que cobre continuam por registar, e
+o registo diz quais são as quatro linhas que faltam. Uma autorização que
+ninguém consegue mostrar não deixa de existir por isso; deixa é de servir de
+prova, que é para o que este documento existe.
 
 ---
 
