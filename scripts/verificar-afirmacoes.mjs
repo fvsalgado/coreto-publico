@@ -1474,58 +1474,95 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
 }
 {
   /*
-   * O par que liga o `--no-privileges` da cópia ao que compensa a ausência
-   * dele.
+   * A cópia leva o modelo de permissões, e o ensaio exige que ele venha.
    *
-   * Aqui esteve a versão fraca deste par: o flag do lado da cópia e um
-   * **parágrafo** do lado do manual. Um parágrafo é uma promessa de que
-   * alguém se lembrará; o que faz falta é que o ensaio reponha as concessões
-   * e prove que ficaram repostas. É isso que se exige agora, e o `ok`
-   * continua a ser uma equivalência para o dia em que o flag sair: nesse dia
-   * a reposição deixa de fazer sentido e sai com ele, e esta asserção falha
-   * se ficar só uma das metades.
+   * Isto já foi outra coisa. Durante meses a cópia corria com
+   * `--no-privileges` e esta asserção era uma equivalência: enquanto o flag lá
+   * estivesse, o ensaio tinha de compensar a ausência dele no destino. A
+   * compensação nunca funcionou, e a 15 de setembro de 2026 provou-se porquê:
+   * a 0102 revoga numa `set_site_section` de quatro argumentos, a 0109
+   * redefiniu-a com cinco, e **não se reconstrói o estado atual de privilégios
+   * reexecutando história contra o esquema de hoje**. O flag saiu da origem, e
+   * com ele saiu a compensação.
    *
-   * **E o detetor deixou de nomear uma migração.** Aqui esteve escrito
+   * O que se vigia agora é o arranjo inteiro, e cada peça sozinha é
+   * insuficiente:
+   *
+   *   1. a cópia sai **com** privilégios — se alguém repuser o flag, isto
+   *      reprova, e reprova aqui e não daqui a um mês no ensaio;
+   *   2. o ensaio restaura **com** privilégios — de nada serve a cópia
+   *      trazê-los se o `pg_restore` os deitar fora à chegada;
+   *   3. o ensaio **filtra a mobília do Supabase** — os `ALTER DEFAULT
+   *      PRIVILEGES FOR ROLE supabase_admin` que vêm no dump e que, sem o
+   *      filtro, obrigam a ser superutilizador no dia do restauro a sério;
+   *   4. o ensaio **exige que as concessões tenham vindo**, e diz a causa —
+   *      sem isto, uma cópia antiga falharia mais à frente a dizer o sintoma;
+   *   5. o ensaio **prova como o sítio prova**, ligando-se como `anon`;
+   *   6. o manual regista o arranjo.
+   *
+   * E o detetor não nomeia ficheiro nenhum. Aqui esteve
    * `0128_as_concessoes_de_leitura_escritas.sql`, e o nome era a parte errada:
    * a 0128 concede uma coluna de doze, e mandá-la correr sozinha nunca repôs
-   * concessão nenhuma que servisse. O ensaio reprovava sempre — e reprovou à
-   * primeira vez que correu a sério, a 15 de setembro de 2026. Uma asserção
-   * que vigia o nome de um ficheiro dá verde a um passo partido, desde que o
-   * ficheiro lá esteja citado.
-   *
-   * Passa a vigiar o que o passo tem de FAZER: descobrir as migrações que
-   * mexem em privilégios, extrair delas as instruções `grant` e `revoke`, e
-   * servi-las à base restaurada. Tirar qualquer uma das três reprova;
-   * acrescentar uma migração nova não mexe em nada.
-   *
-   * E são os dois verbos, não só um. Repor as concessões e deixar cair as
-   * revogações dá uma base MAIS ABERTA do que a de produção — foi o que a
-   * segunda tentativa fez, e as `schema-checks` apanharam-na: cinquenta e tal
-   * funções `security definer` ao alcance do `anon`, porque em Postgres uma
-   * função nasce executável por `public` e é a 0134 que lho tira.
+   * concessão nenhuma que servisse. A asserção deu verde uma semana a um passo
+   * partido, só porque o ficheiro lá estava citado. Uma asserção que vigia um
+   * nome não vigia nada.
    */
-  const usaNoPrivileges =
-    /--no-privileges/.test(ler('.github/workflows/backup.yml')) &&
-    /--no-privileges/.test(ler('scripts/ensaiar-restauro.sh'));
   const ensaio = ler('scripts/ensaiar-restauro.sh');
-  const ensaioRepoe =
-    /mapfile -t PRIVILEGIOS/.test(ensaio) &&
-    /\(\?:grant\|revoke\|alter\\s\+default\\s\+privileges\)\\b\[\^;\]\*;/.test(ensaio) &&
-    /"\$instrucoes" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
+  // Sem os comentários. Os dois ficheiros explicam em prosa porque é que o
+  // `--no-privileges` saiu, e um detetor que procurasse a string no texto
+  // inteiro dava-se por vencido pela própria explicação. O que interessa é se
+  // o flag está no comando.
+  const semComentarios = (texto) =>
+    texto
+      .split('\n')
+      .filter((linha) => !/^[ \t]*#/.test(linha))
+      .join('\n');
+  const copiaLevaPrivilegios = !/--no-privileges/.test(
+    semComentarios(ler('.github/workflows/backup.yml')),
+  );
+  // E, do lado do ensaio, olha-se para o comando e não para o ficheiro: a
+  // mensagem de falha do passo 4b nomeia o `--no-privileges` de propósito, que
+  // é a causa que ela existe para dizer.
+  const comandoRestauro = (semComentarios(ensaio).match(
+    /pg_restore --dbname[\s\S]*?coreto\.dump/,
+  ) ?? [''])[0];
+  const ensaioRepoePrivilegios =
+    comandoRestauro.length > 0 && !/--no-privileges/.test(comandoRestauro);
+  const ensaioFiltraMobilia =
+    /pg_restore --list coreto\.dump/.test(ensaio) &&
+    /\^\[0-9\]\+; \[0-9\]\+ \[0-9\]\+ DEFAULT ACL /.test(ensaio) &&
+    /--use-list indice-sem-mobilia\.txt/.test(ensaio);
+  const ensaioExigeConcessoes =
+    /information_schema\.role_table_grants/.test(ensaio) &&
+    /--no-privileges/.test(
+      ensaio.slice(ensaio.indexOf('role_table_grants'), ensaio.indexOf('role_table_grants') + 900),
+    );
+  const ensaioRepoeStorage =
+    /insert\\s\+into\\s\+storage\\\./.test(ensaio) &&
+    /"\$mobilia" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
-  const manualRegista = /no-privileges/.test(ler('docs/OPERACAO.md'));
+  const manualRegista =
+    /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
+    /modelo de permissões/.test(ler('docs/OPERACAO.md'));
   afirmar({
     afirmacao:
-      'enquanto a cópia sair sem privilégios, o ensaio repõe-nos todos e prova que a base restaurada serve',
+      'a cópia leva o modelo de permissões dentro, e o ensaio restaura-o, filtra a mobília do Supabase e prova que a base restaurada serve',
     porque:
-      'o ensaio deu verde durante meses sobre uma base onde anon não lia uma linha — o esquema, as linhas e a frescura estavam todos certos, e nenhum deles é a pergunta que o sítio faz. Sem a reposição e sem a prova, o verde volta a não querer dizer nada',
-    onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml e docs/OPERACAO.md',
-    ok: usaNoPrivileges === (ensaioRepoe && ensaioProva && manualRegista),
+      'o ensaio deu verde durante meses sobre uma base onde anon não lia uma linha — o esquema, as linhas e a frescura estavam todos certos, e nenhum deles é a pergunta que o sítio faz. Tentar repor os privilégios no destino não funciona e está provado que não pode funcionar; a única correção é a cópia sair com eles',
+    onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml, docs/BACKUPS.md e docs/OPERACAO.md',
+    ok:
+      copiaLevaPrivilegios &&
+      ensaioRepoePrivilegios &&
+      ensaioFiltraMobilia &&
+      ensaioExigeConcessoes &&
+      ensaioRepoeStorage &&
+      ensaioProva &&
+      manualRegista,
     esperava:
-      'o ensaio a descobrir as migrações que concedem ou revogam, a extrair-lhes as instruções grant e revoke, a servi-las à base restaurada e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
-    encontrei: `cópia sem concessões: ${usaNoPrivileges ? 'sim' : 'não'} · ensaio repõe: ${ensaioRepoe ? 'sim' : 'não'} · ensaio prova: ${ensaioProva ? 'sim' : 'não'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
+      'o pg_dump sem --no-privileges, o pg_restore também, o índice do dump sem as entradas DEFAULT ACL, o ensaio a exigir concessões a anon e a nomear a causa quando faltam, a configuração do storage reposta, a ligação como anon, e os dois manuais a explicá-lo',
+    encontrei: `cópia com privilégios: ${copiaLevaPrivilegios ? 'sim' : 'não'} · ensaio restaura-os: ${ensaioRepoePrivilegios ? 'sim' : 'não'} · filtra a mobília: ${ensaioFiltraMobilia ? 'sim' : 'não'} · exige concessões: ${ensaioExigeConcessoes ? 'sim' : 'não'} · repõe o storage: ${ensaioRepoeStorage ? 'sim' : 'não'} · prova como anon: ${ensaioProva ? 'sim' : 'não'} · manuais: ${manualRegista ? 'registam' : 'não registam'}`,
   });
 }
 
