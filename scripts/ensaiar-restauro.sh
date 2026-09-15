@@ -11,7 +11,9 @@
 # `anon` para ler eventos e ser recusada em `submissions`. Essa última faltou
 # durante meses, e era a que separava «a cópia está inteira» de «a cópia
 # funciona»: com `--no-privileges` dos dois lados, a base saía daqui sem uma
-# única concessão e o ensaio dava verde na mesma.
+# única concessão e o ensaio dava verde na mesma. Esse flag saiu dos dois
+# lados a 15 de setembro de 2026; a cópia leva hoje o modelo de permissões
+# dentro, e este ensaio exige que ele venha.
 #
 # No fim escreve `relatorio.md`: a data, a cópia, quanto pesou, quanto tempo
 # demorou. O tempo interessa: é a resposta a «quanto tempo estamos em baixo»
@@ -54,7 +56,7 @@ falhar() {
 }
 
 # O dump decifrado nunca fica na máquina, corra isto bem ou mal.
-trap 'rm --force coreto.dump frase.txt' EXIT
+trap 'rm --force coreto.dump frase.txt indice-sem-mobilia.txt' EXIT
 
 [ -n "${DATABASE_URL:-}" ] || falhar 'Falta DATABASE_URL: o Postgres vazio onde restaurar.'
 PSQL=(psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -q)
@@ -121,9 +123,32 @@ shred --remove frase.txt
 anotar 'Decifrada.'
 
 # ---------------------------------------------------------------------------
-# 3. O que a cópia não traz: os papéis e esquemas que o Supabase tem de
-#    fábrica, e as extensões, que vivem fora de `public` e por isso ficam de
-#    fora de um dump só desse esquema. As três são as da migração 0001.
+# 3. O que a cópia não traz, porque vive fora de `public`.
+#
+# A cópia é `pg_dump --schema=public`. Tudo o que o produto precisa e que mora
+# noutro esquema fica de fora, e tem de ser reposto aqui para que o que se
+# verifica a seguir seja um sistema e não meia base:
+#
+#   - os papéis e esquemas que um projeto Supabase tem de fábrica
+#     (`scripts/supabase-prelude.sql`);
+#   - as três extensões da migração 0001, que vivem em `extensions`;
+#   - **a configuração do `storage`** — os baldes `media` e `intake` e a
+#     política que só deixa ler o tratado.
+#
+# O terceiro só se descobriu a 15 de setembro de 2026, e só porque o ensaio
+# chegou pela primeira vez às `schema-checks` com a base já restaurada: a
+# asserção dos prazos de conservação tenta pôr um anexo no balde `intake` e
+# rebentou com `Key (bucket_id)=(intake) is not present in table "buckets"`.
+# A cópia tinha os dados todos e a base restaurada não tinha onde guardar um
+# cartaz. **É isto que um restauro a sério tem de fazer também**, e está
+# escrito em docs/BACKUPS.md.
+#
+# Descoberto, não escrito à mão. Aqui esteve a lição mais cara desta casa: uma
+# asserção que vigiava o nome `0128_as_concessoes_de_leitura_escritas.sql` deu
+# verde durante uma semana a um passo partido. Por isso não se nomeia migração
+# nenhuma — procuram-se as instruções que escrevem no `storage`, ancoradas na
+# coluna zero como todas as outras, e a próxima migração que crie um balde
+# entra sozinha.
 # ---------------------------------------------------------------------------
 "${PSQL[@]}" -f "$ROOT/scripts/supabase-prelude.sql"
 "${PSQL[@]}" <<'SQL'
@@ -132,105 +157,82 @@ create extension if not exists unaccent with schema extensions;
 create extension if not exists pg_trgm with schema extensions;
 SQL
 
+mobilia="$(
+  cat "$ROOT"/supabase/migrations/*.sql \
+    | perl -0777 -ne 'while (/^((?:insert\s+into\s+storage\.|create\s+policy\b[^;]*?\bon\s+storage\.)[^;]*;)/gmi) { print "$1\n" }'
+)"
+n_mobilia="$(printf '%s' "$mobilia" | grep -c ';' || true)"
+[ "${n_mobilia:-0}" -gt 0 ] \
+  || falhar 'Não se encontrou uma única instrução que configure o storage. O extrator deixou de casar, e a base restaurada ficaria sem baldes.'
+printf '%s\n' "$mobilia" | "${PSQL[@]}" >/dev/null \
+  || falhar 'A configuração do storage não aplicou sobre a base restaurada.'
+anotar "Reposto o que vive fora de \`public\`: papéis, extensões e a configuração do storage (${n_mobilia} instruções)."
+
 # ---------------------------------------------------------------------------
-# 4. Restaurar. `--exit-on-error`: um restauro a meio, com erros pelo meio,
-#    é a pior notícia possível disfarçada de sucesso.
+# 4. Restaurar — com os privilégios, e sem a mobília do Supabase.
+#
+# `--exit-on-error`: um restauro a meio, com erros pelo meio, é a pior notícia
+# possível disfarçada de sucesso.
+#
+# **A cópia traz agora o modelo de permissões**, e este restauro repõe-no. Até
+# 15 de setembro de 2026 os dois lados corriam com `--no-privileges`, e a base
+# que saía daqui tinha os dados todos e zero concessões: inteira e inútil, com
+# o papel `anon` sem conseguir contar um evento. Tentou-se compensar aqui,
+# reexecutando as instruções `grant` e `revoke` das migrações, e não há maneira
+# de o fazer: a 0102 revoga numa `set_site_section` de quatro argumentos, a
+# 0109 redefiniu-a com cinco, e a história refere-se aos objetos como eles
+# eram, não como estão. Corrigiu-se onde era, que é no `pg_dump`.
+#
+# **E filtra-se a mobília.** Um `pg_dump --schema=public` de um projeto
+# Supabase leva lá dentro os privilégios por omissão do próprio Supabase:
+#
+#     ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public …
+#
+# Não são nossos, não dizem respeito a nenhum objeto restaurado — os
+# privilégios por omissão só valem para o que se criar **depois** — e um
+# projeto Supabase novo já os tem de fábrica. Trazê-los custa caro das duas
+# maneiras: aqui, obrigava a inventar um papel `supabase_admin` que este
+# Postgres não tem; e no dia do restauro a sério, obrigava a ser
+# superutilizador. Medido em produção: o papel `postgres` do Supabase não é
+# superutilizador nem membro de `supabase_admin`, e reproduzido em local o erro
+# é `permission denied to change default privileges`. Filtradas, o restauro
+# passa feito por um papel comum — que é quem o vai fazer.
+#
+# O índice é o do próprio ficheiro: `pg_restore --list` escreve-o, tira-se-lhe
+# as linhas cujo tipo é `DEFAULT ACL`, e `--use-list` restaura o resto. O
+# padrão está ancorado no formato do índice — `id; oid oid TIPO …` — para que
+# um objeto que por acaso se chame assim não desapareça com ele.
 # ---------------------------------------------------------------------------
-pg_restore --dbname "$DATABASE_URL" --no-owner --no-privileges --schema=public --exit-on-error coreto.dump \
+pg_restore --list coreto.dump \
+  | grep -vE '^[0-9]+; [0-9]+ [0-9]+ DEFAULT ACL ' > indice-sem-mobilia.txt
+
+pg_restore --dbname "$DATABASE_URL" --no-owner --schema=public --exit-on-error \
+  --use-list indice-sem-mobilia.txt coreto.dump \
   || falhar 'O pg_restore parou num erro (ver acima).'
 anotar "Restaurada em $((SECONDS - inicio)) s."
 
 # ---------------------------------------------------------------------------
-# 4b. As concessões, que a cópia não traz e sem as quais o sítio não serve
-#     uma linha.
+# 4b. A cópia trouxe as concessões?
 #
-# O `pg_dump` da cópia corre com `--no-privileges` e este restauro também: a
-# base que sai daqui tem os dados todos e **zero** concessões a `anon`. Este
-# ensaio passava por cima disso durante meses, porque tudo o que verificava —
-# o esquema, as linhas, a frescura — estava certo. No dia do restauro a sério,
-# a agenda estava toda lá e o sítio respondia vazio a tudo.
+# Se veio uma cópia tirada antes de 15 de setembro de 2026, ou se alguém puser
+# outra vez o `--no-privileges` no `backup.yml`, o que se restaura aqui tem os
+# dados e não tem permissões. A verificação (d) apanharia isso na mesma — o
+# `anon` não leria uma linha —, mas diria «a cópia restaurada não serviria o
+# sítio», que é o sintoma. Aqui diz-se a causa, que é o que falta saber às
+# três da manhã.
 #
-# **E são quatro migrações, não uma.** Aqui esteve escrito que «a migração 0128
-# é o que repõe as concessões», e isso era falso desde o dia em que se
-# escreveu. A 0128 concede UMA coluna — a `last_run_at` — e a seguir afirma que
-# a tabela tem onze concedidas ao todo. As outras dez vinham de trás: nove da
-# 0049, uma da 0107. Corrida sozinha sobre uma base sem concessões, a 0128
-# concede a sua e conta uma; esperava onze; rebenta.
-#
-# O ensaio nasceu assim a 7 de setembro e nunca passou. Correu pela primeira
-# vez a sério a 15 de setembro e reprovou — não por defeito da cópia, que
-# restaurou inteira em quatro segundos, mas por lhe faltar o resto do passo que
-# ele próprio diz ensaiar. **Um ensaio que não pode passar não é um ensaio: é
-# um alarme que toca sempre, e um alarme que toca sempre não avisa de nada.**
-#
-# As asserções das quatro estão certas EM SEQUÊNCIA, que é como uma migração é
-# feita para correr: quando a 0128 corre depois da 0049 e da 0107, encontra as
-# suas onze. Depois a 0139 acrescenta a `adapter` e passam a doze — e é por
-# isso que a 0128 sozinha também já não passaria contra a produção de hoje.
-# Migrações não se reescrevem; corrigem-se a montante, e o que estava errado
-# era quem as mandava correr.
-#
-# **E repõem-se os privilégios — todos, e não só as concessões.**
-#
-# Isto levou três tentativas, e cada uma ensinou metade do problema.
-#
-# A primeira mandou correr as quatro migrações de concessões inteiras. Reprovou
-# com `policy "sources_public_read" already exists`: o `pg_dump` **traz** as
-# políticas de RLS, que são objetos do esquema, e **não traz** os privilégios,
-# que são de papéis. Reexecutar a migração inteira repõe o que falta e tropeça
-# no que já lá está.
-#
-# A segunda extraiu as instruções `grant` e correu só isso. Reprovou mais à
-# frente, nas `schema-checks`:
-#
-#     funções security definer ao alcance do anon ou do authenticated:
-#     add_region_license(), approve_submission(), create_region(), …
-#
-# Porque o `--no-privileges` não tira só o que se concede: tira também o que se
-# **revoga**. E em Postgres uma função nasce executável por `public` — a 0134
-# revoga esse execute a cinquenta e tal funções, e sem essas revogações a base
-# restaurada é mais aberta do que a de produção. Repor metade dos privilégios
-# não é repor privilégios: é fabricar uma terceira base que não é nem a cópia
-# nem a produção.
-#
-# Por isso replicam-se as instruções `grant` **e** `revoke` de todas as
-# migrações que as tenham, por ordem de nome — que é a ordem cronológica, e a
-# ordem importa: um `revoke` depois de um `grant` sobre o mesmo objeto é o que
-# dá o estado final certo. São hoje 127 instruções em 34 migrações.
-#
-# Descobertas e não escritas à mão, de propósito: a próxima migração que mexa
-# em privilégios entra sozinha nesta lista.
-#
-# **E ancoradas na coluna zero.** A quarta tentativa aceitava espaços à
-# esquerda e apanhou isto pelo meio:
-#
-#     alter default privileges in schema public
-#       revoke insert, update, delete, truncate on tables from anon, authenticated;
-#
-# — a linha de continuação, sem o `alter default privileges` que lhe dá
-# sentido. O que chegou ao Postgres foi `revoke … on tables from …`, e o erro
-# foi `relation "tables" does not exist`. Nesta casa uma instrução abre na
-# coluna zero e as continuações são indentadas; é nisso que se confia, e é a
-# única linha indentada de todo o repositório que começa por um destes verbos.
-# De caminho, um `  -- revoke …` num comentário também não conta.
+# As revogações não se contam aqui: quem as apanha são as `schema-checks`, que
+# reprovam com «funções security definer ao alcance do anon» se a base
+# restaurada ficar mais aberta do que a de produção. Foi assim que se apanhou,
+# na segunda tentativa, uma reposição que só trouxe metade dos privilégios.
 # ---------------------------------------------------------------------------
-mapfile -t PRIVILEGIOS < <(
-  grep -lE '^(grant|revoke|alter default privileges)\b' "$ROOT"/supabase/migrations/*.sql 2>/dev/null | sort
-)
-[ "${#PRIVILEGIOS[@]}" -gt 0 ] \
-  || falhar 'Não se encontrou uma única migração que conceda ou revogue. Sem elas, a base restaurada não é a de produção.'
-
-instrucoes="$(
-  cat "${PRIVILEGIOS[@]}" \
-    | perl -0777 -ne 'while (/^((?:grant|revoke|alter\s+default\s+privileges)\b[^;]*;)/gmi) { print "$1\n" }'
-)"
-n_instrucoes="$(printf '%s' "$instrucoes" | grep -c ';' || true)"
-[ "${n_instrucoes:-0}" -gt 0 ] \
-  || falhar "Encontraram-se ${#PRIVILEGIOS[@]} migrações de privilégios e nenhuma instrução dentro delas. O extrator deixou de casar."
-
-printf '%s\n' "$instrucoes" | "${PSQL[@]}" >/dev/null \
-  || falhar 'Os privilégios não aplicaram sobre a base restaurada.'
-anotar "Privilégios repostos (${n_instrucoes} instruções, de ${#PRIVILEGIOS[@]} migrações)."
+concessoes="$("${PSQL[@]}" -tAc "
+  select count(*) from information_schema.role_table_grants
+   where table_schema = 'public' and grantee in ('anon', 'authenticated');
+")"
+[ "${concessoes:-0}" -gt 0 ] \
+  || falhar "A cópia de ${dia_da_copia} veio sem uma única concessão a anon ou authenticated: foi tirada com --no-privileges. Uma cópia sem o modelo de permissões repõe os dados numa base que o sítio não consegue ler. Ver .github/workflows/backup.yml."
+anotar "A cópia trouxe o modelo de permissões (${concessoes} concessões a \`anon\`/\`authenticated\`)."
 
 # ---------------------------------------------------------------------------
 # 5. As verificações do manual.
