@@ -24,6 +24,7 @@
     "check:migrations": "./scripts/verify-migrations.sh",
     "check:numeros": "node scripts/verificar-numeros.mjs",
     "check:afirmacoes": "node scripts/verificar-afirmacoes.mjs",
+    "check:proveniencia": "node scripts/verificar-proveniencia.mjs",
     "check:desempenho": "node scripts/check-desempenho.mjs"
   },
   "devDependencies": {

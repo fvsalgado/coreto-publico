@@ -1,0 +1,76 @@
+# Declaração de direitos legível por máquina.
+#
+# A especificação REUSE 3.3 prevê este ficheiro como alternativa ao cabeçalho
+# em cada ficheiro, precisamente para «large directories where including a
+# comment header in each file» não é praticável. São 555 ficheiros de código;
+# esta casa escreve comentários em prosa argumentada, e semear 555 cabeçalhos
+# de máquina no meio deles trocava legibilidade por burocracia sem acrescentar
+# uma garantia.
+#
+# A prosa está em AUTORIA.md; o inventário do que é alheio, com origem e data,
+# está em docs/TERCEIROS.md. Se este ficheiro e esse documento divergirem, um
+# dos dois está errado — e é isso que `pnpm check:proveniencia` verifica.
+#
+# RESERVA: a conformidade plena com a ferramenta `reuse` exige mais do que este
+# ficheiro, nomeadamente uma pasta LICENSES/ com o texto de cada licença
+# referida. Isso NÃO foi verificado. Quem quiser passar `reuse lint` confirma
+# na especificação antes de prometer conformidade.
+
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Fábio Salgado <fabio@coreto.org>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+# --- O que é de terceiros --------------------------------------------------
+
+# Marcas da CIM do Médio Tejo e do cofinanciamento. Usadas ao abrigo da
+# identificação da entidade promotora e da obrigação de publicitação; não vão
+# na licença do resto do repositório.
+[[annotations]]
+path = "apps/web/public/logos/medio-tejo/**"
+precedence = "override"
+SPDX-FileCopyrightText = "CIM do Médio Tejo; Portugal 2030 / Centro 2030"
+SPDX-License-Identifier = "LicenseRef-marca-de-terceiro"
+
+# HTML capturado de sítios de câmaras, juntas e teatros, para calibrar
+# adaptadores. De quem serve as páginas.
+[[annotations]]
+path = [
+  "packages/ingest/src/__fixtures__/**",
+  "instantaneos/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "os respetivos sítios de origem — ver docs/TERCEIROS.md"
+SPDX-License-Identifier = "LicenseRef-capturado-de-terceiro"
+
+# Três fixtures que são nossas: inventadas, não capturadas.
+[[annotations]]
+path = [
+  "packages/ingest/src/__fixtures__/agenda-inventada.ics",
+  "packages/ingest/src/__fixtures__/tribe-events.json",
+  "packages/ingest/src/__fixtures__/events-calendar.html",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Fábio Salgado <fabio@coreto.org>"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+# Contornos dos concelhos, derivados do OpenStreetMap.
+[[annotations]]
+path = [
+  "supabase/migrations/*_0035_*.sql",
+  "supabase/migrations/*_0060_*.sql",
+  "supabase/migrations/*_0105_*.sql",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "contribuidores do OpenStreetMap"
+SPDX-License-Identifier = "ODbL-1.0"
+
+# Gerado, não escrito.
+[[annotations]]
+path = "pnpm-lock.yaml"
+precedence = "override"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "CC0-1.0"
