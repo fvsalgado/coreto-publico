@@ -1494,31 +1494,37 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
    * ficheiro lá esteja citado.
    *
    * Passa a vigiar o que o passo tem de FAZER: descobrir as migrações que
-   * concedem, extrair delas as instruções `grant`, e servi-las à base
-   * restaurada. Tirar qualquer uma das três reprova; acrescentar uma migração
-   * nova não mexe em nada.
+   * mexem em privilégios, extrair delas as instruções `grant` e `revoke`, e
+   * servi-las à base restaurada. Tirar qualquer uma das três reprova;
+   * acrescentar uma migração nova não mexe em nada.
+   *
+   * E são os dois verbos, não só um. Repor as concessões e deixar cair as
+   * revogações dá uma base MAIS ABERTA do que a de produção — foi o que a
+   * segunda tentativa fez, e as `schema-checks` apanharam-na: cinquenta e tal
+   * funções `security definer` ao alcance do `anon`, porque em Postgres uma
+   * função nasce executável por `public` e é a 0134 que lho tira.
    */
   const usaNoPrivileges =
     /--no-privileges/.test(ler('.github/workflows/backup.yml')) &&
     /--no-privileges/.test(ler('scripts/ensaiar-restauro.sh'));
   const ensaio = ler('scripts/ensaiar-restauro.sh');
   const ensaioRepoe =
-    /mapfile -t CONCESSOES/.test(ensaio) &&
-    /grant\\b\[\^;\]\*;/.test(ensaio) &&
-    /"\$grants" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
+    /mapfile -t PRIVILEGIOS/.test(ensaio) &&
+    /\(\?:grant\|revoke\)\\b\[\^;\]\*;/.test(ensaio) &&
+    /"\$instrucoes" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
   const manualRegista = /no-privileges/.test(ler('docs/OPERACAO.md'));
   afirmar({
     afirmacao:
-      'enquanto a cópia sair sem concessões, o ensaio repõe-nas e prova que a base restaurada serve',
+      'enquanto a cópia sair sem privilégios, o ensaio repõe-nos todos e prova que a base restaurada serve',
     porque:
       'o ensaio deu verde durante meses sobre uma base onde anon não lia uma linha — o esquema, as linhas e a frescura estavam todos certos, e nenhum deles é a pergunta que o sítio faz. Sem a reposição e sem a prova, o verde volta a não querer dizer nada',
     onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml e docs/OPERACAO.md',
     ok: usaNoPrivileges === (ensaioRepoe && ensaioProva && manualRegista),
     esperava:
-      'o ensaio a descobrir as migrações que concedem, a extrair-lhes as instruções grant, a servi-las à base restaurada e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
+      'o ensaio a descobrir as migrações que concedem ou revogam, a extrair-lhes as instruções grant e revoke, a servi-las à base restaurada e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
     encontrei: `cópia sem concessões: ${usaNoPrivileges ? 'sim' : 'não'} · ensaio repõe: ${ensaioRepoe ? 'sim' : 'não'} · ensaio prova: ${ensaioProva ? 'sim' : 'não'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
   });
 }
