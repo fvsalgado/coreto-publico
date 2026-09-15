@@ -302,6 +302,26 @@ export interface AdapterContext {
   source: SourceRow;
   http: HttpClient;
   log: RunLogger;
+  /**
+   * O adaptador chama isto quando **provou** que a página é a certa e que não
+   * tem eventos nenhuns.
+   *
+   * Zero itens são duas coisas que se parecem e não são a mesma: «não há nada
+   * marcado» e «deixei de saber ler isto». Quem consegue distinguir as duas é
+   * quem leu a página, e é só ele — o pipeline vê um número e mais nada.
+   *
+   * A `portal-freguesia` distingue pela mobília: a página da agenda traz
+   * sempre as ligações para «todos» e «concluídos», que são rotas do produto
+   * e não do tema. Com mobília e sem eventos, é uma agenda vazia; sem
+   * mobília, é outra página, e aí o adaptador rebenta em vez de devolver
+   * zero. Essa conclusão existia e morria dentro do adaptador: o pipeline
+   * marcava a corrida de incompleta na mesma, porque a linha de base era
+   * maior do que zero.
+   *
+   * Um adaptador que não saiba provar não chama isto, e nada muda para ele —
+   * o silêncio continua a valer «não sei», que é a resposta segura.
+   */
+  confirmarAgendaVazia?: () => void;
 }
 
 export interface Adapter {
