@@ -165,7 +165,42 @@ de concelho não existem e ficavam de fora da auditoria. Num fork esse job não
 passa. Corre a auditoria localmente com os comandos acima e diz no PR que o
 fizeste.
 
-## Licença
+## Licença, e o que aceitas ao contribuir
 
-Ao contribuir, aceitas que o teu contributo seja distribuído sob a
-[AGPL-3.0-only](LICENSE), como o resto do projeto.
+Isto aqui esteve escrito só até metade. Dizia que o teu contributo **sai** sob
+AGPL-3.0-only — o que é verdade e continua a ser — e não dizia nada sobre o que
+**entra**. Uma licença de saída não dá ao projeto título sobre o teu trabalho,
+e quem licencia fora da AGPL ou vende exceções tem de deter o copyright. É a
+própria Free Software Foundation a escrevê-lo: «Only the copyright holder can
+grant that.»
+
+Nunca foi problema até hoje, e isso está apurado: em todas as referências deste
+repositório existem cinco identidades de autor — duas do dono, uma da IA que o
+assiste e dois robôs. **Nunca ninguém de fora contribuiu.** Não há dívida para
+trás; há uma porta por fechar antes de alguém entrar por ela, e é isto.
+
+Ao abrir um PR, declaras e aceitas três coisas:
+
+1. **Que tens o direito de contribuir o que contribuis** — que é teu, ou que
+   tens autorização de quem o fez. Se trouxeres código, texto, imagem ou dados
+   de outra origem, dizes de onde vêm e sob que licença, e isso entra em
+   [`docs/TERCEIROS.md`](docs/TERCEIROS.md).
+2. **Que o teu contributo é distribuído sob [AGPL-3.0-only](LICENSE)**, como o
+   resto do projeto.
+3. **Que concedes ao titular** — Fábio Salgado, ver [`AUTORIA.md`](AUTORIA.md) —
+   **uma licença perpétua, mundial, irrevogável e isenta de royalties para usar,
+   modificar e relicenciar o teu contributo, incluindo sob termos diferentes da
+   AGPL.** Sem isto, uma única contribuição de fora impediria para sempre o
+   licenciamento comercial do produto — não por má-fé de ninguém, mas porque a
+   AGPL não se pode levantar sobre trabalho alheio sem autorização de quem o
+   fez.
+
+Continuas titular do que escreveste. O ponto 3 é uma licença ao projeto, não
+uma cessão: não te tira nada, e permite ao produto ser vendido a uma câmara sem
+que o teu adaptador tenha de ser arrancado.
+
+Se alguma destas três te incomodar, abre um issue antes de escrever código — é
+melhor discutir isso do que descobri-lo depois de teres trabalho feito.
+
+A redação definitiva desta cláusula está por confirmar com advogado; a pergunta
+está escrita em [`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), §5.5.

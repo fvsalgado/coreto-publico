@@ -1484,25 +1484,47 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
    * continua a ser uma equivalência para o dia em que o flag sair: nesse dia
    * a reposição deixa de fazer sentido e sai com ele, e esta asserção falha
    * se ficar só uma das metades.
+   *
+   * **E o detetor deixou de nomear uma migração.** Aqui esteve escrito
+   * `0128_as_concessoes_de_leitura_escritas.sql`, e o nome era a parte errada:
+   * a 0128 concede uma coluna de doze, e mandá-la correr sozinha nunca repôs
+   * concessão nenhuma que servisse. O ensaio reprovava sempre — e reprovou à
+   * primeira vez que correu a sério, a 15 de setembro de 2026. Uma asserção
+   * que vigia o nome de um ficheiro dá verde a um passo partido, desde que o
+   * ficheiro lá esteja citado.
+   *
+   * Passa a vigiar o que o passo tem de FAZER: descobrir as migrações que
+   * mexem em privilégios, extrair delas as instruções `grant` e `revoke`, e
+   * servi-las à base restaurada. Tirar qualquer uma das três reprova;
+   * acrescentar uma migração nova não mexe em nada.
+   *
+   * E são os dois verbos, não só um. Repor as concessões e deixar cair as
+   * revogações dá uma base MAIS ABERTA do que a de produção — foi o que a
+   * segunda tentativa fez, e as `schema-checks` apanharam-na: cinquenta e tal
+   * funções `security definer` ao alcance do `anon`, porque em Postgres uma
+   * função nasce executável por `public` e é a 0134 que lho tira.
    */
   const usaNoPrivileges =
     /--no-privileges/.test(ler('.github/workflows/backup.yml')) &&
     /--no-privileges/.test(ler('scripts/ensaiar-restauro.sh'));
   const ensaio = ler('scripts/ensaiar-restauro.sh');
-  const ensaioRepoe = /0128_as_concessoes_de_leitura_escritas\.sql/.test(ensaio);
+  const ensaioRepoe =
+    /mapfile -t PRIVILEGIOS/.test(ensaio) &&
+    /\(\?:grant\|revoke\|alter\\s\+default\\s\+privileges\)\\b\[\^;\]\*;/.test(ensaio) &&
+    /"\$instrucoes" \| "\$\{PSQL\[@\]\}"/.test(ensaio);
   const ensaioProva =
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio);
   const manualRegista = /no-privileges/.test(ler('docs/OPERACAO.md'));
   afirmar({
     afirmacao:
-      'enquanto a cópia sair sem concessões, o ensaio repõe-nas e prova que a base restaurada serve',
+      'enquanto a cópia sair sem privilégios, o ensaio repõe-nos todos e prova que a base restaurada serve',
     porque:
       'o ensaio deu verde durante meses sobre uma base onde anon não lia uma linha — o esquema, as linhas e a frescura estavam todos certos, e nenhum deles é a pergunta que o sítio faz. Sem a reposição e sem a prova, o verde volta a não querer dizer nada',
     onde: 'scripts/ensaiar-restauro.sh, .github/workflows/backup.yml e docs/OPERACAO.md',
     ok: usaNoPrivileges === (ensaioRepoe && ensaioProva && manualRegista),
     esperava:
-      'o ensaio a aplicar a migração das concessões e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
+      'o ensaio a descobrir as migrações que concedem ou revogam, a extrair-lhes as instruções grant e revoke, a servi-las à base restaurada e a ligar-se como anon, e o manual a explicá-lo, exatamente enquanto a cópia usar --no-privileges',
     encontrei: `cópia sem concessões: ${usaNoPrivileges ? 'sim' : 'não'} · ensaio repõe: ${ensaioRepoe ? 'sim' : 'não'} · ensaio prova: ${ensaioProva ? 'sim' : 'não'} · manual: ${manualRegista ? 'regista' : 'não regista'}`,
   });
 }
