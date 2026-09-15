@@ -199,18 +199,30 @@ anotar "Restaurada em $((SECONDS - inicio)) s."
 # dá o estado final certo. São hoje 127 instruções em 34 migrações.
 #
 # Descobertas e não escritas à mão, de propósito: a próxima migração que mexa
-# em privilégios entra sozinha nesta lista. E são apanhadas só quando abrem uma
-# linha — um `-- revoke …` num comentário não conta.
+# em privilégios entra sozinha nesta lista.
+#
+# **E ancoradas na coluna zero.** A quarta tentativa aceitava espaços à
+# esquerda e apanhou isto pelo meio:
+#
+#     alter default privileges in schema public
+#       revoke insert, update, delete, truncate on tables from anon, authenticated;
+#
+# — a linha de continuação, sem o `alter default privileges` que lhe dá
+# sentido. O que chegou ao Postgres foi `revoke … on tables from …`, e o erro
+# foi `relation "tables" does not exist`. Nesta casa uma instrução abre na
+# coluna zero e as continuações são indentadas; é nisso que se confia, e é a
+# única linha indentada de todo o repositório que começa por um destes verbos.
+# De caminho, um `  -- revoke …` num comentário também não conta.
 # ---------------------------------------------------------------------------
 mapfile -t PRIVILEGIOS < <(
-  grep -lE '^[[:space:]]*(grant|revoke)\b' "$ROOT"/supabase/migrations/*.sql 2>/dev/null | sort
+  grep -lE '^(grant|revoke|alter default privileges)\b' "$ROOT"/supabase/migrations/*.sql 2>/dev/null | sort
 )
 [ "${#PRIVILEGIOS[@]}" -gt 0 ] \
   || falhar 'Não se encontrou uma única migração que conceda ou revogue. Sem elas, a base restaurada não é a de produção.'
 
 instrucoes="$(
   cat "${PRIVILEGIOS[@]}" \
-    | perl -0777 -ne 'while (/^[ \t]*((?:grant|revoke)\b[^;]*;)/gmi) { print "$1\n" }'
+    | perl -0777 -ne 'while (/^((?:grant|revoke|alter\s+default\s+privileges)\b[^;]*;)/gmi) { print "$1\n" }'
 )"
 n_instrucoes="$(printf '%s' "$instrucoes" | grep -c ';' || true)"
 [ "${n_instrucoes:-0}" -gt 0 ] \
