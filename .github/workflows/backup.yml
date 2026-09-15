@@ -117,6 +117,28 @@ jobs:
       # Só o esquema `public`: é onde estão os dados. Os ficheiros do Supabase
       # Storage (cartazes e PDF anexados às submissões) NÃO vêm aqui — ver a
       # secção «O que isto não cobre» em docs/BACKUPS.md.
+      #
+      # AQUI ESTEVE UM `--no-privileges`, E TIRÁ-LO É A CORREÇÃO DE UM DEFEITO.
+      #
+      # Com ele, a cópia levava as tabelas, os dados e as políticas de RLS, e
+      # **nem uma concessão**. Uma base restaurada assim está inteira e não
+      # serve: o papel `anon` — que é o do sítio — não conta um evento, e a
+      # agenda responde vazia a tudo. Uma cópia que não repõe um sistema a
+      # funcionar não é uma cópia de segurança.
+      #
+      # O ensaio de restauro tentou compensar isto no destino, reexecutando as
+      # instruções `grant` e `revoke` das migrações. Reprovou seis vezes a 15 de
+      # setembro de 2026, e a sexta fechou a questão: a 0102 revoga numa
+      # `set_site_section` de quatro argumentos e a 0109 redefiniu-a com cinco.
+      # **Não se reconstrói o estado atual de privilégios reexecutando história
+      # contra o esquema de hoje** — a história refere-se aos objetos como eles
+      # eram. Não havia maneira de compensar no destino; havia de corrigir aqui.
+      #
+      # O `--no-owner` fica. A cópia é restaurada noutro projeto, onde o dono é
+      # quem restaura; o que se quer guardar é quem pode ler o quê, não quem
+      # assina. Medido em produção: as 244 concessões do esquema `public` são
+      # todas concedidas pelo `postgres` a `postgres`, `anon`, `authenticated`,
+      # `service_role` e `PUBLIC` — nenhum papel que o destino não tenha.
       - name: Exportar a base de dados
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
@@ -136,7 +158,6 @@ jobs:
               --format=custom \
               --compress=9 \
               --no-owner \
-              --no-privileges \
               --schema=public \
               --file="/saida/${FICHEIRO}"
           ls -lh "${FICHEIRO}"
