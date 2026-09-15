@@ -88,6 +88,7 @@ corrigida para o número errado por quem só olhe para ela.
 | [`docs/RGPD.md`](docs/RGPD.md)                               | Registo de tratamento de dados pessoais                                      |
 | [`docs/INDICADORES.md`](docs/INDICADORES.md)                 | O que cada número do relatório mensal conta, e o que não conta               |
 | [`docs/O-QUE-FALTA-AO-DONO.md`](docs/O-QUE-FALTA-AO-DONO.md) | O que não se resolve com código: avarias do lado de lá e decisões            |
+| [`docs/LICENCIAR.md`](docs/LICENCIAR.md)                     | O que falta para isto poder ser contratado, e o que disso é do dono          |
 | [`docs/EMAIL.md`](docs/EMAIL.md)                             | O canal de entrada por email                                                 |
 | [`docs/DNS.md`](docs/DNS.md)                                 | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)    |
 | [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                       | Como nasce uma região nova — sem um commit                                   |
