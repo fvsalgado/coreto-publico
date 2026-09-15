@@ -151,7 +151,7 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         />
         <div className="rounded-lg border-2 border-border bg-surface p-5">
           <p className="ct-eyebrow">Sem resposta</p>
-          <p className="font-display mt-1 text-xl font-semibold">
+          <p className="font-display mt-1 text-xl leading-relaxed font-semibold">
             A base de dados não respondeu a esta página.
           </p>
           <p className="mt-3 text-muted">
@@ -211,7 +211,7 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         <p className="ct-eyebrow">
           {parecer.grau === 'bom' ? 'Em ordem' : parecer.grau === 'atencao' ? 'Atenção' : 'Parado'}
         </p>
-        <p className="font-display mt-1 text-xl font-semibold">{parecer.frase}</p>
+        <p className="font-display mt-1 text-xl leading-relaxed font-semibold">{parecer.frase}</p>
       </div>
 
       <section aria-labelledby="recolha" className="mt-10">

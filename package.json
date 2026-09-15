@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "ingest": "pnpm --filter @coreto/ingest start",
     "check:a11y": "node scripts/check-a11y.mjs",
+    "check:selo": "node scripts/check-selo.mjs",
     "check:a11y:admin": "node scripts/check-a11y-admin.mjs",
     "check:migrations": "./scripts/verify-migrations.sh",
     "check:numeros": "node scripts/verificar-numeros.mjs",
