@@ -453,7 +453,9 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
             className="block max-w-full"
           />
         </div>
-        <p className="mt-2 text-xs text-muted">
+        {/* `text-sm` e não `text-xs`: 12px são 9 pontos, e o requisito 2.2 da
+            lista «Conteúdo» do Selo põe o chão do texto secundário nos 10. */}
+        <p className="mt-2 text-sm text-muted">
           A moldura a tracejado é desta página e não vai no código — está aqui para se ver onde a
           caixa acaba.
         </p>
@@ -476,7 +478,10 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
         </p>
 
         <details className="mt-6 rounded border border-border bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-medium">
+          {/* `min-h-11`: 44px, como o <summary> do `PorExtenso` e pela mesma
+              razão — é um alvo de toque, e o requisito 5.2 da lista «Conteúdo»
+              do Selo pede 44px CSS. Este tinha 21. */}
+          <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium">
             O nosso gestor de conteúdos não deixa colar &lt;script&gt;
           </summary>
           <p className="mt-2 max-w-2xl text-sm text-muted">
