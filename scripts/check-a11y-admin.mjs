@@ -136,6 +136,12 @@ async function entrar(browser) {
 const resultados = [];
 let failures = 0;
 
+/** O título de `app/admin/error.tsx`. Muda ali, muda aqui — ver `auditar`. */
+const TITULO_DE_ERRO = 'Não foi possível falar com a base de dados';
+
+/** As rotas que caíram no limite de erro — contadas para o resumo final. */
+const rotasEmErro = new Set();
+
 function registar(viewport, rota, status, violations, nota) {
   resultados.push({
     viewport: viewport.name,
@@ -175,9 +181,19 @@ async function auditar(page, viewport, rota) {
   }
 
   const status = response?.status() ?? 0;
-  // O que a página é de facto: a página de erro do painel tem um título
-  // próprio, e uma rota que caiu nela audita-se como tal, com nota.
-  const emErro = (await page.locator('h1', { hasText: 'A ação não foi concluída' }).count()) > 0;
+  /*
+   * O que a página é de facto — e o título vem de `app/admin/error.tsx`.
+   *
+   * **Esteve errado, e o erro era caro.** Procurava-se «A ação não foi
+   * concluída», um título que a página de erro já não tem (e que o
+   * repositório inteiro já não tem em lado nenhum). Resultado: uma rota que
+   * caía no limite de erro era auditada como se fosse a página verdadeira e
+   * saía daqui com um ✓ limpo. Uma auditoria sem base de dados marcava assim
+   * o painel todo — quatro ecrãs e duas dezenas de rotas, todos a dizer que
+   * estava bem sobre a mesma página de desculpas.
+   */
+  const emErro = (await page.locator('h1', { hasText: TITULO_DE_ERRO }).count()) > 0;
+  if (emErro) rotasEmErro.add(rota);
   const nota = emErro ? 'página de erro do painel' : status === 404 ? 'HTTP 404' : '';
 
   const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
@@ -235,6 +251,23 @@ await browser.close();
 if (RESULTADOS) {
   const { writeFileSync } = await import('node:fs');
   writeFileSync(RESULTADOS, JSON.stringify(resultados, null, 2));
+}
+
+/*
+ * O que se auditou de facto, dito antes do veredicto.
+ *
+ * Sem base de dados as páginas do painel caem no limite de erro, e aí o que
+ * axe examina é a página de desculpas — a mesma, vinte vezes. Continua a valer
+ * a pena (a estrutura à volta é a verdadeira), mas ler «✓ /admin/regioes» e
+ * concluir que a página das regiões está auditada é ler o contrário do que
+ * aconteceu. Esta linha é o que impede essa leitura.
+ */
+if (rotasEmErro.size > 0) {
+  console.warn(
+    `\n· ${rotasEmErro.size} rota(s) caíram na página de erro do painel e foi ela a auditada: ` +
+      `${[...rotasEmErro].sort().join(', ')}`,
+  );
+  console.warn('  Para as ver com conteúdo, o servidor auditado precisa de uma base que responda.');
 }
 
 if (failures > 0) {

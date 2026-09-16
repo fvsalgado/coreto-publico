@@ -24,7 +24,8 @@ const COLUNAS_DA_REGIAO =
   'funding_statement, funding_logo_path, funding_logo_width, funding_logo_height, funding_logo_alt, ' +
   'logo_on_graphite_path, logo_on_brand_path, logo_width, logo_height, ' +
   'og_image_path, og_image_alt, data_controller_name, data_controller_url, ' +
-  'expected_municipality_count, bbox_lat_min, bbox_lat_max, bbox_lon_min, bbox_lon_max';
+  'expected_municipality_count, bbox_lat_min, bbox_lat_max, bbox_lon_min, bbox_lon_max, ' +
+  'gate_enabled';
 
 /**
  * Uma região pelo identificador. `null` para slug desconhecido ou sem base.
