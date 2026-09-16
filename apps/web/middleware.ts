@@ -4,11 +4,13 @@ import { ADMIN_COOKIE_NAME, readSessionToken } from '@/src/lib/admin/session';
 import { SITE_URL } from '@/src/lib/env';
 import {
   REGIAO_PRINCIPAL,
+  barreirasDasRegioes,
   dominiosDasRegioes,
   normalizarHost,
   redirecionamentosDosDominios,
   regiaoDoHost,
 } from '@/src/lib/regiao-host';
+import { CAMINHO_DO_PORTAO, PORTAO_COOKIE_NAME, lerBilhete, temBarreira } from '@/src/lib/portao';
 
 /**
  * A porta do multi-inquilino, e a guarda da área interna.
@@ -255,6 +257,49 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   const dominios = await dominiosDasRegioes(request.nextUrl.origin);
   const regiao = regiaoDoHost(request.headers.get('host'), dominios);
   if (regiao === null) return paginaDoProduto(request);
+
+  /*
+   * A terceira porta: a barreira temporária de uma região (0157).
+   *
+   * Uma região podia estar ligada ou desligada. Esta é a do meio, e é a de uma
+   * região **pronta e ainda não contratada**: de pé, a funcionar, e só para
+   * quem tem a senha. Foi o `mediotejo.coreto.org` que a pediu.
+   *
+   * Decide-se aqui e não na página por três razões. É onde a casa decide quem
+   * entra — o `/admin` e o `/balanco` estão nas linhas de cima. É onde «só as
+   * páginas» se escreve como uma lista que se lê e se testa, em vez de uma
+   * condição espalhada por vinte componentes. E é antes da renderização: o que
+   * não se desenha não se pode servir por engano.
+   *
+   * **Sem segredo, fecha.** Se o `ADMIN_SESSION_SECRET` faltar não há como
+   * verificar um bilhete, e a barreira passa a recusar toda a gente em vez de
+   * deixar passar toda a gente. É a mesma regra da `guardAdmin`, escrita lá
+   * com todas as letras: o público degrada, a segurança fecha.
+   */
+  const barreiras = await barreirasDasRegioes(request.nextUrl.origin);
+  if (barreiras[regiao] && temBarreira(pathname)) {
+    const segredo = process.env.ADMIN_SESSION_SECRET;
+    const bilhete = segredo
+      ? await lerBilhete(request.cookies.get(PORTAO_COOKIE_NAME)?.value, segredo, regiao)
+      : null;
+
+    if (!bilhete) {
+      const destinoDoPortao = request.nextUrl.clone();
+      destinoDoPortao.pathname = `/${regiao}${CAMINHO_DO_PORTAO}`;
+      // Para onde voltar depois de entrar. Guarda-se o caminho desta origem e
+      // mais nada — um destino aberto era um redirecionamento aberto de oferta.
+      const deOndeVeio = pathname + request.nextUrl.search;
+      destinoDoPortao.search = '';
+      destinoDoPortao.searchParams.set('de', deOndeVeio);
+      const resposta = NextResponse.rewrite(destinoDoPortao);
+      // Uma região tapada não se indexa nem se guarda em cache de ninguém: o
+      // que está atrás da barreira não é para aparecer numa pesquisa, e a
+      // resposta depende de um cookie.
+      resposta.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      resposta.headers.set('Cache-Control', 'no-store, must-revalidate');
+      return resposta;
+    }
+  }
 
   const destino = request.nextUrl.clone();
   /*
