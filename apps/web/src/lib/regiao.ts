@@ -75,6 +75,14 @@ export interface PromotorDaRegiao {
 
 export interface Regiao {
   id: string;
+  /**
+   * Se esta região está atrás de uma barreira de senha (0157).
+   *
+   * Público de propósito — a página que pede a senha anuncia-o na mesma a
+   * quem lá bate. A senha não está aqui nem em lado nenhum que o `anon` leia:
+   * está em `region_gates`, com as concessões revogadas.
+   */
+  barreiraLigada: boolean;
   /** «Médio Tejo» — o nome seco, sem artigo. */
   nome: string;
   artigo: ArtigoDeRegiao;
@@ -137,6 +145,8 @@ export interface LinhaDeRegiao {
   bbox_lat_max: number;
   bbox_lon_min: number;
   bbox_lon_max: number;
+  /** 0157 — se esta região está atrás de uma barreira de senha. */
+  gate_enabled: boolean;
 }
 
 function artigoValido(article: string): ArtigoDeRegiao {
@@ -162,6 +172,11 @@ export function doNomeDaRegiao(article: string, nome: string): string {
 /** Traduz uma linha da base para o vocabulário da casa. */
 export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
   const artigo = artigoValido(linha.article);
+  // Uma coluna que este build não conhece vale «sem barreira»: a tabela pode
+  // ir à frente do código num deploy, e a degradação certa é servir a agenda.
+  // O contrário — tapar uma região por causa de um `undefined` — tirava do ar
+  // uma CIM contratada por causa de uma ordem de deploy.
+  const barreiraLigada = linha.gate_enabled === true;
 
   const logotipo: LogotipoDoPromotor | null =
     linha.logo_on_graphite_path !== null &&
@@ -191,6 +206,7 @@ export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
 
   return {
     id: linha.id,
+    barreiraLigada,
     nome: linha.name,
     artigo,
     tipo: tipoValido(linha.kind),
@@ -238,6 +254,7 @@ export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
  */
 export const REGIAO_DE_RECURSO: Regiao = {
   id: 'recurso',
+  barreiraLigada: false,
   nome: 'região',
   artigo: 'a',
   tipo: 'cim',

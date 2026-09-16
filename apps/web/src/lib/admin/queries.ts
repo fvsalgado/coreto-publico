@@ -938,6 +938,8 @@ export interface RegionAdminRow {
   bbox_lon_min: number;
   bbox_lon_max: number;
   is_enabled: boolean;
+  /** Se a região está atrás da barreira de senha (0157). A senha não vem aqui. */
+  gate_enabled: boolean;
   sort_order: number;
   updated_at: string;
 }
@@ -1006,6 +1008,55 @@ export async function listSiteSections(regiao: string): Promise<SiteSectionRow[]
   // a dizer que uma CIM desligou secções que estão ligadas.
   exigirLeitura('listSiteSections', error);
   return (data ?? []) as unknown as SiteSectionRow[];
+}
+
+/**
+ * Os interruptores de todas as regiões de uma vez, para o painel de entrada
+ * das regiões poder dizer «quatro de quatro» sem uma ida à base por região.
+ *
+ * A ficha de cada região continua a usar `listSiteSections`, que recorta: ali
+ * o que se quer é o estado de uma, e um recorte na base é mais barato do que
+ * trazer tudo para filtrar aqui.
+ */
+export async function listSiteSectionsTodas(): Promise<SiteSectionComRegiao[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('site_sections')
+    .select('id, region_id, is_enabled, updated_at, updated_by');
+  exigirLeitura('listSiteSectionsTodas', error);
+  return (data ?? []) as unknown as SiteSectionComRegiao[];
+}
+
+export interface SiteSectionComRegiao extends SiteSectionRow {
+  region_id: string;
+}
+
+/**
+ * Que regiões têm senha de barreira definida — e desde quando.
+ *
+ * **Nunca traz `password_sha256`**, pela mesma razão que a leitura dos
+ * segredos do balanço nunca traz a impressão deles: o painel não tem nada que
+ * fazer com o hash, e uma coluna que não é pedida é uma coluna que não pode
+ * aparecer num ecrã por cima do ombro de alguém. O que o painel precisa de
+ * saber é se **há** senha, para não oferecer «ligar a barreira» a quem ainda
+ * não a definiu — e a base recusaria na mesma (0157).
+ */
+export interface RegionGateRow {
+  region_id: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export async function listRegionGates(): Promise<RegionGateRow[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('region_gates')
+    .select('region_id, updated_at, updated_by')
+    .order('region_id');
+  // Vazio por erro dizia «nenhuma região tem senha», e o painel oferecia
+  // definir uma a quem já tem — por cima da que está a ser usada hoje.
+  exigirLeitura('listRegionGates', error);
+  return (data ?? []) as unknown as RegionGateRow[];
 }
 
 type RelatorioMensal = import('./relatorio').RelatorioMensal;

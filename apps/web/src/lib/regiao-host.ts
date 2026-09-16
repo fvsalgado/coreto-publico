@@ -134,6 +134,21 @@ export function regiaoDoHost(
 interface MapaGuardado {
   dominios: Record<string, string>;
   redirecionamentos: Record<string, string>;
+  /**
+   * As regiões com barreira de senha (0157), por identificador.
+   *
+   * Vem do mesmo `/api/regioes` e guarda-se no mesmo mapa — uma leitura só.
+   * **Sobrevive a uma falha de leitura como os outros dois**, e isso é a parte
+   * que interessa: uma região que se sabia tapada continua tapada enquanto o
+   * mapa não voltar, em vez de se abrir sozinha no minuto em que a API tosse.
+   *
+   * A janela que fica é o arranque a frio com a API em baixo: aí não há mapa
+   * nenhum, `dominios` está vazio, e um Host desconhecido leva a página do
+   * produto — não a agenda de ninguém. Só uma instalação com
+   * `REGIAO_DE_OMISSAO` no ambiente serviria a região principal nesse estado,
+   * e essa escotilha existe para o CI e para quem bate por endereço IP.
+   */
+  barreiras: Record<string, boolean>;
   expira: number;
 }
 
@@ -180,23 +195,27 @@ async function carregarMapa(
       id: string;
       domain: string;
       aliases?: string[];
+      barreira?: boolean;
     }>;
     const dominios: Record<string, string> = {};
     const redirecionamentos: Record<string, string> = {};
+    const barreiras: Record<string, boolean> = {};
     for (const linha of linhas) {
       const host = normalizarHost(linha.domain);
       if (!host || !linha.id) continue;
       dominios[host] = linha.id;
+      if (linha.barreira === true) barreiras[linha.id] = true;
       for (const alias of linha.aliases ?? []) {
         const hostDoAlias = normalizarHost(alias);
         if (hostDoAlias && hostDoAlias !== host) redirecionamentos[hostDoAlias] = host;
       }
     }
-    guardado = { dominios, redirecionamentos, expira: agora() + VALIDADE_DO_MAPA_MS };
+    guardado = { dominios, redirecionamentos, barreiras, expira: agora() + VALIDADE_DO_MAPA_MS };
   } catch {
     guardado = {
       dominios: guardado?.dominios ?? {},
       redirecionamentos: guardado?.redirecionamentos ?? {},
+      barreiras: guardado?.barreiras ?? {},
       expira: agora() + VALIDADE_APOS_FALHA_MS,
     };
   }
@@ -210,6 +229,15 @@ export async function dominiosDasRegioes(
   agora: () => number = Date.now,
 ): Promise<Record<string, string>> {
   return (await carregarMapa(origem, buscar, agora)).dominios;
+}
+
+/** As regiões com barreira de senha, por identificador (0157). */
+export async function barreirasDasRegioes(
+  origem: string,
+  buscar: typeof fetch = fetch,
+  agora: () => number = Date.now,
+): Promise<Record<string, boolean>> {
+  return (await carregarMapa(origem, buscar, agora)).barreiras;
 }
 
 /** O mapa alias → domínio canónico, para o middleware redirecionar (308). */

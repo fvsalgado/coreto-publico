@@ -1,3 +1,5 @@
+import { assinar, base64url, constantTimeEquals, fromBase64url } from '../token-assinado';
+
 /**
  * O token de sessão da área interna.
  *
@@ -6,6 +8,11 @@
  * edge, onde `node:crypto` não existe. Ter duas implementações da mesma
  * verificação — uma para o middleware, outra para as páginas — era garantir
  * que um dia divergiam e uma delas passava a aceitar o que a outra recusa.
+ *
+ * Esse aviso cumpriu-se em 2026-09-15, quando a barreira das regiões (0157)
+ * precisou de um segundo cookie assinado: as primitivas saíram para
+ * `../token-assinado.ts` e são as mesmas para os dois. **O formato deste token
+ * não mudou** — nem um byte —, para não deitar abaixo as sessões abertas.
  *
  * A verificação da palavra-passe vive em `password.ts`, que é de propósito
  * outro ficheiro: usa scrypt, só corre no servidor, e o middleware não precisa
@@ -28,46 +35,6 @@ export interface SessionPayload {
   jti: string;
 }
 
-function base64url(bytes: ArrayBuffer | Uint8Array): string {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let binary = '';
-  for (const byte of view) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function fromBase64url(value: string): Uint8Array {
-  const padded = value.replace(/-/g, '+').replace(/_/g, '/');
-  const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-async function hmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-}
-
-async function sign(value: string, secret: string): Promise<string> {
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    await hmacKey(secret),
-    new TextEncoder().encode(value),
-  );
-  return base64url(signature);
-}
-
-/** Comparação sem sair mais cedo, para o tempo de resposta não dizer nada. */
-function constantTimeEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 /** Constrói o valor do cookie: `payload.assinatura`, ambos em base64url. */
 export async function createSessionToken(
   actor: string,
@@ -80,7 +47,7 @@ export async function createSessionToken(
     jti: base64url(crypto.getRandomValues(new Uint8Array(9))),
   };
   const body = base64url(new TextEncoder().encode(JSON.stringify(payload)));
-  return `${body}.${await sign(body, secret)}`;
+  return `${body}.${await assinar(body, secret)}`;
 }
 
 /**
@@ -98,7 +65,7 @@ export async function readSessionToken(
 
   const body = token.slice(0, separator);
   const signature = token.slice(separator + 1);
-  if (!constantTimeEquals(signature, await sign(body, secret))) return null;
+  if (!constantTimeEquals(signature, await assinar(body, secret))) return null;
 
   try {
     const payload = JSON.parse(new TextDecoder().decode(fromBase64url(body))) as SessionPayload;

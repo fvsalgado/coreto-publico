@@ -4,11 +4,13 @@ import { PageHeader } from '@/src/components/PageHeader';
 import {
   atualizarRegiao,
   criarSegredoDeBalanco,
+  definirBarreira,
   registarLicenca,
   revogarSegredosDeBalanco,
 } from '@/src/lib/admin/actions';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
 import {
+  listRegionGates,
   listRegionLicenses,
   listRegionsAdmin,
   listSegredosDeBalanco,
@@ -116,11 +118,12 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
     );
   }
 
-  const [regioes, seccoes, todasAsLicencas, segredos] = await Promise.all([
+  const [regioes, seccoes, todasAsLicencas, segredos, barreiras] = await Promise.all([
     listRegionsAdmin(),
     listSiteSections(id),
     listRegionLicenses(),
     listSegredosDeBalanco(),
+    listRegionGates(),
   ]);
   const regiao = regioes.find((linha) => linha.id === id);
   if (!regiao) notFound();
@@ -130,6 +133,8 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
   const licenca = estadoDaLicenca(licencas, new Date().toISOString().slice(0, 10));
   // No máximo um por região: a 0151 revoga o anterior ao criar o seguinte.
   const segredoDaRegiao = segredos.find((linha) => linha.region_id === id);
+  // Se há senha de barreira guardada — e desde quando. O hash nunca chega cá.
+  const barreira = barreiras.find((linha) => linha.region_id === id);
 
   return (
     <>
@@ -413,6 +418,104 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           Guardar alterações
         </button>
       </form>
+
+      {/*
+        A barreira temporária (0157).
+        ---------------------------------------------------------------------
+        O terceiro estado de uma região: de pé, a servir, e só para quem tem a
+        senha. Vive fora do formulário da ficha porque formulários não se
+        aninham, e porque não é um campo da região como os outros — o que aqui
+        se escreve nunca chega à base: o que segue é o sha256.
+
+        **O cartão diz o que a barreira não cobre, e é de propósito.** Quem a
+        pediu escolheu tapar só as páginas, por ser o mais simples para uma
+        coisa temporária; com os feeds abertos, a agenda continua legível por
+        quem souber o endereço do `feed.xml`. É uma escolha informada — e uma
+        escolha informada só é informada se estiver escrita onde se faz.
+      */}
+      <section aria-labelledby="barreira" className="mt-10 max-w-2xl">
+        <h2 id="barreira" className="text-lg font-semibold">
+          Barreira temporária
+        </h2>
+        <p className="mt-1 max-w-xl text-sm text-muted">
+          Uma senha partilhada, para uma região pronta e ainda não contratada: o sítio fica de pé e
+          só entra quem a souber. Não é uma conta — não há registo, não há nomes, e nada se guarda
+          sobre quem entra. Cada entrada vale um dia.
+        </p>
+
+        <p className={`mt-3 text-sm ${regiao.gate_enabled ? 'text-highlight' : ''}`}>
+          <strong>{regiao.gate_enabled ? 'Ligada.' : 'Desligada.'}</strong>{' '}
+          <span className="text-muted">
+            {barreira
+              ? `Senha definida a ${barreira.updated_at.slice(0, 10).split('-').reverse().join('/')}${
+                  barreira.updated_by ? `, por ${barreira.updated_by}` : ''
+                }.`
+              : 'Não há senha definida — e sem senha a barreira não se liga.'}
+          </span>
+        </p>
+
+        <div className="mt-3 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
+          <p className="font-medium">A barreira cobre as páginas, e só as páginas.</p>
+          <p className="mt-1 text-muted">
+            Continuam a responder a quem souber o endereço: <code>/feed.xml</code>,{' '}
+            <code>/agenda.ics</code>, <code>/dados.json</code>, <code>/dados.csv</code>,{' '}
+            <code>/estado.json</code>, <code>/api/events</code>, o widget e os ficheiros de máquina
+            (<code>robots.txt</code>, <code>sitemap.xml</code>, <code>security.txt</code>). Foi a
+            escolha pedida — a mais simples, para uma coisa temporária. Quem quiser a região mesmo
+            fechada desliga-a no formulário acima, e aí não responde nada.
+          </p>
+        </div>
+
+        <form action={definirBarreira} className="mt-4 space-y-4">
+          <input type="hidden" name="region_id" value={regiao.id} />
+
+          <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+            <input
+              type="checkbox"
+              name="ligada"
+              defaultChecked={regiao.gate_enabled}
+              className="h-5 w-5 rounded border-field"
+            />
+            Barreira ligada
+          </label>
+
+          <div>
+            <label htmlFor="senha" className={LABEL}>
+              Senha nova{' '}
+              <span className="font-normal text-muted">(em branco: fica a que já lá está)</span>
+            </label>
+            <input
+              id="senha"
+              name="senha"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              maxLength={200}
+              className={FIELD}
+            />
+            <p className="mt-1 text-sm text-muted">
+              Oito caracteres à mínima. Escreva-a onde a possa voltar a ler antes de gravar: a base
+              guarda só uma impressão dela, e nem esta página a consegue reconstruir. Trocar a senha
+              não expulsa quem já entrou — quem tem um dia por gastar continua lá dentro até ele
+              acabar.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            className="inline-flex min-h-11 items-center rounded border border-border px-4 text-sm font-medium hover:bg-surface"
+          >
+            Guardar barreira
+          </button>
+        </form>
+
+        <p className="mt-2 max-w-xl text-xs text-muted">
+          Desligar não apaga a senha: a região volta a fechar-se com a mesma no dia seguinte, sem a
+          ter de combinar outra vez com quem já a tem. Ligar, desligar e trocar ficam na auditoria,
+          sem a senha e sem a impressão dela. Uma mudança pode demorar até cinco minutos a valer em
+          todos os servidores — é o tempo que o mapa das regiões vale em cada um.
+        </p>
+      </section>
 
       {/*
         A porta de quem decide.

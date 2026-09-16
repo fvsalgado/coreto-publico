@@ -22,6 +22,13 @@ export async function GET(): Promise<Response> {
       id: regiao.id,
       domain: regiao.dominio,
       aliases: aliases[regiao.id] ?? [],
+      /*
+       * Se a região está atrás de uma barreira (0157). Vai daqui porque é aqui
+       * que o middleware aprende o que precisa para decidir — e porque isto
+       * não é segredo nenhum: a página que pede a senha anuncia-o a quem lá
+       * bate. A senha vive noutra tabela, sem concessões ao `anon`.
+       */
+      barreira: regiao.barreiraLigada,
     })),
     {
       headers: {
