@@ -54,6 +54,7 @@ const LINHA_DO_MEDIO_TEJO: LinhaDeRegiao = {
   bbox_lat_max: 39.85,
   bbox_lon_min: -8.8,
   bbox_lon_max: -7.8,
+  gate_enabled: false,
 };
 
 /**
@@ -91,12 +92,26 @@ const LINHA_DA_TRAVESSIA: LinhaDeRegiao = {
   bbox_lat_max: 40.2,
   bbox_lon_min: -8.4,
   bbox_lon_max: -8.0,
+  gate_enabled: false,
 };
 
 const mt = regiaoDaLinha(LINHA_DO_MEDIO_TEJO);
 const travessia = regiaoDaLinha(LINHA_DA_TRAVESSIA);
 
 describe('regiaoDaLinha', () => {
+  it('a barreira só está ligada quando a coluna o diz (0157)', () => {
+    // O `=== true` do mapeador, provado pelos dois lados. Uma linha que chegue
+    // sem a coluna — de uma cache antiga, de um build a servir com a tabela
+    // ainda por migrar — vale «sem barreira»: a degradação certa é servir a
+    // agenda, e não tapar uma CIM contratada por causa de um `undefined`.
+    expect(mt.barreiraLigada).toBe(false);
+    expect(regiaoDaLinha({ ...LINHA_DO_MEDIO_TEJO, gate_enabled: true }).barreiraLigada).toBe(true);
+
+    const semColuna = { ...LINHA_DO_MEDIO_TEJO } as Record<string, unknown>;
+    delete semColuna.gate_enabled;
+    expect(regiaoDaLinha(semColuna as unknown as LinhaDeRegiao).barreiraLigada).toBe(false);
+  });
+
   it('compõe as contrações do artigo', () => {
     expect(mt.doNome).toBe('do Médio Tejo');
     expect(mt.noNome).toBe('no Médio Tejo');

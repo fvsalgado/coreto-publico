@@ -19,6 +19,7 @@ import { SECCOES_OPCIONAIS } from '../navegacao';
 import { REGIAO_PRINCIPAL } from '../regiao-host';
 import { CACHE_TAGS } from '../queries/events';
 import { gerarSegredo, impressaoDoSegredo } from '../balanco/token';
+import { sha256Hex } from '../token-assinado';
 
 /**
  * As ações de moderação.
@@ -447,6 +448,90 @@ export async function revogarSegredosDeBalanco(formData: FormData): Promise<void
     comAviso(
       voltarPara,
       n > 0 ? 'A porta do balanço ficou fechada.' : 'Não havia porta aberta para fechar.',
+    ),
+  );
+}
+
+/**
+ * O comprimento de uma senha de barreira.
+ *
+ * Oito à mínima, e não é arbitrário: com dez tentativas por quarto de hora e
+ * por endereço, o que trava um guião é o espaço de procura e o balde, não a
+ * força de cada tentativa — e uma senha que se diz ao telefone tem de caber
+ * numa frase. Duzentos ao máximo só para o formulário não aceitar um livro.
+ */
+const SENHA_MINIMA = 8;
+const SENHA_MAXIMA = 200;
+
+/**
+ * Liga, desliga ou troca a senha da barreira de uma região (0157).
+ *
+ * **A senha em claro morre aqui.** O que segue para a base é o sha256, feito
+ * neste processo, e a função `definir_barreira_da_regiao` nem sequer tem um
+ * parâmetro onde uma senha caiba. A auditoria fica com o que aconteceu e com
+ * nenhum dos dois.
+ *
+ * A senha em branco não é «apagar a senha»: é «não mexer na que lá está».
+ * Quem quer só desligar a barreira desmarca a caixa e grava, e a senha fica —
+ * a região volta a fechar-se com a mesma no dia seguinte, sem ter de a
+ * combinar outra vez com quem já a tem.
+ */
+export async function definirBarreira(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+
+  const regiao = String(formData.get('region_id') ?? '').trim();
+  const voltarPara = regiao ? `/admin/regioes/${encodeURIComponent(regiao)}` : '/admin/regioes';
+  if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  const ligada = formData.get('ligada') !== null;
+  /*
+   * Apara-se aqui e apara-se na entrada, e é de propósito que são os dois: uma
+   * senha copiada de um email vem quase sempre com um espaço atrás, e os dois
+   * lados a aparar fazem com que isso simplesmente não seja um problema. O que
+   * se perde é poder ter uma senha que começa por espaço, que ninguém quer
+   * dizer ao telefone.
+   */
+  const senha = String(formData.get('senha') ?? '').trim();
+  if (senha !== '' && (senha.length < SENHA_MINIMA || senha.length > SENHA_MAXIMA)) {
+    redirect(
+      comAviso(
+        voltarPara,
+        `A senha tem de ter entre ${SENHA_MINIMA} e ${SENHA_MAXIMA} caracteres.`,
+      ),
+    );
+  }
+
+  const { data, error } = await supabase.rpc('definir_barreira_da_regiao', {
+    p_region: regiao,
+    p_actor: actor,
+    p_ligada: ligada,
+    // Sem senha nova, `null` — e a função sabe que isso quer dizer «fica a que
+    // lá está». Recusa ligar quando não está lá nenhuma, e a recusa volta como
+    // aviso, com as palavras da base.
+    p_sha256: senha === '' ? null : await sha256Hex(senha),
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  /*
+   * A etiqueta refaz o `/api/regioes`, que é de onde o middleware lê o mapa —
+   * mas o middleware guarda-o cinco minutos por instância
+   * (`VALIDADE_DO_MAPA_MS`), e nenhuma etiqueta chega lá. É a mesma espera de
+   * uma região nova a entrar em produção, e o painel di-la a quem grava, em
+   * vez de a deixar descobrir a recarregar.
+   */
+  revalidateTag(CACHE_TAGS.regions, { expire: 0 });
+
+  const mudou = data === true;
+  redirect(
+    comAviso(
+      voltarPara,
+      mudou
+        ? (ligada
+            ? 'A barreira ficou ligada. '
+            : 'A barreira ficou desligada — a senha fica guardada para a próxima. ') +
+            'Pode demorar até cinco minutos a valer em todos os servidores.'
+        : 'Nada mudou — já estava assim.',
     ),
   );
 }
