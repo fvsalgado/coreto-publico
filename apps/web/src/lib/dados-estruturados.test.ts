@@ -135,6 +135,7 @@ const LINHA_DA_REGIAO: LinhaDeRegiao = {
   bbox_lat_max: 39.85,
   bbox_lon_min: -8.8,
   bbox_lon_max: -7.8,
+  gate_enabled: false,
 };
 
 const REGIAO = regiaoDaLinha(LINHA_DA_REGIAO);

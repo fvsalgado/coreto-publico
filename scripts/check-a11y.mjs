@@ -68,8 +68,35 @@ const ROUTES = [
   // corre «sobre todas as páginas públicas» — uma página fora desta lista
   // transforma essa frase em falsa sem ninguém dar por ela.
   '/indicadores',
+  /*
+   * A página que pede a senha de uma região tapada (0157).
+   *
+   * Só existe quando a região tem barreira ligada — nas outras é 404, e é
+   * assim que sai desta lista sem ninguém mexer nela (ver `ROTAS_CONDICIONAIS`
+   * abaixo). Entra aqui pela razão que o `/estado` e os `/indicadores` já
+   * trouxeram: é uma página pública, não está no mapa do sítio (é `noindex`,
+   * de propósito), e a declaração de `/acessibilidade` promete a auditoria
+   * «sobre todas as páginas públicas». E é uma página que alguém encontra num
+   * mau dia — a primeira e única coisa que vê de uma agenda inteira.
+   */
+  '/portao',
+  // E o estado que se vê depois de escrever a senha errada: é o único sítio
+  // da página com um `role="alert"` e com a cor de aviso, que é onde um
+  // contraste fraco costuma estar.
+  '/portao?erro=errada',
   '/nao-existe',
 ];
+
+/**
+ * As rotas que só existem em certos estados da instalação, e cujo 404 não é
+ * defeito nenhum.
+ *
+ * É a mesma manobra das secções desligadas, para uma condição diferente: uma
+ * instalação sem nenhuma região tapada não tem `/portao` nenhum, e o CI é
+ * sempre uma dessas — a migração 0157 garante que nenhuma região nasce com a
+ * barreira ligada.
+ */
+const ROTAS_CONDICIONAIS = ['/portao', '/portao?erro=errada'];
 
 /**
  * Os tipos de ficha que a auditoria tem de ver — uma de cada.
@@ -184,6 +211,11 @@ for (const viewport of VIEWPORTS) {
     }
     if (status === 404 && ROTAS_DE_SECCAO.includes(route)) {
       console.warn(`· ${viewport.name} ${route} — saltada (secção desligada no painel)`);
+      skipped += 1;
+      continue;
+    }
+    if (status === 404 && ROTAS_CONDICIONAIS.includes(route)) {
+      console.warn(`· ${viewport.name} ${route} — saltada (não há barreira ligada nesta região)`);
       skipped += 1;
       continue;
     }

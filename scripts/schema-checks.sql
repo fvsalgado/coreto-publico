@@ -370,7 +370,10 @@ begin
     from pg_policies p
    where p.schemaname = 'public'
      and p.tablename in ('submissions', 'submission_attachments', 'admin_actions',
-                         'sender_quotas', 'rate_limits', 'source_runs')
+                         'sender_quotas', 'rate_limits', 'source_runs',
+                         -- 0157: as senhas das barreiras. Uma policy que as
+                         -- expusesse punha o sha256 de cada região na rua.
+                         'region_gates')
      and (p.roles::text like '%anon%' or p.roles::text like '%authenticated%');
   assert n = 0, format('%s policies expõem tabelas internas ao público', n);
 

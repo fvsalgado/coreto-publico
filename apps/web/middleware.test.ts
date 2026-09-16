@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ADMIN_PATH_HEADER } from '@/src/lib/admin/guarda';
 import { ADMIN_COOKIE_NAME, createSessionToken } from '@/src/lib/admin/session';
+import { PORTAO_COOKIE_NAME, criarBilhete } from '@/src/lib/portao';
 import { esquecerMapaDeDominios } from '@/src/lib/regiao-host';
 import { middleware } from './middleware';
 
@@ -455,5 +456,129 @@ describe('a porta do balanço', () => {
   it('o painel continua a ser o painel', async () => {
     const resposta = await middleware(pedido('https://coreto.org/admin'));
     expect(resposta.headers.get('X-Robots-Tag')).toBe('noindex, nofollow, noarchive');
+  });
+});
+
+/**
+ * A terceira porta: a barreira temporária de uma região (0157).
+ *
+ * É a do meio entre ligada e desligada — uma região de pé, a servir, e só para
+ * quem tem a senha. O que aqui se prova é o que o middleware decide, que é
+ * tudo o que decide: quem passa, quem vai parar à página da senha, e o que
+ * continua a responder na mesma. A senha e o bilhete têm os seus testes em
+ * `portao.test.ts` e em `api/portao/route.test.ts`.
+ */
+describe('a barreira de uma região', () => {
+  const SEGREDO = 'um-segredo-só-para-os-testes';
+  const COM_BARREIRA = [
+    { id: 'medio-tejo', domain: 'coreto.mediotejo.pt', barreira: true },
+    { id: 'vale-do-coreto', domain: 'coreto.org', barreira: false },
+  ];
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchDoMapa(COM_BARREIRA));
+    vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
+  });
+
+  it('sem bilhete, a página é a da senha — e o endereço público não muda', async () => {
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/agenda?categoria=musica'),
+    );
+    const destino = new URL(resposta.headers.get('x-middleware-rewrite') ?? '');
+    expect(destino.pathname).toBe('/medio-tejo/portao');
+    // De onde se veio viaja para a página poder devolver quem entra ao sítio.
+    expect(destino.searchParams.get('de')).toBe('/agenda?categoria=musica');
+    // Não é 307 nem 308: um redirecionamento mudava o endereço na barra e
+    // dava a uma agenda inteira um segundo endereço.
+    expect(resposta.status).toBe(200);
+  });
+
+  it('e não se indexa nem se guarda em cache de ninguém', async () => {
+    const resposta = await middleware(pedido('https://coreto.mediotejo.pt/agenda'));
+    expect(resposta.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
+    expect(resposta.headers.get('cache-control')).toBe('no-store, must-revalidate');
+  });
+
+  it('com o bilhete da região, passa como qualquer pedido', async () => {
+    const bilhete = await criarBilhete('medio-tejo', SEGREDO);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/agenda', {
+        cookie: `${PORTAO_COOKIE_NAME}=${bilhete}`,
+      }),
+    );
+    expect(resposta.headers.get('x-middleware-rewrite')).toBe(
+      'https://coreto.mediotejo.pt/medio-tejo/agenda',
+    );
+  });
+
+  it('o bilhete de outra região não abre esta', async () => {
+    const bilhete = await criarBilhete('vale-do-coreto', SEGREDO);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/agenda', {
+        cookie: `${PORTAO_COOKIE_NAME}=${bilhete}`,
+      }),
+    );
+    expect(new URL(resposta.headers.get('x-middleware-rewrite') ?? '').pathname).toBe(
+      '/medio-tejo/portao',
+    );
+  });
+
+  it('sem o segredo de assinatura, ninguém passa — fecha em vez de abrir', async () => {
+    // A mesma regra da guarda do painel, escrita lá com todas as letras: o
+    // público degrada, a segurança fecha. Sem segredo não há bilhete que se
+    // possa verificar, e deixar passar era desligar a barreira sozinho.
+    const bilhete = await criarBilhete('medio-tejo', SEGREDO);
+    vi.stubEnv('ADMIN_SESSION_SECRET', undefined);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/agenda', {
+        cookie: `${PORTAO_COOKIE_NAME}=${bilhete}`,
+      }),
+    );
+    expect(new URL(resposta.headers.get('x-middleware-rewrite') ?? '').pathname).toBe(
+      '/medio-tejo/portao',
+    );
+  });
+
+  it('uma região sem barreira não ganha porta nenhuma', async () => {
+    const resposta = await middleware(pedido('https://coreto.org/agenda'));
+    expect(resposta.headers.get('x-middleware-rewrite')).toBe(
+      'https://coreto.org/vale-do-coreto/agenda',
+    );
+  });
+
+  it('os feeds e os dados continuam a responder — foi a escolha de quem a pediu', async () => {
+    // Está escrito no painel a quem liga a barreira, e está aqui, para não
+    // deixar de ser verdade sem ninguém dar por isso.
+    for (const [caminho, interno] of [
+      ['/feed.xml', '/medio-tejo/feed.xml'],
+      ['/agenda.ics', '/medio-tejo/agenda.ics'],
+      ['/api/events', '/medio-tejo/api/events'],
+      ['/robots.txt', '/medio-tejo/robots.txt'],
+      ['/sitemap.xml', '/medio-tejo/sitemap-xml'],
+    ]) {
+      const resposta = await middleware(pedido(`https://coreto.mediotejo.pt${caminho}`));
+      expect(new URL(resposta.headers.get('x-middleware-rewrite') ?? '').pathname).toBe(interno);
+    }
+  });
+
+  it('o painel não fica atrás da barreira da região que administra', async () => {
+    // O `/admin` decide-se antes, e ainda bem: com a barreira ligada na região
+    // principal, quem a ligou ficava do lado de fora do sítio onde a desliga.
+    const token = await createSessionToken('ana', SEGREDO);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/admin/regioes', {
+        cookie: `${ADMIN_COOKIE_NAME}=${token}`,
+      }),
+    );
+    expect(resposta.headers.get(`x-middleware-request-${ADMIN_PATH_HEADER}`)).toBe(
+      '/admin/regioes',
+    );
+  });
+
+  it('a página da senha não se tapa a si própria', async () => {
+    const resposta = await middleware(pedido('https://coreto.mediotejo.pt/portao'));
+    expect(resposta.headers.get('x-middleware-rewrite')).toBe(
+      'https://coreto.mediotejo.pt/medio-tejo/portao',
+    );
   });
 });

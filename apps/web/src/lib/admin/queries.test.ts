@@ -105,6 +105,8 @@ const LEITURAS: Array<[nome: string, correr: (q: typeof import('./queries')) => 
     ['listRegionsAdmin', (q) => q.listRegionsAdmin()],
     ['listRegionLicenses', (q) => q.listRegionLicenses()],
     ['listSiteSections', (q) => q.listSiteSections('medio-tejo')],
+    ['listSiteSectionsTodas', (q) => q.listSiteSectionsTodas()],
+    ['listRegionGates', (q) => q.listRegionGates()],
     ['monthlyReport', (q) => q.monthlyReport('medio-tejo', '2026-08')],
     ['listEventsWithoutTime', (q) => q.listEventsWithoutTime()],
   ];

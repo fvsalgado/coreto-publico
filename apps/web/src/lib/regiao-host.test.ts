@@ -3,6 +3,7 @@ import {
   REGIAO_PARA_HOSTS_DESCONHECIDOS,
   REGIAO_PRINCIPAL,
   VALIDADE_DO_MAPA_MS,
+  barreirasDasRegioes,
   dominiosDasRegioes,
   esquecerMapaDeDominios,
   normalizarHost,
@@ -243,5 +244,77 @@ describe('dominiosDasRegioes', () => {
 
     const dominios = await dominiosDasRegioes('https://exemplo.pt', nuncaResponde(), agora);
     expect(dominios).toEqual({ 'coreto.mediotejo.pt': 'medio-tejo' });
+  });
+});
+
+/**
+ * A barreira viaja no mesmo mapa, e o que aqui se prova é o que acontece
+ * quando a leitura falha.
+ *
+ * Os domínios podem degradar-se para o vazio sem perigo: sem mapa, nenhum
+ * anfitrião é de ninguém e serve-se a página do produto. A barreira não pode.
+ * Um `barreiras` vazio quer dizer «nenhuma região está tapada» — e o mapa
+ * vazio por uma falha de rede destapava, sozinho e em silêncio, uma região que
+ * ainda não está contratada.
+ */
+describe('barreirasDasRegioes', () => {
+  afterEach(() => {
+    esquecerMapaDeDominios();
+  });
+
+  function respostaCom(linhas: unknown): typeof fetch {
+    return (async () =>
+      new Response(JSON.stringify(linhas), { status: 200 })) as unknown as typeof fetch;
+  }
+
+  it('só entram as regiões que vêm marcadas — a ausência não tapa nada', async () => {
+    const barreiras = await barreirasDasRegioes(
+      'https://exemplo.pt',
+      respostaCom([
+        { id: 'medio-tejo', domain: 'coreto.mediotejo.pt', barreira: true },
+        { id: 'travessia', domain: 'coreto.travessia.example', barreira: false },
+        { id: 'sem-campo', domain: 'coreto.sem-campo.example' },
+      ]),
+    );
+    expect(barreiras).toEqual({ 'medio-tejo': true });
+  });
+
+  it('uma região tapada continua tapada quando a leitura falha', async () => {
+    let relogio = 0;
+    const agora = () => relogio;
+    await barreirasDasRegioes(
+      'https://exemplo.pt',
+      respostaCom([{ id: 'medio-tejo', domain: 'coreto.mediotejo.pt', barreira: true }]),
+      agora,
+    );
+    relogio += VALIDADE_DO_MAPA_MS + 1;
+
+    const falha = (async () => {
+      throw new Error('rede fora');
+    }) as unknown as typeof fetch;
+    expect(await barreirasDasRegioes('https://exemplo.pt', falha, agora)).toEqual({
+      'medio-tejo': true,
+    });
+  });
+
+  it('e destapa-se quando a leitura volta a dizer que sim', async () => {
+    // O simétrico do de cima: se a memória ganhasse sempre, desligar a
+    // barreira no painel não chegava a nenhum servidor que já a tivesse visto.
+    let relogio = 0;
+    const agora = () => relogio;
+    await barreirasDasRegioes(
+      'https://exemplo.pt',
+      respostaCom([{ id: 'medio-tejo', domain: 'coreto.mediotejo.pt', barreira: true }]),
+      agora,
+    );
+    relogio += VALIDADE_DO_MAPA_MS + 1;
+
+    expect(
+      await barreirasDasRegioes(
+        'https://exemplo.pt',
+        respostaCom([{ id: 'medio-tejo', domain: 'coreto.mediotejo.pt', barreira: false }]),
+        agora,
+      ),
+    ).toEqual({});
   });
 });
