@@ -13,7 +13,17 @@ export function PorExtenso({ titulo, children }: { titulo: string; children: Rea
         <span aria-hidden="true" className="ct-octagon size-2 shrink-0 bg-highlight" />
         {titulo}
       </summary>
-      <div className="space-y-3 border-t border-border px-4 py-4 text-sm">{children}</div>
+      {/*
+       * Sem `text-sm`: isto é o corpo de um documento, não uma nota.
+       *
+       * Aqui vivem a política de privacidade e a declaração de acessibilidade
+       * por extenso — os dois textos que uma câmara lê com atenção e que a lei
+       * manda publicar. Estiveram a 14px com 1,43x de entrelinha, e o
+       * requisito 2.1 da lista «Conteúdo» do Selo pede que o corpo do
+       * documento tenha, no mínimo, 12 pontos — que são 16px. Herdando,
+       * ficam nos 16px e na entrelinha de 1,6 do `body`.
+       */}
+      <div className="space-y-3 border-t border-border px-4 py-4">{children}</div>
     </details>
   );
 }

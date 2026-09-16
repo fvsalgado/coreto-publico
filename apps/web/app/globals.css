@@ -116,6 +116,26 @@
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-display: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+
+  /*
+   * A entrelinha do texto pequeno, corrigida na origem.
+   *
+   * O `body` já leva `line-height: 1.6`, e o texto corrente cumpre. O que não
+   * cumpria era o texto pequeno: as utilidades `text-sm` e `text-xs` trazem
+   * de fábrica 1,43x e 1,33x, e o requisito 2.4 da lista «Conteúdo» do Selo de
+   * Usabilidade e Acessibilidade pede que **o espaçamento entre linhas não
+   * seja inferior a 1,5x o tamanho da letra** — sem distinguir corpo de nota.
+   *
+   * Medido a 15 de setembro de 2026 com o sítio a correr: 25 de 27 blocos de
+   * `/privacidade` e 26 de 28 de `/acessibilidade` estavam a 1,43x.
+   *
+   * Corrige-se aqui e não caso a caso, porque `text-sm` aparece por toda a
+   * casa e uma correção por página é uma correção que a página seguinte não
+   * herda. Quem quiser texto mais apertado num sítio específico continua a
+   * poder pedi-lo com uma utilidade de `leading-*`; o que muda é a omissão.
+   */
+  --text-sm--line-height: 1.5;
+  --text-xs--line-height: 1.5;
 }
 
 /*
