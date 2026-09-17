@@ -5,6 +5,7 @@ import {
   desdeQuandoPorLer,
   fraseDaFonte,
   leituraDoConcelho,
+  pausaAtiva,
   saudeDaFonte,
   veredito,
 } from './estado';
@@ -288,5 +289,143 @@ describe('desdeQuandoPorLer', () => {
     const recolha = avaliarRecolha([fonte('nunca', null)], AGORA);
     const leitura = leituraDoConcelho(recolha);
     expect(leitura.tipo === 'por-ler' && desdeQuandoPorLer(leitura.fontes)).toBeNull();
+  });
+});
+
+/**
+ * A pausa declarada (0159) — o mecanismo que separa «avariada» de «calada de
+ * propósito».
+ *
+ * O que se está a proteger aqui não é uma contagem: é a confiança no alarme.
+ * Um painel que fica vermelho durante duas semanas por causa de oito fontes
+ * que a própria casa decidiu não contactar ensina, nessas duas semanas, que o
+ * vermelho não quer dizer nada — e a lição não se desaprende no dia em que o
+ * vermelho voltar a ser verdade.
+ *
+ * As fronteiras que interessam são duas, e as duas estão medidas abaixo: uma
+ * pausa de pé cala o veredito, e uma pausa que acabou grita mais alto do que a
+ * avaria que tapava.
+ */
+
+const CHEIA_P = { total: 40, vazios: [] };
+
+/** A mesma fonte do resto do ficheiro, com uma pausa que acaba daqui a `dias`. */
+function pausada(id: string, ultima: string | null, dias: number, motivo = 'bloqueio da CIM') {
+  return {
+    ...fonte(id, ultima),
+    pausada_ate: new Date(AGORA.getTime() + dias * 86_400_000).toISOString(),
+    pausa_motivo: motivo,
+  };
+}
+
+describe('pausaAtiva', () => {
+  it('sem pausa marcada, não há pausa', () => {
+    expect(pausaAtiva(fonte('tomar', haDias(20)), AGORA)).toBe(false);
+  });
+
+  it('uma data no futuro cala; uma data no passado deixou de calar', () => {
+    // É aqui que mora a segurança inteira do mecanismo: a pausa **acaba
+    // sozinha**. Ninguém a levanta, ninguém se lembra dela, e no instante
+    // seguinte ao fim a fonte volta a ser avaliada pela régua de sempre.
+    expect(pausaAtiva(pausada('macao', haDias(20), 1), AGORA)).toBe(true);
+    expect(pausaAtiva(pausada('macao', haDias(20), -1), AGORA)).toBe(false);
+  });
+
+  it('uma data que não se percebe não cala nada', () => {
+    // Na dúvida, vigia-se. Uma pausa ilegível a silenciar um alarme seria a
+    // pior das duas falhas possíveis.
+    const torta = {
+      ...fonte('macao', haDias(20)),
+      pausada_ate: 'ontem à tarde',
+      pausa_motivo: 'x',
+    };
+    expect(pausaAtiva(torta, AGORA)).toBe(false);
+  });
+});
+
+describe('a pausa e o veredito', () => {
+  it('uma fonte parada põe o painel a mau — é a régua de sempre', () => {
+    const recolha = avaliarRecolha([fonte('macao', haDias(20))], AGORA);
+    expect(veredito(recolha, CHEIA_P).grau).toBe('mau');
+  });
+
+  it('a mesma fonte, com pausa de pé, deixa de pôr', () => {
+    const recolha = avaliarRecolha([pausada('macao', haDias(20), 4)], AGORA);
+    expect(recolha.paradas).toHaveLength(0);
+    expect(recolha.emPausa).toHaveLength(1);
+    expect(veredito(recolha, CHEIA_P).grau).toBe('bom');
+  });
+
+  it('e o sossego diz que ficou uma de fora, em vez de dizer que se leu tudo', () => {
+    // A frase antiga — «todas as fontes ligadas foram lidas» — passaria a ser
+    // falsa: a que está em pausa está ligada e não foi lida. Um verde por cima
+    // de oito câmaras caladas é a mentira que a 0159 existe para não contar.
+    const recolha = avaliarRecolha([pausada('macao', haDias(20), 4)], AGORA);
+    const { frase } = veredito(recolha, CHEIA_P);
+    expect(frase).toContain('em pausa declarada');
+    expect(frase).not.toBe('Todas as fontes ligadas foram lidas com sucesso nas últimas 48 horas.');
+  });
+
+  it('uma pausa que acabou volta a pôr a mau — e com a frase da pausa, não a da avaria', () => {
+    // As duas descrevem a mesma fonte. A diferença é o que mandam fazer: «uma
+    // fonte sem ser lida» manda olhar para a fonte, e não há lá nada para ver;
+    // o que há para rever é a decisão que expirou.
+    const recolha = avaliarRecolha([pausada('macao', haDias(20), -1)], AGORA);
+    const { grau, frase } = veredito(recolha, CHEIA_P);
+    expect(grau).toBe('mau');
+    expect(frase).toBe('A pausa de uma fonte acabou e ninguém a renovou.');
+  });
+
+  it('com duas pausas expiradas, o plural sai certo', () => {
+    const recolha = avaliarRecolha(
+      [pausada('macao', haDias(20), -1), pausada('tomar', haDias(30), -3)],
+      AGORA,
+    );
+    expect(veredito(recolha, CHEIA_P).frase).toBe(
+      'A pausa de 2 fontes acabou e ninguém as renovou.',
+    );
+  });
+
+  it('uma pausa que acabou numa fonte que voltou a responder não é esquecimento nenhum', () => {
+    // Fez o trabalho e acabou. Contá-la como expirada era inventar um alarme
+    // para uma fonte que está em dia.
+    const recolha = avaliarRecolha([pausada('macao', haDias(1), -5)], AGORA);
+    expect(recolha.vigiadas[0]?.pausaExpirada).toBe(false);
+    expect(recolha.emDia).toHaveLength(1);
+    expect(veredito(recolha, CHEIA_P).grau).toBe('bom');
+  });
+
+  it('uma fonte desligada continua a não contar, com pausa ou sem ela', () => {
+    const desligada = { ...pausada('macao', haDias(20), 4), is_enabled: false };
+    const recolha = avaliarRecolha([desligada], AGORA);
+    expect(recolha.vigiadas).toHaveLength(0);
+    expect(recolha.emPausa).toHaveLength(0);
+  });
+});
+
+describe('a pausa e quem vive no concelho', () => {
+  it('uma fonte em pausa deixa o concelho por ler, e não «em dia»', () => {
+    // O veredito responde a quem administra («tenho o que arranjar?») e uma
+    // pausa não é. Isto responde a quem vive lá («a página está completa?») e
+    // uma pausa também a deixa incompleta. Calá-la aqui era voltar a dizer
+    // «não há» onde o certo é «não consegui saber».
+    const recolha = avaliarRecolha([pausada('macao', haDias(20), 4)], AGORA);
+    const leitura = leituraDoConcelho(recolha);
+    expect(leitura.tipo).toBe('por-ler');
+  });
+});
+
+describe('a frase de uma fonte em pausa', () => {
+  const comoData = (iso: string) => iso;
+
+  it('diz até quando e porquê, e não fala de leituras', () => {
+    const recolha = avaliarRecolha(
+      [pausada('macao', haDias(20), 4, 'bloqueio da CIM, à espera de resposta')],
+      AGORA,
+    );
+    const frase = fraseDaFonte(recolha.emPausa[0]!, comoData);
+    expect(frase).toContain('Em pausa até');
+    expect(frase).toContain('bloqueio da CIM, à espera de resposta');
+    expect(frase).not.toContain('Sem uma leitura');
   });
 });

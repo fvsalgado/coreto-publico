@@ -1,10 +1,4 @@
-import {
-  avaliarAgenda,
-  avaliarRecolha,
-  saudeDaFonte,
-  veredito,
-  type SaudeDaFonte,
-} from '@/src/lib/estado';
+import { avaliarAgenda, avaliarRecolha, veredito, type SaudeDaFonte } from '@/src/lib/estado';
 import {
   countEventsByMunicipality,
   listMunicipalities,
@@ -54,8 +48,19 @@ export interface EstadoEmJson {
     atrasadas: number;
     paradas: number;
     porEstrear: number;
+    /** Caladas por decisão e não por avaria (0159). Não contam para o `grau`. */
+    emPausa: number;
     /** As que precisam de alguém, pelo id, por ordem alfabética. */
     porArranjar: Array<{ id: string; nome: string; saude: SaudeDaFonte; dias: number | null }>;
+    /**
+     * As pausas declaradas, com a data em que acabam.
+     *
+     * Vem no corpo e não só na contagem porque é a data que interessa a quem
+     * vigia: uma pausa é uma promessa de rever, e sem o prazo à vista não há
+     * como saber se está a ser cumprida. Quando uma expira, a fonte volta a
+     * `porArranjar` sozinha e o `grau` volta a `mau`.
+     */
+    pausadas: Array<{ id: string; nome: string; ate: string; motivo: string | null }>;
   };
   agenda: {
     /** Eventos por vir na região inteira. */
@@ -113,12 +118,26 @@ export async function GET(
     const recolha = avaliarRecolha(fontes);
     const agenda = avaliarAgenda(concelhos, contagens);
     const parecer = veredito(recolha, agenda);
+    // A saúde vem do `avaliarRecolha` e não de uma segunda conta: era
+    // recalculada aqui com um `new Date()` novo, e a partir da 0159 isso
+    // passaria a poder discordar do cesto em que a fonte está — a pausa
+    // decide-se por um instante, e dois instantes diferentes dão respostas
+    // diferentes no minuto em que uma pausa acaba.
     const porArranjar = [...recolha.paradas, ...recolha.atrasadas]
       .map((fonte) => ({
         id: fonte.id,
         nome: fonte.name,
-        saude: saudeDaFonte(fonte.last_success_at, new Date()),
+        saude: fonte.saude,
         dias: fonte.dias,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    const pausadas = recolha.emPausa
+      .map((fonte) => ({
+        id: fonte.id,
+        nome: fonte.name,
+        ate: fonte.pausada_ate ?? '',
+        motivo: fonte.pausa_motivo ?? null,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -132,7 +151,9 @@ export async function GET(
         atrasadas: recolha.atrasadas.length,
         paradas: recolha.paradas.length,
         porEstrear: recolha.porEstrear.length,
+        emPausa: recolha.emPausa.length,
         porArranjar,
+        pausadas,
       },
       agenda: {
         total: agenda.total,
