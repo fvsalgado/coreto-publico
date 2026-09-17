@@ -166,6 +166,72 @@ export function fraseDaFonte(fonte: FonteComSaude, formatarData: (iso: string) =
   return 'Ainda não foi lida.';
 }
 
+/**
+ * O que sabemos sobre o que se publica num concelho — e o que não sabemos.
+ *
+ * **Isto existe por causa de uma mentira que o sítio dizia.** A página de um
+ * concelho sem eventos escrevia «Ainda não há programação publicada em X. O
+ * concelho continua aqui, à espera.» A 16 de setembro de 2026 dizia isso de
+ * Mação, e a verdade era outra: a fonte da câmara estava bloqueada desde o dia
+ * 11 e o disjuntor só reabria a 21. O concelho não estava à espera — nós é que
+ * não o conseguíamos ler. É a distinção que esta casa escreveu como regra —
+ * «não há» e «não consegui saber» são duas respostas diferentes — a ser
+ * quebrada na página onde mais custa, que é a de quem vive lá.
+ *
+ * Os quatro estados, e porque são quatro:
+ *
+ * - `nao-sei` — não se conseguiu ler a saúde das fontes. **Não é `em-dia`**:
+ *   quem não sabe não afirma. É o que sai quando a leitura das fontes degrada.
+ * - `sem-vigilancia` — o concelho não tem nenhuma fonte ligada. Nunca olhámos:
+ *   o que lá estiver chega por quem o envia. Uma região acabada de nascer está
+ *   toda assim (`create_region` semeia uma fonte desligada por concelho).
+ * - `por-ler` — há fontes ligadas que não se conseguem ler. As paradas, as
+ *   atrasadas **e as por estrear**, porque as três têm em comum o que
+ *   interessa: existe uma fonte que devia dizer-nos o que se passa e não disse.
+ * - `em-dia` — todas as fontes ligadas foram lidas com sucesso há pouco. É o
+ *   único estado em que o silêncio é do concelho e não nosso, e o único em que
+ *   a página pode dizer que não há nada sem estar a inventar.
+ */
+export type LeituraDoConcelho =
+  | { tipo: 'nao-sei' }
+  | { tipo: 'sem-vigilancia' }
+  | { tipo: 'em-dia' }
+  | { tipo: 'por-ler'; fontes: FonteComSaude[] };
+
+/**
+ * Recebe `null` quando a leitura das fontes falhou — e é de propósito que o
+ * vazio e o desconhecido entram por caminhos diferentes. Uma lista vazia é uma
+ * resposta («este concelho não tem fontes ligadas»); a ausência de lista não é
+ * resposta nenhuma, e tratá-las como a mesma coisa era voltar ao engano que
+ * este módulo existe para desfazer.
+ */
+export function leituraDoConcelho(recolha: EstadoDaRecolha | null): LeituraDoConcelho {
+  if (!recolha) return { tipo: 'nao-sei' };
+  if (recolha.vigiadas.length === 0) return { tipo: 'sem-vigilancia' };
+  const porLer = [...recolha.paradas, ...recolha.atrasadas, ...recolha.porEstrear];
+  return porLer.length > 0 ? { tipo: 'por-ler', fontes: porLer } : { tipo: 'em-dia' };
+}
+
+/**
+ * A data da leitura boa mais recente entre as fontes que estão por ler — ou
+ * `null` se nenhuma delas alguma vez foi lida.
+ *
+ * **A mais recente e não a mais antiga**, e a escolha não é arbitrária: o que
+ * quem lê quer saber é até quando é que o que está na página foi verdade.
+ * Com duas fontes paradas, uma desde março e outra desde ontem, a resposta é
+ * ontem — a de março já não acrescentava nada há meses.
+ */
+export function desdeQuandoPorLer(fontes: readonly FonteComSaude[]): string | null {
+  let maisRecente: string | null = null;
+  for (const fonte of fontes) {
+    if (!fonte.last_success_at) continue;
+    if (maisRecente === null || fonte.last_success_at > maisRecente) {
+      maisRecente = fonte.last_success_at;
+    }
+  }
+  return maisRecente;
+}
+
 export interface EstadoDaAgenda {
   /** Eventos por vir na região inteira. */
   total: number;

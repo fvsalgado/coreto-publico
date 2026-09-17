@@ -690,6 +690,26 @@ export const listPublicSources = unstable_cache(
 );
 
 /**
+ * As mesmas fontes, para quem não as tem por assunto: **degrada para `null`**.
+ *
+ * Quem chama esta é a página de um concelho, que precisa de saber se o que
+ * mostra está completo. Ali as fontes não são o assunto — a agenda é —, e uma
+ * falha na leitura delas não deve deitar abaixo a página do concelho inteiro.
+ *
+ * **`null` e não `[]`**, e é a decisão que dá sentido a isto existir. Uma
+ * lista vazia é uma resposta: «este concelho não tem fontes ligadas». A
+ * ausência de lista não é resposta nenhuma. Com `[]` no lugar do erro, a
+ * página passava a dizer com confiança «não temos de onde ler este concelho»
+ * de cada vez que a base tossisse — e trocar um erro por uma afirmação falsa
+ * é exatamente o que o `leituraDoConcelho` existe para impedir.
+ */
+export const fontesDoConcelhoOuNada = degradarForaDaCache<[string], PublicSource[] | null>(
+  'fontesDoConcelhoOuNada',
+  listPublicSources,
+  () => null,
+);
+
+/**
  * **Propaga**: é o assunto de `/ciclos`.
  *
  * Um ciclo é uma coisa que se anuncia meses antes — a vazio, o índice diz que

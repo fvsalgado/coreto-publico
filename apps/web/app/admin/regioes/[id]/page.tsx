@@ -343,19 +343,75 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
 
         <fieldset>
           <legend className="text-lg font-semibold">Responsável pelo tratamento (RGPD)</legend>
-          <p className="mt-1 text-sm text-muted">
-            Quem responde pelos dados pessoais nesta região. Em branco, a política de privacidade
-            usa o nome e o endereço do promotor. Quem é o responsável é decisão contratual, CIM a
-            CIM — ver <code>docs/RGPD.md</code>.
+          <p className="mt-1 max-w-xl text-sm text-muted">
+            Quem responde pelos dados pessoais nesta região. <strong>Com o nome em branco</strong>,
+            a política de privacidade usa o nome e o endereço do promotor, e mais nada — é a omissão
+            desde a 0101. Quem é o responsável é decisão contratual, CIM a CIM — ver{' '}
+            <code>docs/RGPD.md</code>.
           </p>
+          {/*
+            A lista do que falta, no sítio onde se preenche.
+            -----------------------------------------------------------------
+            Vivia no `docs/RGPD.md` e no `docs/LICENCIAR.md`, que é onde tem de
+            estar por extenso — e não no ecrã de quem a vai escrever. O aviso
+            só aparece quando há responsável declarado: sem ele não há
+            obrigação por cumprir, há uma decisão por tomar.
+          */}
+          {regiao.data_controller_name ? (
+            <p className="mt-2 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
+              O que a lei pede a uma região contratada: nome, NIF, morada e contacto. E, se quem
+              responde for uma autoridade ou organismo público — uma CIM, uma câmara —, também o{' '}
+              <strong>encarregado de proteção de dados</strong> e o contacto dele, que o artigo
+              37.º, n.º 7, do RGPD manda publicar. O que ficar em branco não aparece na política:
+              não se mostra o que não se sabe.
+            </p>
+          ) : null}
           <div className="mt-3 space-y-4">
-            <Campo nome="data_controller_name" rotulo="Nome" valor={regiao.data_controller_name} />
+            <Campo
+              nome="data_controller_name"
+              rotulo="Nome"
+              valor={regiao.data_controller_name}
+              ajuda="Em branco, vale o promotor. Preenchido, é este nome que a política publica — e o endereço abaixo deixa de herdar o do promotor."
+            />
             <Campo
               nome="data_controller_url"
               rotulo="Endereço"
               valor={regiao.data_controller_url}
               tipo="url"
+              ajuda="O sítio de quem responde. Uma pessoa singular não tem, e em branco o nome sai sem ligação — que é o certo."
             />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo
+                nome="data_controller_nif"
+                rotulo="NIF ou NIPC"
+                valor={regiao.data_controller_nif}
+              />
+              <Campo
+                nome="data_controller_email"
+                rotulo="Contacto para direitos"
+                valor={regiao.data_controller_email}
+                tipo="email"
+                ajuda="Em branco, vale o email da região."
+              />
+            </div>
+            <Area
+              nome="data_controller_address"
+              rotulo="Morada"
+              valor={regiao.data_controller_address}
+              linhas={3}
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo
+                nome="data_controller_dpo"
+                rotulo="Encarregado de proteção de dados"
+                valor={regiao.data_controller_dpo}
+              />
+              <Campo
+                nome="data_controller_dpo_contact"
+                rotulo="Contacto do encarregado"
+                valor={regiao.data_controller_dpo_contact}
+              />
+            </div>
           </div>
         </fieldset>
 
