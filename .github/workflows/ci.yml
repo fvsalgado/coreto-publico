@@ -8,7 +8,7 @@ on:
   # Os outros três são os de omissão, e escrevem-se porque declarar `types`
   # substitui a lista inteira em vez de a acrescentar.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
 
   # A fila de fusão, quando estiver ligada. É o evento que corre contra o
   # candidato a fusão — o código deste PR já com o `main` de agora por baixo —,
@@ -445,22 +445,43 @@ jobs:
     # empurrado durante doze dias — e o desenho de cima presume o contrário,
     # que se fica em rascunho enquanto se itera.
     #
-    # `merge_group` corre sempre: é a fila de fusão, acontece uma vez por PR e
-    # é a única altura em que a bateria vê o código que vai mesmo entrar.
+    # A REGRA: a bateria pesada corre quando a PRONTIDÃO do PR muda, e não
+    # quando o código muda.
     #
-    # Por empurrão continua a correr como até aqui — até `FILA_DE_FUSAO` valer
-    # `sim`, em Settings → Secrets and variables → Actions → Variables. Está
-    # atrás de uma variável e não de um commit porque desligar isto sem a fila
-    # ligada deixa as regiões e as auditorias sem ninguém a olhar por elas
-    # antes da fusão. A ordem é: ligar a fila, ver uma passar, e só então pôr a
-    # variável a `sim`.
+    # Abrir, reabrir, sair de rascunho — nesses corre. Empurrar mais um commit
+    # — não corre. Precisa dela outra vez, põe a etiqueta `bateria` e ela
+    # corre; tirar e voltar a pôr manda-a correr de novo.
+    #
+    # **A FILA DE FUSÃO NÃO ESTÁ DISPONÍVEL AQUI, e foi verificado.** Era esse
+    # o desenho: `merge_group` corre uma vez por PR, sobre o código já
+    # combinado com o `main`. Mas a fila configura-se por rulesets, e a página
+    # de Settings deste repositório diz, por escrito: «Your rulesets won't be
+    # enforced on this private repository until you move to GitHub Team
+    # organization account.» Repositório privado em conta pessoal: não há.
+    #
+    # Esta regra é o substituto, e recupera quase tudo. Na amostra das cem
+    # execuções de PR a bateria correu 56 vezes para 14 ramos; a correr uma vez
+    # por PR são 14. São ~42 execuções pesadas a menos, ~9 min cada.
+    #
+    # O QUE SE PERDE, e fica dito: um empurrão depois de o PR estar pronto não
+    # volta a passar pela bateria. Hoje passava — quarenta e duas vezes no
+    # mesmo ramo, que é o problema que isto resolve — e a etiqueta é a saída
+    # para quando se quiser mesmo. Quem funde um PR com código empurrado depois
+    # da última bateria sabe o que está a fazer, ou põe a etiqueta.
+    #
+    # O `merge_group` fica de pé e não custa nada: no dia em que isto mudar
+    # para uma organização Team, a fila liga-se, põe-se `FILA_DE_FUSAO` a `sim`
+    # em Settings → Variables, e a bateria deixa de correr do lado do PR porque
+    # a fila passa a cobri-la — sobre o código combinado, que é melhor.
     needs: qualidade
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
        vars.FILA_DE_FUSAO != 'sim' &&
        github.event.pull_request.draft == false &&
-       needs.qualidade.outputs.so_documentacao != 'sim')
+       needs.qualidade.outputs.so_documentacao != 'sim' &&
+       ((github.event.action != 'labeled' && github.event.action != 'synchronize') ||
+        contains(github.event.pull_request.labels.*.name, 'bateria')))
 
     # A versão executável da promessa comercial: a segunda CIM nasce com um
     # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
@@ -599,22 +620,43 @@ jobs:
     # empurrado durante doze dias — e o desenho de cima presume o contrário,
     # que se fica em rascunho enquanto se itera.
     #
-    # `merge_group` corre sempre: é a fila de fusão, acontece uma vez por PR e
-    # é a única altura em que a bateria vê o código que vai mesmo entrar.
+    # A REGRA: a bateria pesada corre quando a PRONTIDÃO do PR muda, e não
+    # quando o código muda.
     #
-    # Por empurrão continua a correr como até aqui — até `FILA_DE_FUSAO` valer
-    # `sim`, em Settings → Secrets and variables → Actions → Variables. Está
-    # atrás de uma variável e não de um commit porque desligar isto sem a fila
-    # ligada deixa as regiões e as auditorias sem ninguém a olhar por elas
-    # antes da fusão. A ordem é: ligar a fila, ver uma passar, e só então pôr a
-    # variável a `sim`.
+    # Abrir, reabrir, sair de rascunho — nesses corre. Empurrar mais um commit
+    # — não corre. Precisa dela outra vez, põe a etiqueta `bateria` e ela
+    # corre; tirar e voltar a pôr manda-a correr de novo.
+    #
+    # **A FILA DE FUSÃO NÃO ESTÁ DISPONÍVEL AQUI, e foi verificado.** Era esse
+    # o desenho: `merge_group` corre uma vez por PR, sobre o código já
+    # combinado com o `main`. Mas a fila configura-se por rulesets, e a página
+    # de Settings deste repositório diz, por escrito: «Your rulesets won't be
+    # enforced on this private repository until you move to GitHub Team
+    # organization account.» Repositório privado em conta pessoal: não há.
+    #
+    # Esta regra é o substituto, e recupera quase tudo. Na amostra das cem
+    # execuções de PR a bateria correu 56 vezes para 14 ramos; a correr uma vez
+    # por PR são 14. São ~42 execuções pesadas a menos, ~9 min cada.
+    #
+    # O QUE SE PERDE, e fica dito: um empurrão depois de o PR estar pronto não
+    # volta a passar pela bateria. Hoje passava — quarenta e duas vezes no
+    # mesmo ramo, que é o problema que isto resolve — e a etiqueta é a saída
+    # para quando se quiser mesmo. Quem funde um PR com código empurrado depois
+    # da última bateria sabe o que está a fazer, ou põe a etiqueta.
+    #
+    # O `merge_group` fica de pé e não custa nada: no dia em que isto mudar
+    # para uma organização Team, a fila liga-se, põe-se `FILA_DE_FUSAO` a `sim`
+    # em Settings → Variables, e a bateria deixa de correr do lado do PR porque
+    # a fila passa a cobri-la — sobre o código combinado, que é melhor.
     needs: qualidade
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
        vars.FILA_DE_FUSAO != 'sim' &&
        github.event.pull_request.draft == false &&
-       needs.qualidade.outputs.so_documentacao != 'sim')
+       needs.qualidade.outputs.so_documentacao != 'sim' &&
+       ((github.event.action != 'labeled' && github.event.action != 'synchronize') ||
+        contains(github.event.pull_request.labels.*.name, 'bateria')))
 
     steps:
       - uses: actions/checkout@v7
