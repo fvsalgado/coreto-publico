@@ -172,9 +172,27 @@ function semFugas(corpo, host, caminho) {
     `${HOST_MT}/acessibilidade publica a declaração de acessibilidade`,
   );
   const privacidade = await pagina(HOST_MT, '/privacidade');
+  /*
+   * Duas afirmações e não uma, e a segunda é a que interessa.
+   *
+   * Isto procurava a frase `responsável pelo tratamento` em minúsculas, que
+   * era como a política a escrevia dentro de «O responsável … é a …». A 0158
+   * trocou a frase por uma lista de definições — porque o artigo cravado
+   * produzia «é a Fábio Salgado» quando quem responde é uma pessoa — e o
+   * rótulo passou a ter maiúscula. A asserção reprovou sobre uma página que
+   * continuava a dizer exatamente o que ela queria provar.
+   *
+   * Aproveita-se para a pôr a perguntar o que quer mesmo: não que as palavras
+   * lá estejam, mas que **esteja lá um nome**. A versão antiga passava numa
+   * página que escrevesse o rótulo e não nomeasse ninguém.
+   */
   afirmar(
-    privacidade.includes('responsável pelo tratamento'),
-    `${HOST_MT}/privacidade publica a política de privacidade, com quem responde por ela`,
+    privacidade.includes('Responsável pelo tratamento'),
+    `${HOST_MT}/privacidade publica a política de privacidade, com o rótulo de quem responde`,
+  );
+  afirmar(
+    privacidade.includes('Comunidade Intermunicipal do Médio Tejo'),
+    `${HOST_MT}/privacidade nomeia quem responde pelo tratamento, e não só o rótulo`,
   );
 
   // O isolamento visto do lado do Médio Tejo: um concelho da Travessia não
