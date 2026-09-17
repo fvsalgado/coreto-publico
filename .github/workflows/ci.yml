@@ -10,6 +10,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+  # A fila de fusão, quando estiver ligada. É o evento que corre contra o
+  # candidato a fusão — o código deste PR já com o `main` de agora por baixo —,
+  # que é a árvore sobre a qual a bateria pesada devia opinar e hoje não opina:
+  # ela corre sobre a ponta do ramo, que pode ter saído do `main` há dias.
+  merge_group:
+
 # Uma execução por ramo. Um «push» novo torna a execução anterior irrelevante
 # antes de ela acabar, e deixá-la a correr só atrasa a que interessa.
 concurrency:
@@ -24,6 +30,25 @@ jobs:
     name: Qualidade
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # No push para `main` que traz um PR, isto já correu — sobre esta árvore,
+    # no PR que a fundiu. Repeti-lo custa três minutos faturados por fusão para
+    # reconfirmar um verde de minutos antes. Medido: os últimos quarenta
+    # commits de `main` entraram todos por PR, trinta e um esmagados e nove por
+    # commit de fusão, e nenhum sem número.
+    #
+    # A rede é a condição, e não a confiança: um push cuja mensagem NÃO traz
+    # `(#` não veio de um PR, e esse corre tudo. É o caso do empurrão directo
+    # para `main` — que hoje não acontece, e no dia em que acontecer não passa
+    # sem ninguém olhar.
+    #
+    # O Migrações continua a correr nos dois eventos, de propósito: é o único
+    # que faz uma pergunta que o PR não pode fazer — se a base de PRODUÇÃO tem
+    # as migrações deste commit —, e foi ele que apanhou a avaria de 7 de
+    # setembro. Um minuto por fusão é o preço certo dessa pergunta.
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(#')
 
     # A ação do gitleaks lê a lista de commits do PR para saber o que varrer, e
     # sem `pull-requests: read` a API responde 403 «Resource not accessible by
@@ -302,11 +327,34 @@ jobs:
     # depressa. A bateria pesada corre quando o PR se diz pronto, e torna a
     # correr a cada empurrão depois disso. Nada se funde sem ela: o que protege
     # `main` é o que corre com o PR já fora de rascunho.
+    # A CONTA QUE ESTA CONDIÇÃO EXISTE PARA RESOLVER, medida a 17 de setembro
+    # sobre as últimas cem execuções de PR (doze dias):
+    #
+    #     um ramo   claude/coreto-analysis-improvements-fkbj6b   83 execuções
+    #     os outros treze ramos juntos                           17 execuções
+    #
+    # Nesse ramo a bateria pesada correu QUARENTA E DUAS VEZES, e vale 79% dos
+    # minutos de PR do período. Não é um defeito do desenho: a mediana dos
+    # outros ramos é uma execução. É um ramo demorado, fora de rascunho, a ser
+    # empurrado durante doze dias — e o desenho de cima presume o contrário,
+    # que se fica em rascunho enquanto se itera.
+    #
+    # `merge_group` corre sempre: é a fila de fusão, acontece uma vez por PR e
+    # é a única altura em que a bateria vê o código que vai mesmo entrar.
+    #
+    # Por empurrão continua a correr como até aqui — até `FILA_DE_FUSAO` valer
+    # `sim`, em Settings → Secrets and variables → Actions → Variables. Está
+    # atrás de uma variável e não de um commit porque desligar isto sem a fila
+    # ligada deixa as regiões e as auditorias sem ninguém a olhar por elas
+    # antes da fusão. A ordem é: ligar a fila, ver uma passar, e só então pôr a
+    # variável a `sim`.
     needs: qualidade
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      needs.qualidade.outputs.so_documentacao != 'sim'
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+       vars.FILA_DE_FUSAO != 'sim' &&
+       github.event.pull_request.draft == false &&
+       needs.qualidade.outputs.so_documentacao != 'sim')
 
     # A versão executável da promessa comercial: a segunda CIM nasce com um
     # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
@@ -433,11 +481,34 @@ jobs:
     #
     # Só em PR e só com código, pela razão escrita no trabalho anterior.
     # Fora de rascunho também, pela conta escrita no trabalho anterior.
+    # A CONTA QUE ESTA CONDIÇÃO EXISTE PARA RESOLVER, medida a 17 de setembro
+    # sobre as últimas cem execuções de PR (doze dias):
+    #
+    #     um ramo   claude/coreto-analysis-improvements-fkbj6b   83 execuções
+    #     os outros treze ramos juntos                           17 execuções
+    #
+    # Nesse ramo a bateria pesada correu QUARENTA E DUAS VEZES, e vale 79% dos
+    # minutos de PR do período. Não é um defeito do desenho: a mediana dos
+    # outros ramos é uma execução. É um ramo demorado, fora de rascunho, a ser
+    # empurrado durante doze dias — e o desenho de cima presume o contrário,
+    # que se fica em rascunho enquanto se itera.
+    #
+    # `merge_group` corre sempre: é a fila de fusão, acontece uma vez por PR e
+    # é a única altura em que a bateria vê o código que vai mesmo entrar.
+    #
+    # Por empurrão continua a correr como até aqui — até `FILA_DE_FUSAO` valer
+    # `sim`, em Settings → Secrets and variables → Actions → Variables. Está
+    # atrás de uma variável e não de um commit porque desligar isto sem a fila
+    # ligada deixa as regiões e as auditorias sem ninguém a olhar por elas
+    # antes da fusão. A ordem é: ligar a fila, ver uma passar, e só então pôr a
+    # variável a `sim`.
     needs: qualidade
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      needs.qualidade.outputs.so_documentacao != 'sim'
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+       vars.FILA_DE_FUSAO != 'sim' &&
+       github.event.pull_request.draft == false &&
+       needs.qualidade.outputs.so_documentacao != 'sim')
 
     steps:
       - uses: actions/checkout@v7
