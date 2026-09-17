@@ -9,6 +9,12 @@ build/
 out/
 *.tsbuildinfo
 
+# As caches incrementais do eslint e do prettier. Locais por natureza — o que
+# lá está descreve os ficheiros desta máquina — e guardadas entre execuções do
+# CI pelo `actions/cache`, não pelo Git.
+.eslintcache
+
+
 # Env files — nunca commitar segredos
 .env
 .env.local
