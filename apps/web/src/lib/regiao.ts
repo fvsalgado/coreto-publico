@@ -105,12 +105,38 @@ export interface Regiao {
   promotor: PromotorDaRegiao | null;
   ogImage: { caminho: string; alt: string } | null;
   /** RGPD: quem responde pelo tratamento. Sem coluna própria, é a CIM. */
-  responsavelPeloTratamento: { nome: string; url: string } | null;
+  responsavelPeloTratamento: ResponsavelPeloTratamento | null;
   /** A contagem que a própria região declara — a mesma das schema-checks. */
   concelhosDeclarados: number;
   /** A contagem por extenso: «onze». Pré-calculada porque a prosa a usa muito. */
   concelhosPorExtenso: string;
   bbox: { latMin: number; latMax: number; lonMin: number; lonMax: number };
+}
+
+/**
+ * Quem responde pelos dados pessoais de uma agenda, e como se contacta.
+ *
+ * Nasceu com duas linhas — um nome e um endereço web — porque o caso previsto
+ * era uma CIM, que tem sítio próprio. A 0158 acrescentou o resto do que o
+ * `docs/RGPD.md` pede e o `docs/LICENCIAR.md` classifica como o que impede
+ * assinar: o NIF, a morada, o contacto para direitos, e o encarregado de
+ * proteção de dados — que **não é opcional** quando quem responde é uma
+ * autoridade pública (RGPD, artigo 37.º, n.º 1, alínea a)), e cujo contacto o
+ * n.º 7 do mesmo artigo manda publicar.
+ *
+ * Tudo anulável menos o nome: uma região com responsável declarado e o resto
+ * por preencher mostra o que tem, e o que não tem não se inventa.
+ */
+export interface ResponsavelPeloTratamento {
+  nome: string;
+  /** `null` quando quem responde não tem sítio próprio — uma pessoa, por exemplo. */
+  url: string | null;
+  nif: string | null;
+  morada: string | null;
+  /** O contacto para o exercício de direitos; a nulo, vale o email da região. */
+  email: string | null;
+  epd: string | null;
+  epdContacto: string | null;
 }
 
 /** Uma linha de `public.regions`, com os nomes das colunas. */
@@ -140,6 +166,12 @@ export interface LinhaDeRegiao {
   og_image_alt: string | null;
   data_controller_name: string | null;
   data_controller_url: string | null;
+  /** 0158 — o resto do que o RGPD pede sobre quem responde. */
+  data_controller_nif: string | null;
+  data_controller_address: string | null;
+  data_controller_email: string | null;
+  data_controller_dpo: string | null;
+  data_controller_dpo_contact: string | null;
   expected_municipality_count: number;
   bbox_lat_min: number;
   bbox_lat_max: number;
@@ -229,10 +261,41 @@ export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
       linha.og_image_path !== null
         ? { caminho: linha.og_image_path, alt: linha.og_image_alt ?? linha.name }
         : null,
-    responsavelPeloTratamento: {
-      nome: linha.data_controller_name ?? linha.cim_name,
-      url: linha.data_controller_url ?? linha.cim_url,
-    },
+    /*
+     * O nome e o endereço viajam **juntos**, e antes não viajavam.
+     *
+     * Cada um caía na omissão por sua conta: `data_controller_name ??
+     * cim_name` e `data_controller_url ?? cim_url`. Bastava declarar o
+     * responsável e não ter sítio próprio — uma pessoa singular, que é
+     * exatamente o caso da região de montra — para a política de privacidade
+     * publicar o **nome dessa pessoa com uma ligação para o sítio da CIM**.
+     * Duas omissões independentes a produzir uma terceira entidade que não
+     * existe.
+     *
+     * Agora a decisão é uma só: ou a região declara quem responde, e então é
+     * dela tudo o que se mostra — inclusive não ter endereço —, ou não declara
+     * nada e vale a CIM inteira, como desde a 0101.
+     */
+    responsavelPeloTratamento:
+      linha.data_controller_name !== null
+        ? {
+            nome: linha.data_controller_name,
+            url: linha.data_controller_url,
+            nif: linha.data_controller_nif,
+            morada: linha.data_controller_address,
+            email: linha.data_controller_email,
+            epd: linha.data_controller_dpo,
+            epdContacto: linha.data_controller_dpo_contact,
+          }
+        : {
+            nome: linha.cim_name,
+            url: linha.cim_url,
+            nif: null,
+            morada: null,
+            email: null,
+            epd: null,
+            epdContacto: null,
+          },
     concelhosDeclarados: linha.expected_municipality_count,
     concelhosPorExtenso: numeroPorExtenso(linha.expected_municipality_count),
     bbox: {

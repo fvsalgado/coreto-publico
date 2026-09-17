@@ -49,6 +49,11 @@ const LINHA_DO_MEDIO_TEJO: LinhaDeRegiao = {
     'Coreto de ferro estilizado sobre o turquesa do Médio Tejo, com a frase «A agenda cultural do Médio Tejo» e os nomes dos onze concelhos.',
   data_controller_name: null,
   data_controller_url: null,
+  data_controller_nif: null,
+  data_controller_address: null,
+  data_controller_email: null,
+  data_controller_dpo: null,
+  data_controller_dpo_contact: null,
   expected_municipality_count: 11,
   bbox_lat_min: 39.3,
   bbox_lat_max: 39.85,
@@ -87,6 +92,11 @@ const LINHA_DA_TRAVESSIA: LinhaDeRegiao = {
   og_image_alt: null,
   data_controller_name: null,
   data_controller_url: null,
+  data_controller_nif: null,
+  data_controller_address: null,
+  data_controller_email: null,
+  data_controller_dpo: null,
+  data_controller_dpo_contact: null,
   expected_municipality_count: 2,
   bbox_lat_min: 39.85,
   bbox_lat_max: 40.2,
@@ -154,6 +164,58 @@ describe('regiaoDaLinha', () => {
     expect(mt.responsavelPeloTratamento).toEqual({
       nome: 'Comunidade Intermunicipal do Médio Tejo',
       url: 'https://mediotejo.pt',
+      nif: null,
+      morada: null,
+      email: null,
+      epd: null,
+      epdContacto: null,
+    });
+  });
+
+  it('um responsável sem sítio próprio não empresta o endereço da CIM', () => {
+    /*
+     * O defeito que a 0158 fechou, e que ninguém via porque exigia duas
+     * condições ao mesmo tempo: responsável declarado E sem endereço. As duas
+     * omissões eram independentes — `data_controller_name ?? cim_name` de um
+     * lado, `data_controller_url ?? cim_url` do outro —, e juntas publicavam o
+     * nome de uma pessoa com uma ligação para o sítio de uma comunidade
+     * intermunicipal. Uma terceira entidade, que não existe.
+     */
+    const pessoa = regiaoDaLinha({
+      ...LINHA_DO_MEDIO_TEJO,
+      data_controller_name: 'Fulana de Tal',
+      data_controller_url: null,
+    });
+    expect(pessoa.responsavelPeloTratamento).toEqual({
+      nome: 'Fulana de Tal',
+      url: null,
+      nif: null,
+      morada: null,
+      email: null,
+      epd: null,
+      epdContacto: null,
+    });
+  });
+
+  it('declarado o responsável, é dele tudo o que a política mostra', () => {
+    const proprio = regiaoDaLinha({
+      ...LINHA_DO_MEDIO_TEJO,
+      data_controller_name: 'CIM do Médio Tejo',
+      data_controller_url: 'https://exemplo.pt',
+      data_controller_nif: '508000000',
+      data_controller_address: 'Rua de Exemplo, 1\n2300-000 Tomar',
+      data_controller_email: 'dados@exemplo.pt',
+      data_controller_dpo: 'Encarregada de Exemplo',
+      data_controller_dpo_contact: 'epd@exemplo.pt',
+    });
+    expect(proprio.responsavelPeloTratamento).toEqual({
+      nome: 'CIM do Médio Tejo',
+      url: 'https://exemplo.pt',
+      nif: '508000000',
+      morada: 'Rua de Exemplo, 1\n2300-000 Tomar',
+      email: 'dados@exemplo.pt',
+      epd: 'Encarregada de Exemplo',
+      epdContacto: 'epd@exemplo.pt',
     });
   });
 });
