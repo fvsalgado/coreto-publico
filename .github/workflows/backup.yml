@@ -10,7 +10,19 @@ on:
     #
     # O cron do GitHub é em UTC: isto é 02:40 em Lisboa no inverno e 03:40 no
     # verão. Ver o cabeçalho de `scrape.yml`.
-    - cron: '40 2 * * *'
+    #
+    # SEMANAL desde 17 de setembro de 2026, por decisão do editor — era
+    # diária. São ~45 minutos de Actions por mês poupados.
+    #
+    # O QUE ISSO CUSTA, para ficar dito: a janela de perda passa de um dia a
+    # sete. Numa base de dados financeira seria mau negócio; nesta não é tanto,
+    # porque quase tudo o que aqui está volta a ser recolhido das fontes pelo
+    # `scrape.yml` — o que NÃO volta é o trabalho humano de moderação: o que
+    # foi aprovado, recusado, corrigido à mão ou escrito de raiz. É esse o
+    # trabalho que uma semana má leva.
+    #
+    # Ao domingo, para a cópia apanhar a semana fechada.
+    - cron: '40 2 * * 0'
 
   workflow_dispatch:
 
