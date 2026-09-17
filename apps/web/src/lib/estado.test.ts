@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { avaliarAgenda, avaliarRecolha, fraseDaFonte, saudeDaFonte, veredito } from './estado';
+import {
+  avaliarAgenda,
+  avaliarRecolha,
+  desdeQuandoPorLer,
+  fraseDaFonte,
+  leituraDoConcelho,
+  saudeDaFonte,
+  veredito,
+} from './estado';
 
 /**
  * O que decide se alguém fica descansado.
@@ -202,5 +210,83 @@ describe('uma fonte que derivou aparece como atrasada ao terceiro dia', () => {
     const tresNoites = avaliarRecolha([fonte('cm-tomar', haDias(3), true, haDias(0))], AGORA);
     expect(tresNoites.atrasadas).toHaveLength(1);
     expect(veredito(tresNoites, { total: 40, vazios: [] }).grau).toBe('atencao');
+  });
+});
+
+/**
+ * A distinção que dá título à página de um concelho.
+ *
+ * Não é um detalhe de redação: enquanto isto não existiu, a página de Mação
+ * dizia «Ainda não há programação publicada» com a fonte da câmara bloqueada
+ * há cinco dias. Cada caso abaixo é uma frase diferente que a página pode
+ * dizer, e o que a separa das outras.
+ */
+describe('leituraDoConcelho', () => {
+  it('sem conseguir ler as fontes, não sabe — e não finge que sabe', () => {
+    // O caso que separa isto de tudo o resto: `null` não é «zero fontes».
+    expect(leituraDoConcelho(null)).toEqual({ tipo: 'nao-sei' });
+  });
+
+  it('sem fontes ligadas, não é avaria: é um concelho que ninguém lê', () => {
+    expect(leituraDoConcelho(avaliarRecolha([fonte('macao', null, false)], AGORA))).toEqual({
+      tipo: 'sem-vigilancia',
+    });
+    // Uma região acabada de nascer está toda assim, e nenhuma delas está
+    // partida.
+    expect(leituraDoConcelho(avaliarRecolha([], AGORA))).toEqual({ tipo: 'sem-vigilancia' });
+  });
+
+  it('com tudo lido de fresco, o silêncio é do concelho e pode dizer-se', () => {
+    const recolha = avaliarRecolha([fonte('a', haDias(1)), fonte('b', haDias(0))], AGORA);
+    expect(leituraDoConcelho(recolha)).toEqual({ tipo: 'em-dia' });
+  });
+
+  it('uma fonte parada chega para o silêncio deixar de ser do concelho', () => {
+    // O caso de Mação: duas fontes, uma lida hoje e outra bloqueada. A página
+    // não pode dizer que não há nada só porque a que funciona não trouxe nada.
+    const recolha = avaliarRecolha(
+      [fonte('boa', haDias(0)), fonte('bloqueada', haDias(20))],
+      AGORA,
+    );
+    const leitura = leituraDoConcelho(recolha);
+    expect(leitura.tipo).toBe('por-ler');
+    expect(leitura.tipo === 'por-ler' && leitura.fontes.map((f) => f.id)).toEqual(['bloqueada']);
+  });
+
+  it('as atrasadas e as por estrear contam como por ler, e as desligadas não', () => {
+    const recolha = avaliarRecolha(
+      [
+        fonte('parada', haDias(20)),
+        fonte('atrasada', haDias(4)),
+        fonte('por-estrear', null),
+        fonte('desligada', haDias(30), false),
+      ],
+      AGORA,
+    );
+    const leitura = leituraDoConcelho(recolha);
+    expect(leitura.tipo === 'por-ler' && leitura.fontes.map((f) => f.id).sort()).toEqual([
+      'atrasada',
+      'parada',
+      'por-estrear',
+    ]);
+  });
+});
+
+describe('desdeQuandoPorLer', () => {
+  it('dá a leitura boa mais recente, que é até quando isto foi verdade', () => {
+    const recolha = avaliarRecolha(
+      [fonte('velha', haDias(40)), fonte('recente', haDias(5))],
+      AGORA,
+    );
+    const leitura = leituraDoConcelho(recolha);
+    const desde = leitura.tipo === 'por-ler' ? desdeQuandoPorLer(leitura.fontes) : null;
+    expect(desde).toBe(haDias(5));
+  });
+
+  it('sem nenhuma leitura boa, não inventa uma data', () => {
+    expect(desdeQuandoPorLer([])).toBeNull();
+    const recolha = avaliarRecolha([fonte('nunca', null)], AGORA);
+    const leitura = leituraDoConcelho(recolha);
+    expect(leitura.tipo === 'por-ler' && desdeQuandoPorLer(leitura.fontes)).toBeNull();
   });
 });

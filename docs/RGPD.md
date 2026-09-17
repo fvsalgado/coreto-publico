@@ -17,9 +17,16 @@ publicada que vincula, e este documento que está errado.
 > por região**: quem responde pelos dados de cada agenda é uma decisão
 > contratual entre o titular do software e cada CIM, tomada fora deste
 > repositório (ver `NOVA-CIM.md`). O que a região decidir escreve-se nas
-> colunas `data_controller_name`/`data_controller_url` da sua linha em
-> `regions` — sem elas, o sítio apresenta a CIM promotora — e a página
-> `/privacidade` de cada domínio mostra o responsável **dessa** região.
+> colunas `data_controller_*` da sua linha em `regions` — sem elas, o sítio
+> apresenta a CIM promotora — e a página `/privacidade` de cada domínio mostra
+> o responsável **dessa** região.
+>
+> **As seis linhas deste quadro cabem todas na tabela desde a 0158**, e
+> editam-se no painel, na ficha da região: nome, endereço, NIF, morada,
+> contacto para direitos, encarregado de proteção de dados e contacto dele.
+> Até lá só cabiam as duas primeiras, e por isso este quadro era um pedido sem
+> sítio para onde ir. O que ficar em branco não aparece na política publicada —
+> o que não se sabe não se mostra.
 >
 > | Campo                                     | Valor |
 > | ----------------------------------------- | ----- |
