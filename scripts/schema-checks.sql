@@ -402,7 +402,16 @@ begin
                              -- coisa e continua onde estava: leva seletores,
                              -- exclusões e chaves de caminho. O nome do leitor
                              -- é público, a configuração dele nunca.
-                             'adapter');
+                             'adapter',
+                             -- A pausa declarada, pública desde a 0159. Uma
+                             -- agenda que diz «em pausa até 21 de setembro, à
+                             -- espera de resposta da CIM» é honesta com quem a
+                             -- lê; a mesma agenda a esconder a pausa e a dizer
+                             -- «tudo bem» é um alarme calado às escondidas, que
+                             -- é pior do que não ter pausa nenhuma. O motivo vem
+                             -- com ela de propósito: uma pausa sem razão à vista
+                             -- é uma que ninguém sabe rever.
+                             'pausada_ate', 'pausa_motivo');
   assert n = 0, format('%s colunas internas das fontes estão legíveis pelo público', n);
 
   -- ---- E o público lê mesmo o que tem de ler ----
@@ -435,9 +444,15 @@ begin
     from information_schema.column_privileges
    where table_schema = 'public' and table_name = 'sources'
      and grantee = 'anon' and privilege_type = 'SELECT';
-  -- Doze desde a 0139, que pôs o nome do leitor na rua e deixou a
+  -- Catorze desde a 0159, que acrescentou a pausa declarada e o motivo dela.
+  -- Eram doze desde a 0139, que pôs o nome do leitor na rua e deixou a
   -- configuração onde estava.
-  assert n = 12, format('esperavam-se 12 colunas públicas nas fontes, há %s', n);
+  --
+  -- A contagem existe ao lado da lista de nomes logo acima, e não em vez dela:
+  -- a lista apanha uma coluna interna que se abra por engano, e o número apanha
+  -- quem acrescente uma à lista sem pensar duas vezes. São duas perguntas, e é
+  -- a segunda que obriga a passar por aqui.
+  assert n = 14, format('esperavam-se 14 colunas públicas nas fontes, há %s', n);
 
   -- ---- O acesso resolvido diz o que a ficha diria ----
   --

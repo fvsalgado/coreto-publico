@@ -8,7 +8,13 @@ on:
   # Os outros três são os de omissão, e escrevem-se porque declarar `types`
   # substitui a lista inteira em vez de a acrescentar.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+
+  # A fila de fusão, quando estiver ligada. É o evento que corre contra o
+  # candidato a fusão — o código deste PR já com o `main` de agora por baixo —,
+  # que é a árvore sobre a qual a bateria pesada devia opinar e hoje não opina:
+  # ela corre sobre a ponta do ramo, que pode ter saído do `main` há dias.
+  merge_group:
 
 # Uma execução por ramo. Um «push» novo torna a execução anterior irrelevante
 # antes de ela acabar, e deixá-la a correr só atrasa a que interessa.
@@ -24,6 +30,25 @@ jobs:
     name: Qualidade
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # No push para `main` que traz um PR, isto já correu — sobre esta árvore,
+    # no PR que a fundiu. Repeti-lo custa três minutos faturados por fusão para
+    # reconfirmar um verde de minutos antes. Medido: os últimos quarenta
+    # commits de `main` entraram todos por PR, trinta e um esmagados e nove por
+    # commit de fusão, e nenhum sem número.
+    #
+    # A rede é a condição, e não a confiança: um push cuja mensagem NÃO traz
+    # `(#` não veio de um PR, e esse corre tudo. É o caso do empurrão directo
+    # para `main` — que hoje não acontece, e no dia em que acontecer não passa
+    # sem ninguém olhar.
+    #
+    # O Migrações continua a correr nos dois eventos, de propósito: é o único
+    # que faz uma pergunta que o PR não pode fazer — se a base de PRODUÇÃO tem
+    # as migrações deste commit —, e foi ele que apanhou a avaria de 7 de
+    # setembro. Um minuto por fusão é o preço certo dessa pergunta.
+    if: >-
+      github.event_name != 'push' ||
+      !contains(github.event.head_commit.message, '(#')
 
     # A ação do gitleaks lê a lista de commits do PR para saber o que varrer, e
     # sem `pull-requests: read` a API responde 403 «Resource not accessible by
@@ -91,6 +116,112 @@ jobs:
       # os testes têm de passar num fork, sem base de dados e sem chaves. Se um
       # dia algum destes passos precisar de um segredo para passar, o que se
       # partiu foi a degradação graciosa — não o CI.
+      # AS CACHES INCREMENTAIS DAS TRÊS FERRAMENTAS QUE CONTAM.
+      #
+      # O trabalho custava três minutos faturados por correr em 157 s, e a
+      # faturação arredonda cada trabalho para cima: abaixo de 120 s passa a
+      # pagar dois. Corre ~230 vezes por mês, pelo que os quarenta segundos que
+      # faltavam valiam ~230 minutos.
+      #
+      # MEDIDO, a frio e a quente, nesta árvore (4 núcleos, os mesmos que o
+      # executor):
+      #
+      #     prettier   13.6 s → 2.2 s      cache 112 KB
+      #     tsc        15.9 s → 4.6 s      `incremental` já estava ligado no
+      #                                    tsconfig.base.json; o que faltava
+      #                                    era o .tsbuildinfo sobreviver
+      #     eslint     16.9 s → 2.0 s      cache 112 KB
+      #
+      # São ~38 s aqui e ~52 s no executor, onde estes três passos custam 65 s.
+      # O trabalho fica por volta dos 108 s.
+      #
+      # `--cache-strategy content` E NÃO A OMISSÃO, que é por data de
+      # modificação: um checkout novo escreve ficheiros novos com datas novas, e
+      # uma cache que decide por datas não acerta uma única vez em CI. Pelo
+      # conteúdo, acerta em tudo o que o commit não tocou.
+      #
+      # A GUARDA CONTINUA A GUARDAR, e foi verificado em vez de presumido:
+      # plantou-se um `const naoUsado = 1;` num ficheiro já em cache e o eslint
+      # apanhou-o à mesma. Uma cache que tapasse um erro novo não era uma cache,
+      # era uma verificação desligada.
+      #
+      # DUAS COISAS MEDIDAS E RECUSADAS, para não se voltarem a tentar sem
+      # medir:
+      #
+      #   * **Correr os três em paralelo** com `&` e `wait`. Poupa 7,7 s dos
+      #     35,4 s e não os 50% que se esperava — são quatro núcleos e três
+      #     ferramentas a disputá-los. E custava o que não se paga: é o nome do
+      #     passo que aparece numa execução falhada, e três verificações debaixo
+      #     de um nome só é a armadilha que o trabalho «Auditorias do sítio» já
+      #     documenta neste ficheiro.
+      #
+      #   * **A cache de compilação do Next** entrou, e tinha sido recusada.
+      #     Vale a pena ficar escrito porquê, porque a premissa é que caiu e
+      #     não a conta.
+      #
+      #     Escrevi aqui que ficava de fora por serem 95 MB por gravação «e
+      #     porque sem ela já se passa abaixo dos 120 s». A primeira execução
+      #     quente a sério deu **119 s** — passa, e passa por UM SEGUNDO. Uma
+      #     margem de um segundo não é margem: um executor mais lento, um teste
+      #     a mais ou um módulo a mais na compilação põem o trabalho de volta
+      #     nos três minutos, e a poupança inteira evapora-se sem ninguém dar
+      #     por isso, porque o CI continua verde.
+      #
+      #     MEDIDO DEPOIS DE ENTRAR, na execução 35216705371, tentativa 2, que
+      #     é a primeira com as quatro caches quentes:
+      #
+      #         Formatação         18 s → 3 s
+      #         Tipos              22 s → 7 s
+      #         Análise estática   26 s → 5 s
+      #         Compilação         36 s → 9 s
+      #         restaurar a cache        3 s   (95 MB)
+      #         ------------------------------------
+      #         o trabalho        163 s → 90 s
+      #
+      #     Noventa segundos: dois minutos faturados com trinta de folga, em vez
+      #     do único segundo que havia antes desta cache entrar.
+      #
+      #     A conta dos 95 MB continua de pé e não se ignora: o GitHub despeja
+      #     as caches não usadas ao fim de sete dias e aplica LRU sobre os 10 GB
+      #     do repositório, pelo que estas rodam sozinhas. A cache do pnpm, que
+      #     é usada em todas as execuções, é a última a sair por LRU — mas se um
+      #     dia o `pnpm install` começar a demorar mais do que os três segundos
+      #     de hoje, é aqui que se olha primeiro.
+      - name: Caches do prettier, do tsc, do eslint e da compilação
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/web/.next/cache
+            node_modules/.cache/prettier
+            .eslintcache
+            apps/web/.eslintcache
+            packages/core/.eslintcache
+            packages/ingest/.eslintcache
+            apps/web/tsconfig.tsbuildinfo
+            packages/core/tsconfig.tsbuildinfo
+            packages/ingest/tsconfig.tsbuildinfo
+          # O SHA na chave faz cada execução gravar a sua, e as `restore-keys`
+          # fazem qualquer uma delas servir de ponto de partida. É o que mantém
+          # a cache a acompanhar o ramo em vez de envelhecer presa ao lockfile.
+          #
+          # A ARMADILHA, QUE SE PAGOU UMA VEZ AQUI: mexer nesta lista de
+          # CAMINHOS invalida as caches que já existem. O `actions/cache`
+          # calcula uma «versão» a partir dos caminhos, e uma cache gravada com
+          # outra lista fica invisível **mesmo com a chave a bater certo**.
+          # Aconteceu ao acrescentar o `.next/cache`: a execução seguinte
+          # restaurou em zero segundos e correu fria dos quatro lados, e o
+          # número que se leu não era o número que se procurava.
+          #
+          # Quem acrescentar aqui um caminho paga uma execução fria — uma só, e
+          # à espera. O que não se pode é ler essa execução como se fosse
+          # quente e concluir que a cache não serve.
+          # A cache da compilação leva 95 MB; as outras três, pouco mais de
+          # 1 MB ao todo.
+          key: qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-${{ github.sha }}
+          restore-keys: |
+            qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-
+            qualidade-v1-
+
       - name: Formatação
         run: pnpm format:check
 
@@ -302,11 +433,55 @@ jobs:
     # depressa. A bateria pesada corre quando o PR se diz pronto, e torna a
     # correr a cada empurrão depois disso. Nada se funde sem ela: o que protege
     # `main` é o que corre com o PR já fora de rascunho.
+    # A CONTA QUE ESTA CONDIÇÃO EXISTE PARA RESOLVER, medida a 17 de setembro
+    # sobre as últimas cem execuções de PR (doze dias):
+    #
+    #     um ramo   claude/coreto-analysis-improvements-fkbj6b   83 execuções
+    #     os outros treze ramos juntos                           17 execuções
+    #
+    # Nesse ramo a bateria pesada correu QUARENTA E DUAS VEZES, e vale 79% dos
+    # minutos de PR do período. Não é um defeito do desenho: a mediana dos
+    # outros ramos é uma execução. É um ramo demorado, fora de rascunho, a ser
+    # empurrado durante doze dias — e o desenho de cima presume o contrário,
+    # que se fica em rascunho enquanto se itera.
+    #
+    # A REGRA: a bateria pesada corre quando a PRONTIDÃO do PR muda, e não
+    # quando o código muda.
+    #
+    # Abrir, reabrir, sair de rascunho — nesses corre. Empurrar mais um commit
+    # — não corre. Precisa dela outra vez, põe a etiqueta `bateria` e ela
+    # corre; tirar e voltar a pôr manda-a correr de novo.
+    #
+    # **A FILA DE FUSÃO NÃO ESTÁ DISPONÍVEL AQUI, e foi verificado.** Era esse
+    # o desenho: `merge_group` corre uma vez por PR, sobre o código já
+    # combinado com o `main`. Mas a fila configura-se por rulesets, e a página
+    # de Settings deste repositório diz, por escrito: «Your rulesets won't be
+    # enforced on this private repository until you move to GitHub Team
+    # organization account.» Repositório privado em conta pessoal: não há.
+    #
+    # Esta regra é o substituto, e recupera quase tudo. Na amostra das cem
+    # execuções de PR a bateria correu 56 vezes para 14 ramos; a correr uma vez
+    # por PR são 14. São ~42 execuções pesadas a menos, ~9 min cada.
+    #
+    # O QUE SE PERDE, e fica dito: um empurrão depois de o PR estar pronto não
+    # volta a passar pela bateria. Hoje passava — quarenta e duas vezes no
+    # mesmo ramo, que é o problema que isto resolve — e a etiqueta é a saída
+    # para quando se quiser mesmo. Quem funde um PR com código empurrado depois
+    # da última bateria sabe o que está a fazer, ou põe a etiqueta.
+    #
+    # O `merge_group` fica de pé e não custa nada: no dia em que isto mudar
+    # para uma organização Team, a fila liga-se, põe-se `FILA_DE_FUSAO` a `sim`
+    # em Settings → Variables, e a bateria deixa de correr do lado do PR porque
+    # a fila passa a cobri-la — sobre o código combinado, que é melhor.
     needs: qualidade
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      needs.qualidade.outputs.so_documentacao != 'sim'
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+       vars.FILA_DE_FUSAO != 'sim' &&
+       github.event.pull_request.draft == false &&
+       needs.qualidade.outputs.so_documentacao != 'sim' &&
+       ((github.event.action != 'labeled' && github.event.action != 'synchronize') ||
+        contains(github.event.pull_request.labels.*.name, 'bateria')))
 
     # A versão executável da promessa comercial: a segunda CIM nasce com um
     # INSERT, sem um commit. O job levanta um Supabase efémero, aplica as
@@ -433,11 +608,55 @@ jobs:
     #
     # Só em PR e só com código, pela razão escrita no trabalho anterior.
     # Fora de rascunho também, pela conta escrita no trabalho anterior.
+    # A CONTA QUE ESTA CONDIÇÃO EXISTE PARA RESOLVER, medida a 17 de setembro
+    # sobre as últimas cem execuções de PR (doze dias):
+    #
+    #     um ramo   claude/coreto-analysis-improvements-fkbj6b   83 execuções
+    #     os outros treze ramos juntos                           17 execuções
+    #
+    # Nesse ramo a bateria pesada correu QUARENTA E DUAS VEZES, e vale 79% dos
+    # minutos de PR do período. Não é um defeito do desenho: a mediana dos
+    # outros ramos é uma execução. É um ramo demorado, fora de rascunho, a ser
+    # empurrado durante doze dias — e o desenho de cima presume o contrário,
+    # que se fica em rascunho enquanto se itera.
+    #
+    # A REGRA: a bateria pesada corre quando a PRONTIDÃO do PR muda, e não
+    # quando o código muda.
+    #
+    # Abrir, reabrir, sair de rascunho — nesses corre. Empurrar mais um commit
+    # — não corre. Precisa dela outra vez, põe a etiqueta `bateria` e ela
+    # corre; tirar e voltar a pôr manda-a correr de novo.
+    #
+    # **A FILA DE FUSÃO NÃO ESTÁ DISPONÍVEL AQUI, e foi verificado.** Era esse
+    # o desenho: `merge_group` corre uma vez por PR, sobre o código já
+    # combinado com o `main`. Mas a fila configura-se por rulesets, e a página
+    # de Settings deste repositório diz, por escrito: «Your rulesets won't be
+    # enforced on this private repository until you move to GitHub Team
+    # organization account.» Repositório privado em conta pessoal: não há.
+    #
+    # Esta regra é o substituto, e recupera quase tudo. Na amostra das cem
+    # execuções de PR a bateria correu 56 vezes para 14 ramos; a correr uma vez
+    # por PR são 14. São ~42 execuções pesadas a menos, ~9 min cada.
+    #
+    # O QUE SE PERDE, e fica dito: um empurrão depois de o PR estar pronto não
+    # volta a passar pela bateria. Hoje passava — quarenta e duas vezes no
+    # mesmo ramo, que é o problema que isto resolve — e a etiqueta é a saída
+    # para quando se quiser mesmo. Quem funde um PR com código empurrado depois
+    # da última bateria sabe o que está a fazer, ou põe a etiqueta.
+    #
+    # O `merge_group` fica de pé e não custa nada: no dia em que isto mudar
+    # para uma organização Team, a fila liga-se, põe-se `FILA_DE_FUSAO` a `sim`
+    # em Settings → Variables, e a bateria deixa de correr do lado do PR porque
+    # a fila passa a cobri-la — sobre o código combinado, que é melhor.
     needs: qualidade
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      needs.qualidade.outputs.so_documentacao != 'sim'
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+       vars.FILA_DE_FUSAO != 'sim' &&
+       github.event.pull_request.draft == false &&
+       needs.qualidade.outputs.so_documentacao != 'sim' &&
+       ((github.event.action != 'labeled' && github.event.action != 'synchronize') ||
+        contains(github.event.pull_request.labels.*.name, 'bateria')))
 
     steps:
       - uses: actions/checkout@v7

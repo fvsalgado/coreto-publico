@@ -33,7 +33,13 @@ export const DIAS_ATE_ATRASO = 2;
  */
 export const DIAS_ATE_PARAGEM = 7;
 
-export type SaudeDaFonte = 'em-dia' | 'atrasada' | 'parada' | 'por-estrear';
+/**
+ * `em-pausa` é o estado que faltava, e não é um grau de avaria: é a ausência
+ * de uma. Uma fonte em pausa está calada **por decisão de alguém**, com data
+ * de fim e com motivo escrito — ver a migração 0159. As outras quatro dizem
+ * o que a fonte fez; esta diz o que nós decidimos sobre ela.
+ */
+export type SaudeDaFonte = 'em-dia' | 'atrasada' | 'parada' | 'por-estrear' | 'em-pausa';
 
 /** O que uma página precisa de saber de uma fonte para dizer como ela está. */
 export interface FonteVigiada {
@@ -58,6 +64,17 @@ export interface FonteVigiada {
    * Não decide saúde nenhuma: decide se oito avarias são oito ou uma.
    */
   adapter?: string | null;
+  /**
+   * Até quando esta fonte está calada de propósito (0159), ou `null`.
+   *
+   * **Não impede que a recolha a tente.** Só impede que ela ponha o painel
+   * vermelho — o que se pausa é o alarme, nunca a leitura. Uma fonte em pausa
+   * que voltar a responder passa a `em-dia` sozinha na ronda seguinte, sem
+   * ninguém levantar a pausa.
+   */
+  pausada_ate?: string | null;
+  /** Porquê. Obrigatório enquanto a pausa durar — o CHECK da 0159 recusa uma sem ele. */
+  pausa_motivo?: string | null;
 }
 
 /** Dias inteiros entre dois instantes. Trunca: meio dia não é um dia. */
@@ -84,10 +101,37 @@ export function saudeDaFonte(ultimaLeitura: string | null, agora: Date): SaudeDa
   return 'parada';
 }
 
+/**
+ * Se a pausa desta fonte ainda está de pé neste instante.
+ *
+ * Uma data no passado responde `false`, e é aí que está a segurança inteira
+ * deste mecanismo: **a pausa acaba sozinha**. Ninguém tem de a levantar, nem
+ * de se lembrar dela. No dia seguinte ao fim, a fonte volta a ser avaliada
+ * pela régua de sempre e o alarme regressa por si.
+ *
+ * Um alarme que alguém desliga à mão fica desligado até alguém se lembrar. Foi
+ * para não construir isso que a pausa é uma data e não um booleano.
+ */
+export function pausaAtiva(fonte: FonteVigiada, agora: Date): boolean {
+  if (!fonte.pausada_ate) return false;
+  const ate = new Date(fonte.pausada_ate).getTime();
+  if (Number.isNaN(ate)) return false;
+  return ate > agora.getTime();
+}
+
 export interface FonteComSaude extends FonteVigiada {
   saude: SaudeDaFonte;
   /** Dias desde a última leitura boa; `null` numa fonte por estrear. */
   dias: number | null;
+  /**
+   * Houve uma pausa e ela acabou — e a fonte continua sem ser lida.
+   *
+   * É o único sinal deste módulo que vale mais do que o estado a que pertence.
+   * Uma fonte parada é um problema; uma fonte parada **cuja pausa expirou** é
+   * um problema que alguém prometeu rever numa data e não reviu, e essas são
+   * as que se perdem. Por isso o veredito fala desta antes de falar das outras.
+   */
+  pausaExpirada: boolean;
 }
 
 export interface EstadoDaRecolha {
@@ -97,6 +141,11 @@ export interface EstadoDaRecolha {
   atrasadas: FonteComSaude[];
   paradas: FonteComSaude[];
   porEstrear: FonteComSaude[];
+  /**
+   * As caladas de propósito. Não entram nas outras quatro — uma fonte está
+   * num cesto e num só — e por isso não contam para o veredito.
+   */
+  emPausa: FonteComSaude[];
 }
 
 /**
@@ -115,11 +164,25 @@ export function avaliarRecolha(
 ): EstadoDaRecolha {
   const vigiadas: FonteComSaude[] = fontes
     .filter((fonte) => fonte.is_enabled)
-    .map((fonte) => ({
-      ...fonte,
-      saude: saudeDaFonte(fonte.last_success_at, agora),
-      dias: fonte.last_success_at ? diasDesde(fonte.last_success_at, agora) : null,
-    }));
+    .map((fonte) => {
+      // A saúde verdadeira calcula-se sempre, esteja ou não em pausa: é ela
+      // que decide o que a fonte é no dia em que a pausa acabar, e é ela que
+      // alimenta o `pausaExpirada`. A pausa tapa-a, não a apaga.
+      const real = saudeDaFonte(fonte.last_success_at, agora);
+      const calada = pausaAtiva(fonte, agora);
+      return {
+        ...fonte,
+        saude: calada ? ('em-pausa' as const) : real,
+        dias: fonte.last_success_at ? diasDesde(fonte.last_success_at, agora) : null,
+        // Só conta como expirada se a fonte ainda estiver por ler. Uma pausa
+        // que acabou numa fonte que entretanto voltou a responder não é um
+        // esquecimento — é uma pausa que fez o seu trabalho.
+        pausaExpirada:
+          !calada &&
+          Boolean(fonte.pausada_ate) &&
+          (real === 'parada' || real === 'atrasada' || real === 'por-estrear'),
+      };
+    });
 
   const das = (saude: SaudeDaFonte) => vigiadas.filter((fonte) => fonte.saude === saude);
 
@@ -129,6 +192,7 @@ export function avaliarRecolha(
     atrasadas: das('atrasada'),
     paradas: das('parada'),
     porEstrear: das('por-estrear'),
+    emPausa: das('em-pausa'),
   };
 }
 
@@ -154,6 +218,16 @@ export function avaliarRecolha(
 export function fraseDaFonte(fonte: FonteComSaude, formatarData: (iso: string) => string): string {
   const lidaEm = fonte.last_run_at ? formatarData(fonte.last_run_at.slice(0, 10)) : null;
   const boaEm = fonte.last_success_at ? formatarData(fonte.last_success_at.slice(0, 10)) : null;
+
+  // Antes de tudo, porque é a única resposta que não fala de leituras. Quem lê
+  // esta linha quer saber porque é que a fonte está calada, e a resposta é uma
+  // decisão nossa — não a data de coisa nenhuma.
+  if (fonte.saude === 'em-pausa' && fonte.pausada_ate) {
+    const ate = formatarData(fonte.pausada_ate.slice(0, 10));
+    return fonte.pausa_motivo
+      ? `Em pausa até ${ate}: ${fonte.pausa_motivo}`
+      : `Em pausa até ${ate}.`;
+  }
 
   if (fonte.saude === 'em-dia' && boaEm) return `Lida com sucesso a ${boaEm}.`;
 
@@ -186,8 +260,17 @@ export function fraseDaFonte(fonte: FonteComSaude, formatarData: (iso: string) =
  *   o que lá estiver chega por quem o envia. Uma região acabada de nascer está
  *   toda assim (`create_region` semeia uma fonte desligada por concelho).
  * - `por-ler` — há fontes ligadas que não se conseguem ler. As paradas, as
- *   atrasadas **e as por estrear**, porque as três têm em comum o que
- *   interessa: existe uma fonte que devia dizer-nos o que se passa e não disse.
+ *   atrasadas, as por estrear **e as que estão em pausa**, porque as quatro
+ *   têm em comum o que interessa: existe uma fonte que devia dizer-nos o que
+ *   se passa e não disse.
+ *
+ *   A pausa entra aqui e **não** entra no veredito, e a diferença é de quem
+ *   lê. O veredito responde a quem administra: «tenho alguma coisa para
+ *   arranjar?», e uma pausa declarada não é. Isto responde a quem vive no
+ *   concelho: «a página está completa?», e uma pausa declarada também deixa a
+ *   página incompleta. Calar a pausa aqui era repetir, com outro nome, a
+ *   mentira que este bloco existe para desfazer — dizer «não há» onde o certo
+ *   é «não consegui saber».
  * - `em-dia` — todas as fontes ligadas foram lidas com sucesso há pouco. É o
  *   único estado em que o silêncio é do concelho e não nosso, e o único em que
  *   a página pode dizer que não há nada sem estar a inventar.
@@ -208,7 +291,12 @@ export type LeituraDoConcelho =
 export function leituraDoConcelho(recolha: EstadoDaRecolha | null): LeituraDoConcelho {
   if (!recolha) return { tipo: 'nao-sei' };
   if (recolha.vigiadas.length === 0) return { tipo: 'sem-vigilancia' };
-  const porLer = [...recolha.paradas, ...recolha.atrasadas, ...recolha.porEstrear];
+  const porLer = [
+    ...recolha.paradas,
+    ...recolha.atrasadas,
+    ...recolha.porEstrear,
+    ...recolha.emPausa,
+  ];
   return porLer.length > 0 ? { tipo: 'por-ler', fontes: porLer } : { tipo: 'em-dia' };
 }
 
@@ -288,6 +376,33 @@ export function veredito(recolha: EstadoDaRecolha, agenda: EstadoDaAgenda): Vere
     return { grau: 'mau', frase: 'Não há um único evento marcado daqui para a frente.' };
   }
 
+  /*
+   * **A pausa que acabou vem antes da fonte parada**, e é a única reordenação
+   * desta função desde que foi escrita.
+   *
+   * As duas descrevem a mesma fonte; a diferença é o que se faz a seguir. «Há
+   * uma fonte sem ser lida há mais de uma semana» manda olhar para a fonte —
+   * e no caso de uma pausa expirada não há nada para ver na fonte, porque a
+   * razão de ela estar calada foi decidida por nós e o prazo dessa decisão
+   * passou. O que há para fazer é rever a decisão: renovar a pausa, desligar a
+   * fonte, ou voltar a tentar.
+   *
+   * Sem esta ordem, a frase mandava procurar uma avaria que não existe — e
+   * esse é o caminho mais curto para se desligar um alarme por ele mandar
+   * sempre para o sítio errado.
+   */
+  const expiradas = recolha.vigiadas.filter((fonte) => fonte.pausaExpirada);
+  if (expiradas.length > 0) {
+    const quantas = expiradas.length;
+    return {
+      grau: 'mau',
+      frase:
+        quantas === 1
+          ? 'A pausa de uma fonte acabou e ninguém a renovou.'
+          : `A pausa de ${quantas} fontes acabou e ninguém as renovou.`,
+    };
+  }
+
   if (recolha.paradas.length > 0) {
     const quantas = recolha.paradas.length;
     return {
@@ -307,6 +422,26 @@ export function veredito(recolha: EstadoDaRecolha, agenda: EstadoDaAgenda): Vere
         quantas === 1
           ? 'Há uma fonte que falhou as últimas rondas.'
           : `Há ${quantas} fontes que falharam as últimas rondas.`,
+    };
+  }
+
+  /*
+   * Com fontes em pausa, o sossego diz-se de outra maneira.
+   *
+   * A frase de sempre — «todas as fontes ligadas foram lidas» — passaria a ser
+   * falsa: as que estão em pausa estão ligadas e não foram lidas. Um painel
+   * verde por cima de oito câmaras caladas é exactamente a mentira que a
+   * migração 0159 existe para não contar. O grau continua `bom`, porque não há
+   * nada para arranjar; a frase é que passa a dizer quantas ficaram de fora.
+   */
+  if (recolha.emPausa.length > 0) {
+    const quantas = recolha.emPausa.length;
+    return {
+      grau: 'bom',
+      frase:
+        quantas === 1
+          ? 'As fontes ligadas foram lidas com sucesso nas últimas 48 horas, tirando uma em pausa declarada.'
+          : `As fontes ligadas foram lidas com sucesso nas últimas 48 horas, tirando ${quantas} em pausa declarada.`,
     };
   }
 

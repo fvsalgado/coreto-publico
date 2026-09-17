@@ -49,6 +49,20 @@ function fonte(id: string, diasDesdeOSucesso: number | null) {
   };
 }
 
+/** A mesma, calada de propósito até daqui a N dias (negativo = pausa já acabou). */
+function fontePausada(
+  id: string,
+  diasDesdeOSucesso: number,
+  ate: number,
+  motivo = 'bloqueio da CIM',
+) {
+  return {
+    ...fonte(id, diasDesdeOSucesso),
+    pausada_ate: new Date(Date.now() + ate * 86_400_000).toISOString(),
+    pausa_motivo: motivo,
+  };
+}
+
 async function corpo(resposta: Response) {
   return (await resposta.json()) as Record<string, unknown>;
 }
@@ -115,5 +129,70 @@ describe('/estado.json', () => {
     // E nunca uma agenda vazia a fazer-se passar por verdade: sem números,
     // não se publicam números.
     expect(dados['agenda']).toBeUndefined();
+  });
+});
+
+/**
+ * A pausa declarada, no corpo (0159).
+ *
+ * Os campos deste endereço são contrato — está escrito na rota, e a sonda
+ * externa lê-os. Acrescentar dois sem os prender num teste era acrescentar
+ * duas promessas que ninguém verifica: a `emPausa` e a `pausadas` existem para
+ * que quem vigia distinga «não conseguimos ler» de «decidimos não ler», e uma
+ * promessa dessas vale o que valer o teste que a guarda.
+ */
+describe('/estado.json e a pausa declarada', () => {
+  beforeEach(() => {
+    listMunicipalities.mockResolvedValue([{ id: 'tomar', name: 'Tomar' }]);
+    countEventsByMunicipality.mockResolvedValue({ tomar: 40 });
+  });
+
+  it('uma fonte em pausa sai do «por arranjar», entra nas «pausadas», e não põe o grau a mau', async () => {
+    listPublicSources.mockResolvedValue([fontePausada('cm-macao', 20, 4)]);
+
+    const body = await corpo(
+      await GET(new Request('http://x'), { params: Promise.resolve({ regiao: 'medio-tejo' }) }),
+    );
+    const recolha = body.recolha as Record<string, unknown>;
+
+    expect(body.grau).toBe('bom');
+    expect(recolha.emPausa).toBe(1);
+    expect(recolha.paradas).toBe(0);
+    expect(recolha.porArranjar).toEqual([]);
+    expect(recolha.pausadas).toEqual([
+      expect.objectContaining({ id: 'cm-macao', motivo: 'bloqueio da CIM' }),
+    ]);
+    // A data vem no corpo e não só a contagem: uma pausa é uma promessa de
+    // rever, e sem o prazo à vista não há como saber se está a ser cumprida.
+    expect((recolha.pausadas as Array<{ ate: string }>)[0]?.ate).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('quando a pausa acaba, a fonte volta ao «por arranjar» e o grau volta a mau', async () => {
+    listPublicSources.mockResolvedValue([fontePausada('cm-macao', 20, -1)]);
+
+    const body = await corpo(
+      await GET(new Request('http://x'), { params: Promise.resolve({ regiao: 'medio-tejo' }) }),
+    );
+    const recolha = body.recolha as Record<string, unknown>;
+
+    expect(body.grau).toBe('mau');
+    expect(body.resumo).toBe('A pausa de uma fonte acabou e ninguém a renovou.');
+    expect(recolha.emPausa).toBe(0);
+    expect(recolha.pausadas).toEqual([]);
+    expect(recolha.porArranjar).toEqual([
+      expect.objectContaining({ id: 'cm-macao', saude: 'parada' }),
+    ]);
+  });
+
+  it('sem pausas, os campos novos existem à mesma — um contrato não aparece e desaparece', async () => {
+    listPublicSources.mockResolvedValue([fonte('cm-tomar', 1)]);
+
+    const body = await corpo(
+      await GET(new Request('http://x'), { params: Promise.resolve({ regiao: 'medio-tejo' }) }),
+    );
+    const recolha = body.recolha as Record<string, unknown>;
+
+    expect(recolha.emPausa).toBe(0);
+    expect(recolha.pausadas).toEqual([]);
   });
 });

@@ -23,6 +23,9 @@ function fonte(id: string, ultima: string | null) {
     last_run_at: ultima,
     saude: 'parada' as const,
     dias: 20,
+    // Estas fontes estão paradas por avaria, não por decisão: nunca houve
+    // pausa, logo não há pausa por expirar (0159).
+    pausaExpirada: false,
   };
 }
 

@@ -248,5 +248,15 @@ export const PUBLIC_SOURCE_FIELDS = [
   // nada»: um cron parado e uma câmara que mudou de tema parecem iguais se só
   // se olhar para a data da última leitura boa.
   'last_run_at',
+  /*
+   * A pausa, pública desde a 0159 — e pública por mérito próprio.
+   *
+   * Uma agenda que diz «em pausa até 21 de setembro, à espera de resposta da
+   * CIM» é honesta com quem a lê. A mesma agenda a esconder a pausa e a dizer
+   * «tudo bem» é a mentira que a 0159 existe para não contar, e seria pior do
+   * que não ter pausa nenhuma: um alarme calado às escondidas.
+   */
+  'pausada_ate',
+  'pausa_motivo',
   'public_note',
 ].join(', ');
