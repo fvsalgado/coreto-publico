@@ -167,9 +167,19 @@ jobs:
       #     nos três minutos, e a poupança inteira evapora-se sem ninguém dar
       #     por isso, porque o CI continua verde.
       #
-      #     Com ela, a compilação cai de ~37 s para ~12 s e o trabalho fica por
-      #     volta dos 95 s — vinte e cinco segundos de folga, que é o que faz
-      #     isto aguentar-se sozinho.
+      #     MEDIDO DEPOIS DE ENTRAR, na execução 35216705371, tentativa 2, que
+      #     é a primeira com as quatro caches quentes:
+      #
+      #         Formatação         18 s → 3 s
+      #         Tipos              22 s → 7 s
+      #         Análise estática   26 s → 5 s
+      #         Compilação         36 s → 9 s
+      #         restaurar a cache        3 s   (95 MB)
+      #         ------------------------------------
+      #         o trabalho        163 s → 90 s
+      #
+      #     Noventa segundos: dois minutos faturados com trinta de folga, em vez
+      #     do único segundo que havia antes desta cache entrar.
       #
       #     A conta dos 95 MB continua de pé e não se ignora: o GitHub despeja
       #     as caches não usadas ao fim de sete dias e aplica LRU sobre os 10 GB
@@ -193,6 +203,18 @@ jobs:
           # O SHA na chave faz cada execução gravar a sua, e as `restore-keys`
           # fazem qualquer uma delas servir de ponto de partida. É o que mantém
           # a cache a acompanhar o ramo em vez de envelhecer presa ao lockfile.
+          #
+          # A ARMADILHA, QUE SE PAGOU UMA VEZ AQUI: mexer nesta lista de
+          # CAMINHOS invalida as caches que já existem. O `actions/cache`
+          # calcula uma «versão» a partir dos caminhos, e uma cache gravada com
+          # outra lista fica invisível **mesmo com a chave a bater certo**.
+          # Aconteceu ao acrescentar o `.next/cache`: a execução seguinte
+          # restaurou em zero segundos e correu fria dos quatro lados, e o
+          # número que se leu não era o número que se procurava.
+          #
+          # Quem acrescentar aqui um caminho paga uma execução fria — uma só, e
+          # à espera. O que não se pode é ler essa execução como se fosse
+          # quente e concluir que a cache não serve.
           # A cache da compilação leva 95 MB; as outras três, pouco mais de
           # 1 MB ao todo.
           key: qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-${{ github.sha }}
