@@ -7,10 +7,34 @@ name: Vigilância do sítio
 # sozinho quando tudo voltar.
 on:
   schedule:
-    # Num minuto fora da hora certa: a fila do GitHub está mais vazia aos :11
-    # do que aos :00. O atraso da fila (ver OPERACAO.md) aplica-se na mesma —
-    # isto é vigilância, não é um relógio.
-    - cron: '11 * * * *'
+    # DE SEIS EM SEIS HORAS desde 17 de setembro de 2026. Era de hora a hora,
+    # e custava ~165 minutos de Actions por mês — o cron mais caro da casa
+    # depois do CI, porque cada corrida de quinze segundos paga um minuto.
+    #
+    # O PEDIDO ERA PARA REMOVER, E NÃO SE REMOVEU. No dia em que se foi fazer
+    # isso, esta vigilância estava a dizer a verdade:
+    #
+    #     mediotejo.coreto.org/estado.json
+    #       grau:   mau
+    #       resumo: «Há uma fonte sem ser lida com sucesso há mais de uma
+    #               semana.»
+    #
+    # As oito corridas anteriores falharam todas, o issue «O sítio não
+    # responde» está aberto desde 14 de setembro, e o sítio serve páginas a
+    # 200 com a agenda cheia. É exactamente a avaria que a verificação 4 foi
+    # escrita para apanhar, e apanhou-a. Desligar um alarme enquanto ele está
+    # a tocar certo é a pior altura possível para o desligar.
+    #
+    # Seis em seis horas poupa três quartos do custo e não cala nada: o que
+    # isto vigia — uma fonte parada, um certificado a caducar, uma região sem
+    # eventos — leva dias a acontecer, não minutos. O que se perde é o tempo
+    # de reacção a uma queda súbita, e para isso a resposta certa não é um
+    # cron caro, é um vigia externo (ver OPERACAO.md).
+    #
+    # Aos :11 e não aos :00 pela razão de sempre: a fila do GitHub está mais
+    # vazia fora da hora certa. O atraso da fila aplica-se na mesma — isto é
+    # vigilância, não é um relógio.
+    - cron: '11 */6 * * *'
   workflow_dispatch:
 
 permissions:

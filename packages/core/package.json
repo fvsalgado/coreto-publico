@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint --cache --cache-strategy content src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

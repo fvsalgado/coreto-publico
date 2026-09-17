@@ -16,12 +16,23 @@ name: Resumo diário do que está por rever
 # uma lista de trabalho num issue que se fecha e reabre todos os dias é ruído
 # no repositório. O sítio dela é o telemóvel de quem modera, e o registo fica
 # no artefacto da execução.
+# SUSPENSO a 17 de setembro de 2026, por decisão do editor, para poupar
+# minutos de Actions. O agendamento sai; o disparo manual fica, e é isso que
+# torna isto uma suspensão e não uma remoção — `Actions → Resumo diário → Run
+# workflow` corre-o na mesma, no dia em que fizer falta.
+#
+# O que se perde: o empurrão diário para o telemóvel de quem modera. O painel
+# continua a responder a tudo o que isto perguntava; deixa é de perguntar por
+# iniciativa própria a quem não lá for.
+#
+# Para voltar a ligar, devolver o bloco `schedule:` abaixo:
+#
+#   schedule:
+#     # 07:40 UTC — 08:40 no inverno, 09:40 no verão, em Lisboa. Antes do
+#     # expediente e depois da recolha noturna (`scrape.yml` corre de
+#     # madrugada), para que o que chegou esta noite já conte.
+#     - cron: '40 7 * * *'
 on:
-  schedule:
-    # 07:40 UTC — 08:40 no inverno, 09:40 no verão, em Lisboa. Antes do
-    # expediente e depois da recolha noturna (`scrape.yml` corre de
-    # madrugada), para que o que chegou esta noite já conte.
-    - cron: '40 7 * * *'
   workflow_dispatch:
 
 permissions:

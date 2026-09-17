@@ -228,5 +228,9 @@ export interface PublicSource {
   last_success_at: string | null;
   /** Quando foi tentada, com ou sem sucesso. */
   last_run_at: string | null;
+  /** Até quando está calada por decisão, e não por avaria (0159). */
+  pausada_ate: string | null;
+  /** Porquê — obrigatório enquanto a pausa durar. */
+  pausa_motivo: string | null;
   public_note: string | null;
 }
