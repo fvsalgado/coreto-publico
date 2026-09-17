@@ -3,20 +3,22 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon } from '@coreto/core';
 import { BandstandMark } from '@/src/components/BandstandMark';
-import { EmptyState } from '@/src/components/EmptyState';
+import { EmptyState, avisoDeFontesPorLer, vazioDoConcelho } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
 import { PageHeader } from '@/src/components/PageHeader';
 import { MunicipalityStructuredData } from '@/src/components/StructuredData';
 import { VenueCard } from '@/src/components/VenueCard';
 import { espacosPorConfirmar } from '@/src/lib/coreto';
+import { avaliarRecolha, leituraDoConcelho } from '@/src/lib/estado';
+import { formatLongDate } from '@/src/lib/format';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
 import {
   countEventsByVenue,
+  fontesDoConcelhoOuNada,
   listCoretos,
   listEvents,
   listMunicipalities,
-  listPublicSources,
   listVenues,
 } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
@@ -93,7 +95,7 @@ export default async function MunicipalityPage({ params }: Props) {
     listVenues(regiao.id, municipality.id),
     listCoretos(regiao.id),
     countEventsByVenue(regiao.id),
-    listPublicSources(regiao.id),
+    fontesDoConcelhoOuNada(regiao.id),
   ]);
 
   const localCoretos = coretos.filter((coreto) => coreto.municipality_id === municipality.id);
@@ -114,9 +116,28 @@ export default async function MunicipalityPage({ params }: Props) {
         a.name.localeCompare(b.name, 'pt'),
     );
 
-  const localSources = sources.filter(
-    (source) => source.is_enabled && source.municipality_id === municipality.id,
-  );
+  /*
+   * As fontes deste concelho — e `null` quando não se conseguiu saber.
+   *
+   * **A leitura passou a degradar, ao contrário do que estava escrito.** A
+   * `listPublicSources` propaga de propósito, e a razão continua boa para a
+   * `/fontes`, que é a página delas. Aqui não: o assunto desta página é a
+   * agenda, que já veio. O receio que a decisão antiga travava era o `[]` —
+   * uma lista vazia por engano fazia esta página dizer «ainda não há aqui uma
+   * agenda que possamos ler» sobre concelhos cuja câmara publica há anos. O
+   * `null` desarma esse receio: não produz frase nenhuma, produz «não sei», e
+   * as duas frases abaixo já sabem dizê-lo. Entre um 500 numa página cuja
+   * agenda está lida e uma página que serve a agenda e confessa o que não
+   * confirmou, é a segunda que presta contas.
+   */
+  const doConcelho =
+    sources?.filter((source) => source.municipality_id === municipality.id) ?? null;
+  const leitura = leituraDoConcelho(doConcelho ? avaliarRecolha(doConcelho) : null);
+  const avisoDasFontes = avisoDeFontesPorLer(leitura, formatLongDate);
+  // A lista que se mostra é só das ligadas: uma fonte desligada é uma decisão
+  // de quem administra, não uma origem desta agenda. A saúde acima já as
+  // ignora pela mesma razão, na `avaliarRecolha`.
+  const localSources = doConcelho?.filter((source) => source.is_enabled) ?? null;
   const venueNames: Record<string, string> = Object.fromEntries(
     venues.map((venue) => [venue.id, venue.name]),
   );
@@ -163,6 +184,18 @@ export default async function MunicipalityPage({ params }: Props) {
           ) : null}
         </div>
 
+        {/*
+          A ressalva vai ANTES da lista, e não depois.
+          -------------------------------------------------------------------
+          Quem chega a esta secção lê os primeiros eventos e forma uma ideia
+          ali mesmo; uma nota no fim chega tarde a quem já concluiu que são
+          aqueles. Só aparece quando há fontes por ler — ver
+          `avisoDeFontesPorLer`.
+        */}
+        {result.events.length > 0 && avisoDasFontes ? (
+          <p className="mt-3 max-w-2xl text-sm text-highlight">{avisoDasFontes}</p>
+        ) : null}
+
         <div className="mt-4">
           {result.events.length > 0 ? (
             <EventList
@@ -175,8 +208,7 @@ export default async function MunicipalityPage({ params }: Props) {
             />
           ) : (
             <EmptyState
-              title={`Ainda não há programação publicada em ${municipality.name}.`}
-              description="O concelho continua aqui, à espera. Quem organiza — câmara, coletividade, associação ou junta — pode enviar o que se prepara e fica na agenda da região."
+              {...vazioDoConcelho(municipality.name, leitura, formatLongDate)}
               action={{ href: '/submeter', label: 'Enviar um evento' }}
             />
           )}
@@ -284,7 +316,18 @@ export default async function MunicipalityPage({ params }: Props) {
           De onde vem esta programação
         </h2>
 
-        {localSources.length > 0 ? (
+        {/*
+          Três ramos e não dois: «não há fontes» e «não sei que fontes há» não
+          se dizem com a mesma frase. O terceiro é novo, e é o que a leitura
+          degradante trouxe — ver o comentário da `localSources` lá em cima.
+        */}
+        {localSources === null ? (
+          <p className="mt-3 max-w-2xl text-muted">
+            Não conseguimos confirmar, neste momento, de onde vem a programação de{' '}
+            {municipality.name}. O que está acima foi lido; isto é o que não se conseguiu verificar
+            agora.
+          </p>
+        ) : localSources.length > 0 ? (
           <>
             <ul className="mt-3 space-y-2">
               {localSources.map((source) => (
