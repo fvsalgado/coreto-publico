@@ -116,6 +116,73 @@ jobs:
       # os testes têm de passar num fork, sem base de dados e sem chaves. Se um
       # dia algum destes passos precisar de um segredo para passar, o que se
       # partiu foi a degradação graciosa — não o CI.
+      # AS CACHES INCREMENTAIS DAS TRÊS FERRAMENTAS QUE CONTAM.
+      #
+      # O trabalho custava três minutos faturados por correr em 157 s, e a
+      # faturação arredonda cada trabalho para cima: abaixo de 120 s passa a
+      # pagar dois. Corre ~230 vezes por mês, pelo que os quarenta segundos que
+      # faltavam valiam ~230 minutos.
+      #
+      # MEDIDO, a frio e a quente, nesta árvore (4 núcleos, os mesmos que o
+      # executor):
+      #
+      #     prettier   13.6 s → 2.2 s      cache 112 KB
+      #     tsc        15.9 s → 4.6 s      `incremental` já estava ligado no
+      #                                    tsconfig.base.json; o que faltava
+      #                                    era o .tsbuildinfo sobreviver
+      #     eslint     16.9 s → 2.0 s      cache 112 KB
+      #
+      # São ~38 s aqui e ~52 s no executor, onde estes três passos custam 65 s.
+      # O trabalho fica por volta dos 108 s.
+      #
+      # `--cache-strategy content` E NÃO A OMISSÃO, que é por data de
+      # modificação: um checkout novo escreve ficheiros novos com datas novas, e
+      # uma cache que decide por datas não acerta uma única vez em CI. Pelo
+      # conteúdo, acerta em tudo o que o commit não tocou.
+      #
+      # A GUARDA CONTINUA A GUARDAR, e foi verificado em vez de presumido:
+      # plantou-se um `const naoUsado = 1;` num ficheiro já em cache e o eslint
+      # apanhou-o à mesma. Uma cache que tapasse um erro novo não era uma cache,
+      # era uma verificação desligada.
+      #
+      # DUAS COISAS MEDIDAS E RECUSADAS, para não se voltarem a tentar sem
+      # medir:
+      #
+      #   * **Correr os três em paralelo** com `&` e `wait`. Poupa 7,7 s dos
+      #     35,4 s e não os 50% que se esperava — são quatro núcleos e três
+      #     ferramentas a disputá-los. E custava o que não se paga: é o nome do
+      #     passo que aparece numa execução falhada, e três verificações debaixo
+      #     de um nome só é a armadilha que o trabalho «Auditorias do sítio» já
+      #     documenta neste ficheiro.
+      #
+      #   * **A cache de compilação do Next** (`apps/web/.next/cache`). Essa
+      #     funciona, e bem: 29.6 s → 8.8 s. Fica de fora porque são **95 MB**
+      #     por gravação contra a quota de 10 GB do repositório — a mesma conta
+      #     que fez as imagens do Supabase serem recusadas no trabalho
+      #     «Regiões» — e porque sem ela já se passa abaixo dos 120 s. Vale a
+      #     pena no dia em que a meta for um minuto; hoje não é.
+      - name: Caches do prettier, do tsc e do eslint
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache/prettier
+            .eslintcache
+            apps/web/.eslintcache
+            packages/core/.eslintcache
+            packages/ingest/.eslintcache
+            apps/web/tsconfig.tsbuildinfo
+            packages/core/tsconfig.tsbuildinfo
+            packages/ingest/tsconfig.tsbuildinfo
+          # O SHA na chave faz cada execução gravar a sua, e as `restore-keys`
+          # fazem qualquer uma delas servir de ponto de partida. É o que mantém
+          # a cache a acompanhar o ramo em vez de envelhecer presa ao lockfile.
+          # Ao todo são pouco mais de 1 MB: a conta da quota que recusou o Next
+          # não se aplica aqui.
+          key: qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-${{ github.sha }}
+          restore-keys: |
+            qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-
+            qualidade-v1-
+
       - name: Formatação
         run: pnpm format:check
 
