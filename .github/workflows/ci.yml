@@ -155,16 +155,33 @@ jobs:
       #     de um nome só é a armadilha que o trabalho «Auditorias do sítio» já
       #     documenta neste ficheiro.
       #
-      #   * **A cache de compilação do Next** (`apps/web/.next/cache`). Essa
-      #     funciona, e bem: 29.6 s → 8.8 s. Fica de fora porque são **95 MB**
-      #     por gravação contra a quota de 10 GB do repositório — a mesma conta
-      #     que fez as imagens do Supabase serem recusadas no trabalho
-      #     «Regiões» — e porque sem ela já se passa abaixo dos 120 s. Vale a
-      #     pena no dia em que a meta for um minuto; hoje não é.
-      - name: Caches do prettier, do tsc e do eslint
+      #   * **A cache de compilação do Next** entrou, e tinha sido recusada.
+      #     Vale a pena ficar escrito porquê, porque a premissa é que caiu e
+      #     não a conta.
+      #
+      #     Escrevi aqui que ficava de fora por serem 95 MB por gravação «e
+      #     porque sem ela já se passa abaixo dos 120 s». A primeira execução
+      #     quente a sério deu **119 s** — passa, e passa por UM SEGUNDO. Uma
+      #     margem de um segundo não é margem: um executor mais lento, um teste
+      #     a mais ou um módulo a mais na compilação põem o trabalho de volta
+      #     nos três minutos, e a poupança inteira evapora-se sem ninguém dar
+      #     por isso, porque o CI continua verde.
+      #
+      #     Com ela, a compilação cai de ~37 s para ~12 s e o trabalho fica por
+      #     volta dos 95 s — vinte e cinco segundos de folga, que é o que faz
+      #     isto aguentar-se sozinho.
+      #
+      #     A conta dos 95 MB continua de pé e não se ignora: o GitHub despeja
+      #     as caches não usadas ao fim de sete dias e aplica LRU sobre os 10 GB
+      #     do repositório, pelo que estas rodam sozinhas. A cache do pnpm, que
+      #     é usada em todas as execuções, é a última a sair por LRU — mas se um
+      #     dia o `pnpm install` começar a demorar mais do que os três segundos
+      #     de hoje, é aqui que se olha primeiro.
+      - name: Caches do prettier, do tsc, do eslint e da compilação
         uses: actions/cache@v4
         with:
           path: |
+            apps/web/.next/cache
             node_modules/.cache/prettier
             .eslintcache
             apps/web/.eslintcache
@@ -176,8 +193,8 @@ jobs:
           # O SHA na chave faz cada execução gravar a sua, e as `restore-keys`
           # fazem qualquer uma delas servir de ponto de partida. É o que mantém
           # a cache a acompanhar o ramo em vez de envelhecer presa ao lockfile.
-          # Ao todo são pouco mais de 1 MB: a conta da quota que recusou o Next
-          # não se aplica aqui.
+          # A cache da compilação leva 95 MB; as outras três, pouco mais de
+          # 1 MB ao todo.
           key: qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-${{ github.sha }}
           restore-keys: |
             qualidade-v1-${{ hashFiles('pnpm-lock.yaml', 'tsconfig.base.json', 'eslint.config.mjs', '.prettierrc') }}-
