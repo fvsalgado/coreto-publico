@@ -57,6 +57,11 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
     seccaoLigada(regiao.id, 'informacoes'),
   ]);
   const EMAIL = regiao.email;
+  const responsavel = regiao.responsavelPeloTratamento;
+  // O contacto próprio do responsável ganha ao da região: são a mesma coisa
+  // na esmagadora maioria dos casos, e quando não são é porque alguém tomou a
+  // decisão de os separar.
+  const contactoDeDireitos = responsavel?.email ?? EMAIL;
 
   return (
     <article className="max-w-2xl">
@@ -80,29 +85,101 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           dono do software, CIM a CIM, e não deste código: o código limita-se
           a mostrar o que a linha da região diz. Ver docs/RGPD.md.
         */}
-        {regiao.responsavelPeloTratamento ? (
+        {responsavel ? (
           <>
             <h2 className="font-semibold">Quem responde pelo tratamento</h2>
-            <p>
-              O responsável pelo tratamento dos dados pessoais recolhidos por este sítio é a{' '}
-              <a
-                href={regiao.responsavelPeloTratamento.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline underline-offset-4"
-              >
-                {regiao.responsavelPeloTratamento.nome}
-              </a>
-              {EMAIL ? (
-                <>
-                  . Para qualquer questão sobre os seus dados, o contacto é{' '}
-                  <a href={`mailto:${EMAIL}`} className="underline underline-offset-4">
-                    {EMAIL}
+            <p>Quem responde pelos dados pessoais recolhidos por este sítio, e como se contacta:</p>
+            {/*
+              Uma lista e não uma frase, por duas razões.
+              -------------------------------------------------------------
+              A primeira é gramática: a frase era «…é a <nome>», com o artigo
+              cravado. Serve para «a Comunidade Intermunicipal do Médio Tejo»
+              e produz «é a Fábio Salgado» no dia em que quem responde é uma
+              pessoa — que é o caso da região de montra. Um artigo por nome
+              não se adivinha, e o `regions.article` é o da região, não o de
+              quem responde.
+
+              A segunda é que o RGPD quer mais do que um nome. O que aqui
+              aparece é o que a linha da região tiver: o que não estiver
+              preenchido não se desenha, e não se inventa.
+            */}
+            <dl className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
+              <dt className="font-medium">Responsável pelo tratamento</dt>
+              <dd>
+                {responsavel.url ? (
+                  <a
+                    href={responsavel.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4"
+                  >
+                    {responsavel.nome}
                   </a>
+                ) : (
+                  responsavel.nome
+                )}
+              </dd>
+
+              {responsavel.nif ? (
+                <>
+                  <dt className="font-medium">NIF</dt>
+                  <dd>{responsavel.nif}</dd>
                 </>
               ) : null}
-              .
-            </p>
+
+              {responsavel.morada ? (
+                <>
+                  <dt className="font-medium">Morada</dt>
+                  <dd className="whitespace-pre-line">{responsavel.morada}</dd>
+                </>
+              ) : null}
+
+              {contactoDeDireitos ? (
+                <>
+                  <dt className="font-medium">Contacto para os seus direitos</dt>
+                  <dd>
+                    <a
+                      href={`mailto:${contactoDeDireitos}`}
+                      className="underline underline-offset-4"
+                    >
+                      {contactoDeDireitos}
+                    </a>
+                  </dd>
+                </>
+              ) : null}
+
+              {/*
+                O EPD é obrigatório quando quem responde é uma autoridade ou
+                organismo público (artigo 37.º, n.º 1, alínea a)), e o n.º 7
+                manda publicar o contacto. Não se desenha quando não há: uma
+                linha vazia com este rótulo parecia uma obrigação por cumprir
+                num sítio onde ela pode simplesmente não existir.
+              */}
+              {responsavel.epd ? (
+                <>
+                  <dt className="font-medium">Encarregado de proteção de dados</dt>
+                  <dd>{responsavel.epd}</dd>
+                </>
+              ) : null}
+
+              {responsavel.epdContacto ? (
+                <>
+                  <dt className="font-medium">Contacto do encarregado</dt>
+                  <dd>
+                    {responsavel.epdContacto.includes('@') ? (
+                      <a
+                        href={`mailto:${responsavel.epdContacto}`}
+                        className="underline underline-offset-4"
+                      >
+                        {responsavel.epdContacto}
+                      </a>
+                    ) : (
+                      responsavel.epdContacto
+                    )}
+                  </dd>
+                </>
+              ) : null}
+            </dl>
           </>
         ) : null}
 

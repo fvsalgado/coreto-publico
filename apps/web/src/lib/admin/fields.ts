@@ -377,5 +377,10 @@ export const CAMPOS_DA_REGIAO = {
   og_image_alt: 'anulavel',
   data_controller_name: 'anulavel',
   data_controller_url: 'anulavel',
+  data_controller_nif: 'anulavel',
+  data_controller_address: 'anulavel',
+  data_controller_email: 'anulavel',
+  data_controller_dpo: 'anulavel',
+  data_controller_dpo_contact: 'anulavel',
   sort_order: 'inteiro',
 } as const;

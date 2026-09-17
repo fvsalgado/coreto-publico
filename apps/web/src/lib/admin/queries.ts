@@ -932,6 +932,12 @@ export interface RegionAdminRow {
   og_image_alt: string | null;
   data_controller_name: string | null;
   data_controller_url: string | null;
+  /** 0158 — o resto do que o RGPD pede sobre quem responde. */
+  data_controller_nif: string | null;
+  data_controller_address: string | null;
+  data_controller_email: string | null;
+  data_controller_dpo: string | null;
+  data_controller_dpo_contact: string | null;
   expected_municipality_count: number;
   bbox_lat_min: number;
   bbox_lat_max: number;
