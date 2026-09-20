@@ -16,6 +16,38 @@ import { AxeBuilder } from '@axe-core/playwright';
 const BASE_URL = process.env.BASE_URL ?? 'http://127.0.0.1:3000';
 
 /**
+ * A montra, que vive noutro anfitrião e por isso precisa de outra base.
+ *
+ * As quatro páginas do domínio do produto — a ficha, a política de segurança, o
+ * cartão de visita da recolha e os preços — **nunca foram auditadas aqui**, e a
+ * razão é de arquitetura e não de esquecimento: o trabalho de auditoria arranca
+ * o sítio com `REGIAO_DE_OMISSAO`, e com essa variável posta **todos** os
+ * anfitriões desconhecidos são servidos com a agenda dessa região. A montra
+ * deixa de existir no processo. Pedir por `127.0.0.1` trazia a agenda do Médio
+ * Tejo com outro nome.
+ *
+ * O que a torna alcançável é um segundo servidor, sem essa variável, e um
+ * anfitrião que o mapa de domínios não conheça — `coreto.localhost`, que o
+ * Chromium resolve sempre para a interface local (RFC 6761) sem precisar de
+ * DNS, de `/etc/hosts` ou de um cabeçalho `Host` à mão, que aliás o Chromium
+ * recusa pôr.
+ *
+ * Sem `BASE_URL_MONTRA` não se audita e diz-se: uma volta que salta as páginas
+ * públicas em silêncio é uma volta que dá o sítio por auditado quando não está,
+ * e a declaração de `/acessibilidade` promete que a auditoria corre «sobre
+ * todas as páginas públicas».
+ */
+const BASE_MONTRA = process.env.BASE_URL_MONTRA?.trim() || null;
+
+/**
+ * As páginas do domínio do produto.
+ *
+ * Não se desligam no painel e não são de região nenhuma: ou estão nesta lista,
+ * ou não são auditadas por nada.
+ */
+const ROTAS_DA_MONTRA = ['/', '/fontes', '/seguranca'];
+
+/**
  * Caminho para um Chromium já instalado.
  *
  * Em ambientes onde o navegador vem pré-instalado (contentores de CI, esta
@@ -171,7 +203,23 @@ const VIEWPORTS = [
   { name: 'secretária escura', width: 1280, height: 900, tema: 'dark' },
 ];
 
-const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+/*
+ * As etiquetas, e o que elas conseguem mesmo provar.
+ *
+ * A 2.2 entra aqui a 20 de setembro de 2026. Vale a pena não ficar com a ideia
+ * errada do que esta linha comprou: dos **seis** critérios novos da 2.2 ao
+ * nível A/AA, o axe só sabe testar **um** — o 2.5.8 (Target Size), pela regra
+ * `target-size`. Os outros cinco não são automatizáveis e estão na lista de
+ * verificação manual do `docs/SELO.md`, com quem os verificou e quando.
+ *
+ * Ligar a etiqueta sem escrever isto ao lado seria a pior das duas hipóteses:
+ * um verde novo a parecer que cobre seis coisas quando cobre uma.
+ *
+ * A 2.2 também **remove** o 4.1.1 (Parsing), por obsoleto. Não há nada a fazer
+ * com isso: as etiquetas da 2.0 e 2.1 continuam aqui porque o DL n.º 83/2018
+ * remete para a norma europeia, e é a 2.1 AA que ela hoje exige.
+ */
+const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
 
 let failures = 0;
 let skipped = 0;
@@ -242,6 +290,73 @@ for (const viewport of VIEWPORTS) {
   }
 
   await context.close();
+}
+
+// ---- A montra, no seu anfitrião ----
+
+if (BASE_MONTRA === null) {
+  console.warn(
+    `· as ${ROTAS_DA_MONTRA.length} páginas do domínio do produto — saltadas (sem BASE_URL_MONTRA)`,
+  );
+  console.warn(
+    '    Ver o comentário de BASE_MONTRA: precisam de um servidor sem REGIAO_DE_OMISSAO.',
+  );
+  skipped += ROTAS_DA_MONTRA.length * VIEWPORTS.length;
+} else {
+  for (const viewport of VIEWPORTS) {
+    const context = await browser.newContext({
+      viewport: { width: viewport.width, height: viewport.height },
+      colorScheme: viewport.tema ?? 'light',
+    });
+    const page = await context.newPage();
+
+    for (const route of ROTAS_DA_MONTRA) {
+      const url = `${BASE_MONTRA}${route}`;
+      let response;
+      try {
+        response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+      } catch (error) {
+        console.error(`✗ montra ${viewport.name} ${route} — não carregou: ${error.message}`);
+        failures += 1;
+        continue;
+      }
+
+      /*
+       * Aqui um 404 nunca é legítimo, e é uma diferença que vale a pena.
+       *
+       * Na volta de cima há rotas que podem não existir — uma secção desligada
+       * no painel, uma ficha sem dados. Estas quatro páginas são estáticas, não
+       * tocam na base e não se desligam em lado nenhum: um 404 quer dizer que a
+       * `CAMINHOS_DA_MONTRA` do middleware não conhece o caminho, e o sintoma
+       * disso não é um erro — é a agenda de uma região a responder no domínio
+       * do produto, ou o contrário.
+       */
+      const status = response?.status() ?? 0;
+      if (status !== 200) {
+        console.error(`✗ montra ${viewport.name} ${route} — HTTP ${status}`);
+        failures += 1;
+        continue;
+      }
+
+      const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+      if (results.violations.length === 0) {
+        console.log(`✓ montra ${viewport.name} ${route}`);
+        continue;
+      }
+
+      failures += results.violations.length;
+      console.error(`✗ montra ${viewport.name} ${route}`);
+      for (const violation of results.violations) {
+        console.error(`   [${violation.impact}] ${violation.id}: ${violation.help}`);
+        for (const node of violation.nodes.slice(0, 3)) {
+          console.error(`     ${node.target.join(' ')}`);
+        }
+      }
+    }
+
+    await context.close();
+  }
 }
 
 /**
@@ -374,13 +489,132 @@ for (const estado of ESTADOS) {
   await context.close();
 }
 
+// ---- 2.4.11: o foco não pode ficar debaixo da barra do polegar ----
+
+/*
+ * O critério que nenhuma ferramenta testa, e que esta casa tinha por cumprir.
+ *
+ * A `BarraInferior` é `fixed bottom-0` no telemóvel. Quando se navega por
+ * teclado numa página longa, o navegador leva o elemento focado até à margem
+ * do ecrã — que é exatamente onde a barra está por cima. O 2.4.11 da WCAG 2.2
+ * (AA) exige que o elemento focado não fique **inteiramente** tapado por
+ * conteúdo do autor. A correção é o `scroll-padding-block-end` do
+ * `globals.css`; isto é a guarda dela.
+ *
+ * **Duas verificações, e a primeira é a que vale.** Percorrer a página com
+ * Tab e ver se algum elemento calha debaixo da barra é um teste que depende de
+ * onde o Tab calha parar — a primeira versão deste bloco fazia isso, passava a
+ * verde numa compilação sem a correção, e teria deixado a regressão passar. O
+ * que se mede primeiro é o **mecanismo**: o `scroll-padding` do documento tem
+ * de ser pelo menos tão alto quanto a barra. Isso é determinístico, não tem
+ * onde se esconder, e reprova no instante em que alguém mudar a altura de uma
+ * sem mudar a outra. A varredura do foco vem a seguir como confirmação, e é
+ * exaustiva — todos os focáveis, um `focus()` de cada vez — em vez de sessenta
+ * Tabs à sorte.
+ *
+ * **`reducedMotion: 'reduce'` não é detalhe.** O `globals.css` tem
+ * `scroll-behavior: smooth`, e com ela a leitura logo a seguir ao foco apanha a
+ * animação a meio: o elemento aparece com coordenadas negativas, fora da
+ * janela, e um teste que salte esses casos salta precisamente os que
+ * interessam. O mesmo ficheiro converte movimento reduzido em
+ * `scroll-behavior: auto`, e aí a posição lida é a definitiva.
+ *
+ * A barra encontra-se por `[data-barra-inferior]` e não por classes: procurá-la
+ * por `.fixed.bottom-0` apanhava o véu que ela abre por cima da página, que
+ * também é `fixed`, e a «barra» saía com 1798px de altura.
+ */
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    reducedMotion: 'reduce',
+  });
+  const page = await context.newPage();
+  const ROTA = '/agenda';
+
+  try {
+    await page.goto(`${BASE_URL}${ROTA}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+
+    const medida = await page.evaluate(() => {
+      const barra = document.querySelector('[data-barra-inferior]');
+      if (!barra) return { semBarra: true };
+
+      const alturaDaBarra = barra.getBoundingClientRect().height;
+      const folga = getComputedStyle(document.documentElement).scrollPaddingBottom;
+      const folgaEmPx = folga.endsWith('px') ? Number.parseFloat(folga) : 0;
+
+      const seletor =
+        'a[href],button:not([disabled]),input:not([type="hidden"]):not([disabled]),select,textarea,summary,[tabindex]:not([tabindex="-1"])';
+      const alvos = [...document.querySelectorAll(seletor)].filter((e) => !barra.contains(e));
+
+      let medidos = 0;
+      const tapados = [];
+      for (const alvo of alvos) {
+        alvo.focus();
+        if (document.activeElement !== alvo) continue;
+        const f = alvo.getBoundingClientRect();
+        const b = barra.getBoundingClientRect();
+        if (!f.width || !f.height) continue;
+        medidos += 1;
+        if (f.top >= b.top && f.bottom <= b.bottom) {
+          tapados.push(
+            `${alvo.tagName.toLowerCase()} «${(alvo.textContent ?? '').trim().slice(0, 32)}» em ${Math.round(f.top)}–${Math.round(f.bottom)}`,
+          );
+        }
+      }
+      return { semBarra: false, alturaDaBarra, folga, folgaEmPx, medidos, tapados };
+    });
+
+    if (medida.semBarra) {
+      console.warn(`· 2.4.11 ${ROTA} — saltado (não há barra fixa nesta página)`);
+      skipped += 1;
+    } else {
+      // 1. O mecanismo.
+      if (medida.folgaEmPx + 0.5 < medida.alturaDaBarra) {
+        failures += 1;
+        console.error(
+          `✗ 2.4.11 ${ROTA} — o scroll-padding do documento (${medida.folga}) é menor do que a barra (${Math.round(medida.alturaDaBarra)}px)`,
+        );
+        console.error('     Ver scroll-padding-block-end em app/globals.css.');
+      } else {
+        console.log(
+          `✓ 2.4.11 ${ROTA} — scroll-padding ${medida.folga} ≥ barra ${Math.round(medida.alturaDaBarra)}px`,
+        );
+      }
+
+      // 2. A confirmação, sobre todos os focáveis da página.
+      if (medida.medidos === 0) {
+        console.warn(`· 2.4.11 ${ROTA} — varredura inconclusiva (nenhum focável mensurável)`);
+        skipped += 1;
+      } else if (medida.tapados.length > 0) {
+        failures += medida.tapados.length;
+        console.error(
+          `✗ 2.4.11 ${ROTA} — ${medida.tapados.length} de ${medida.medidos} focáveis ficam tapados ao receber o foco`,
+        );
+        for (const t of medida.tapados.slice(0, 5)) console.error(`     ${t}`);
+      } else {
+        console.log(
+          `✓ 2.4.11 ${ROTA} — ${medida.medidos} focáveis, nenhum tapado ao receber o foco`,
+        );
+      }
+    }
+  } catch (error) {
+    console.error(`✗ 2.4.11 ${ROTA} — não correu: ${error.message}`);
+    failures += 1;
+  }
+
+  await context.close();
+}
+
 await browser.close();
 
 if (failures > 0) {
   console.error(`\n${failures} problema(s) de acessibilidade.`);
   process.exit(1);
 }
-console.log('\n✓ sem violações WCAG 2.1 AA nas rotas verificadas');
+console.log(
+  '\n✓ sem violações WCAG 2.1 AA (e 2.2 AA na parte automatizável) nas rotas verificadas',
+);
 if (skipped > 0) {
   console.log(
     `  (${skipped} verificação(ões) saltada(s) por falta de dados — correr com a base ligada para as cobrir)`,

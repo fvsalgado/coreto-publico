@@ -50,6 +50,27 @@ const ANALYTICS_HOSTS = posthogHosts();
  */
 const MAPA_HOST = 'https://tiles.openfreemap.org';
 
+/**
+ * O projeto Supabase desta instalação, e só ele.
+ *
+ * Esteve `https://*.supabase.co`, que autoriza o navegador a falar com
+ * qualquer projeto Supabase do mundo — o de um atacante incluído, se algum
+ * dia houvesse um script a mais na página. Lê-se a origem da variável que a
+ * aplicação já usa; sem ela (um build sem base, o CI, um fork) volta-se ao
+ * curinga, porque um `connect-src` vazio não tira nada a ninguém e um sítio
+ * sem base não tem a quem se ligar.
+ */
+function supabaseHosts(): string[] {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  try {
+    return url ? [new URL(url).origin] : ['https://*.supabase.co'];
+  } catch {
+    return ['https://*.supabase.co'];
+  }
+}
+
+const SUPABASE_HOSTS = supabaseHosts();
+
 const CSP = [
   "default-src 'self'",
   // `'unsafe-inline'` nos scripts, e é uma decisão tomada com os olhos
@@ -67,7 +88,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  ['connect-src', "'self'", 'https://*.supabase.co', MAPA_HOST, ...ANALYTICS_HOSTS].join(' '),
+  ['connect-src', "'self'", ...SUPABASE_HOSTS, MAPA_HOST, ...ANALYTICS_HOSTS].join(' '),
   "worker-src 'self' blob:",
   "form-action 'self'",
   "base-uri 'self'",
@@ -275,9 +296,16 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: '/widget/:path*', headers: WIDGET_HEADERS },
-      { source: '/((?!widget).*)', headers: SECURITY_HEADERS },
+      // `widget/` com a barra: sem ela, qualquer caminho que começasse por
+      // «widget» — `/widgets`, `/widgetaria` — ficava sem cabeçalho nenhum.
+      { source: '/((?!widget/).*)', headers: SECURITY_HEADERS },
       ...FICHEIROS_ESTATICOS.map((source) => ({ source, headers: CACHE_DE_FICHEIROS })),
       ...ICONES_DE_METADADOS.map((source) => ({ source, headers: CACHE_IMUTAVEL })),
+      // O processador do mapa leva a versão no caminho (ver
+      // `scripts/copiar-maplibre.mjs`): um caminho que muda com a versão pode
+      // ser imutável, e um Worker que não se volta a pedir é um mapa que abre
+      // mais depressa na segunda visita.
+      { source: '/maplibre/:versao/:ficheiro', headers: CACHE_IMUTAVEL },
     ];
   },
 };

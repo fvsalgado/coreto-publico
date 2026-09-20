@@ -207,7 +207,9 @@ export default function PaginaDaPoliticaDeSeguranca() {
             </li>
             <li>
               <strong className="text-ink">Há varrimento de segredos em cada alteração</strong>, sem
-              exceções silenciosas, e análise estática do código e dos próprios workflows.
+              exceções silenciosas. A análise estática do código e dos próprios workflows está
+              configurada e corre quando o repositório for público; enquanto for privado, não corre
+              — e esta página di-lo em vez de o prometer.
             </li>
           </ul>
 

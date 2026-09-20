@@ -39,6 +39,9 @@ async function entrar(formData: FormData): Promise<void> {
     route: 'admin-login',
     limit: LOGIN_ATTEMPT_LIMIT,
     windowSeconds: LOGIN_ATTEMPT_WINDOW_SECONDS,
+    // Sem base, conta-se na memória: o login sem trava era o que a falta da
+    // chave de serviço oferecia, e uma palavra-passe única não aguenta isso.
+    falhaFechada: true,
   });
   if (!limit.allowed) redirect('/admin/entrar?erro=demasiadas');
 

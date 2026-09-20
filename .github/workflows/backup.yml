@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # As seis, e não quatro.
       #
@@ -197,18 +197,88 @@ jobs:
           BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
           BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
         run: |
-          # As diárias vivem num prefixo com expiração curta; no dia 1 guarda-se
-          # também uma cópia no prefixo mensal, que a regra de ciclo de vida do
-          # balde mantém um ano. Ver docs/BACKUPS.md.
+          # As semanais vivem num prefixo com expiração curta; na primeira
+          # cópia de cada mês guarda-se também uma no prefixo mensal, que a
+          # regra de ciclo de vida do balde mantém um ano. Ver docs/BACKUPS.md.
+          #
+          # O prefixo chamou-se `diarias/` enquanto a cópia foi diária. Passou a
+          # `semanais/` a 19 de setembro de 2026: um nome que diz uma cadência
+          # que já não é a sua é a primeira coisa em que um restauro tropeça
+          # às três da manhã. O ensaio procura nos dois enquanto houver cópias
+          # antigas no primeiro.
           aws s3 cp "${FICHEIRO}.gpg" \
-            "s3://${BACKUP_S3_BUCKET}/diarias/${FICHEIRO}.gpg" \
+            "s3://${BACKUP_S3_BUCKET}/semanais/${FICHEIRO}.gpg" \
             --endpoint-url "${BACKUP_S3_ENDPOINT}"
 
-          if [ "$(date --utc +%d)" = "01" ]; then
+          # «Dia 1» deixou de servir quando a cópia passou a semanal: só há
+          # cópia ao domingo, e o dia 1 é domingo uma vez em sete meses. A
+          # mensal passa a ser a primeira cópia de cada mês — a do primeiro
+          # domingo, que é sempre um dos sete primeiros dias.
+          if [ "$(date --utc +%d)" -le 7 ]; then
             aws s3 cp "${FICHEIRO}.gpg" \
               "s3://${BACKUP_S3_BUCKET}/mensais/${FICHEIRO}.gpg" \
               --endpoint-url "${BACKUP_S3_ENDPOINT}"
           fi
+
+      # Os anexos, que o `pg_dump` não leva e que ninguém tinha.
+      #
+      # A cópia sempre levou a base de dados e mais nada. Os cartazes e os PDF
+      # que chegam nas submissões vivem no balde `intake` do Storage, e o
+      # `docs/BACKUPS.md` dizia, com todas as letras, que isso ficava por
+      # sincronizar «à mão de vez em quando» — que é como quem diz nunca. Um
+      # evento perdido volta na recolha da noite seguinte; um cartaz que alguém
+      # enviou uma vez, não.
+      #
+      # O Supabase serve o Storage por uma interface compatível com S3, e é por
+      # aí que isto passa: `aws s3 sync` contra o balde de origem, e o destino é
+      # o mesmo prefixo por cadência das cópias da base. Sem cifra própria — o
+      # que vai são ficheiros que já estiveram acessíveis por endereço
+      # assinado, e não o dump com a fila de moderação lá dentro.
+      #
+      # **Salta com aviso sem as credenciais**, como tudo o que aqui precisa de
+      # produção: as chaves S3 do Storage são secrets que o dono cria no painel
+      # do Supabase (Settings → Storage → S3 access keys), e até lá este passo
+      # diz alto que os anexos continuam sem cópia em vez de deixar a cópia
+      # parecer completa.
+      - name: Sincronizar os anexos
+        env:
+          AWS_DEFAULT_REGION: ${{ vars.SUPABASE_S3_REGION || 'eu-west-3' }}
+          SUPABASE_S3_ENDPOINT: ${{ vars.SUPABASE_S3_ENDPOINT }}
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          DESTINO_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          DESTINO_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          BACKUP_S3_BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+          BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_S3_ACCESS_KEY_ID}" ] || [ -z "${SUPABASE_S3_ENDPOINT}" ]; then
+            echo "::warning::Sem credenciais S3 do Storage — os anexos continuam sem cópia. Ver docs/CONFIGURACAO-DO-DONO.md."
+            exit 0
+          fi
+
+          PASTA="$(mktemp -d)"
+
+          # Duas contas diferentes: a de origem é o Supabase, a de destino é o
+          # balde das cópias. Um `sync` direto entre elas exigia um perfil por
+          # cada, e o passo intermédio em disco é mais fácil de ler às três da
+          # manhã do que uma configuração de perfis do AWS CLI.
+          AWS_ACCESS_KEY_ID="${SUPABASE_S3_ACCESS_KEY_ID}" \
+          AWS_SECRET_ACCESS_KEY="${SUPABASE_S3_SECRET_ACCESS_KEY}" \
+            aws s3 sync "s3://intake" "${PASTA}" \
+              --endpoint-url "${SUPABASE_S3_ENDPOINT}" --only-show-errors
+
+          QUANTOS="$(find "${PASTA}" -type f | wc -l)"
+          echo "anexos no balde: ${QUANTOS}"
+
+          AWS_ACCESS_KEY_ID="${DESTINO_ACCESS_KEY_ID}" \
+          AWS_SECRET_ACCESS_KEY="${DESTINO_SECRET_ACCESS_KEY}" \
+            aws s3 sync "${PASTA}" "s3://${BACKUP_S3_BUCKET}/anexos/" \
+              --endpoint-url "${BACKUP_S3_ENDPOINT}" --delete --only-show-errors
+
+          rm -rf "${PASTA}"
+          echo "✓ ${QUANTOS} anexo(s) sincronizados para anexos/"
 
       # O que falha aqui falhava calado: nem issue, nem alarme. Uma cópia de
       # segurança que falha em silêncio é uma cópia de segurança que não

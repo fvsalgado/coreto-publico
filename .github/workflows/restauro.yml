@@ -12,14 +12,15 @@ name: Ensaio de restauro
 # ensaio. Nunca toca na base de produção — não recebe a cadeia de ligação dela.
 on:
   schedule:
-    # Dia 2 de cada mês, de manhã: a diária das 02:40 já está no balde, a
-    # mensal do dia 1 também. O atraso da fila do GitHub (ver OPERACAO.md)
-    # aplica-se na mesma; é um ensaio, não um relógio.
+    # Dia 2 de cada mês, de manhã. A cópia é semanal, ao domingo, desde 17 de
+    # setembro de 2026: a mais recente tem entre um e sete dias, e é essa a
+    # janela que `COPIA_MAX_DIAS` dá ao guião (mais um dia de folga para a fila
+    # do GitHub, ver OPERACAO.md). É um ensaio, não um relógio.
     - cron: '30 5 2 * *'
   workflow_dispatch:
     inputs:
       copia:
-        description: 'A cópia a restaurar, dentro do balde (ex.: mensais/coreto-20260901.dump.gpg). Em branco: a mais recente de diarias/.'
+        description: 'A cópia a restaurar, dentro do balde (ex.: mensais/coreto-20260901.dump.gpg). Em branco: a mais recente de semanais/ (ou de diarias/, enquanto houver).'
         required: false
         default: ''
 
@@ -58,7 +59,7 @@ jobs:
           --health-retries=10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Confirmar a configuração
         env:
@@ -101,6 +102,9 @@ jobs:
           BACKUP_S3_ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
           COPIA: ${{ inputs.copia }}
+          # Sete dias de cadência (backup.yml: domingo) mais um de folga para a
+          # fila do GitHub. A asserção do CI confere este número contra o cron.
+          COPIA_MAX_DIAS: '8'
         run: |
           pg_restore --version
           ./scripts/ensaiar-restauro.sh

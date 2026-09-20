@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
 import { PageHeader } from '@/src/components/PageHeader';
 import { StatTable, type StatColumn } from '@/src/components/StatTable';
@@ -462,7 +463,7 @@ export default async function Relatorios({ searchParams }: Props) {
   const regioes = await listRegionsAdmin();
   const regiao = escolherRegiao(regioes, params.regiao);
   const mesPedido = lerMes(params.mes);
-  const mes = mesPedido ?? mesAnterior(new Date().toISOString().slice(0, 10));
+  const mes = mesPedido ?? mesAnterior(todayInLisbon());
   const relatorio = regiao ? await monthlyReport(regiao, mes) : null;
 
   const descarga = (extensao: 'csv' | 'json') =>

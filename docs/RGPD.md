@@ -80,15 +80,15 @@ pessoa carregar no botão — ver a secção 2.6.
 
 ### 2.1 Submissão de eventos (email; historicamente também formulário)
 
-| Elemento                | Conteúdo                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Finalidade**          | Receber, avaliar e publicar programação cultural proposta pelo público                                                                       |
-| **Titulares**           | Quem submete um evento — agentes culturais, associações, autarquias, particulares                                                            |
-| **Categorias de dados** | Endereço de email (obrigatório); nome e organização (facultativos); conteúdo da submissão; hash com sal do endereço IP; agente do utilizador |
-| **Base legal**          | Artigo 6.º, n.º 1, alínea b) — diligências pré-contratuais a pedido do titular. Quem envia um evento pede que o tratemos e publiquemos       |
-| **Onde está**           | `public.submissions` (colunas `sender_email`, `sender_name`, `sender_organisation`, `payload`, `ip_hash`, `user_agent`)                      |
-| **Conservação**         | 24 meses após a data do evento                                                                                                               |
-| **Destinatários**       | Quem modera. O conteúdo do evento é publicado; **os dados de contacto de quem o envia não são publicados**                                   |
+| Elemento                | Conteúdo                                                                                                                                                                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Finalidade**          | Receber, avaliar e publicar programação cultural proposta pelo público                                                                                                                                                                                                                |
+| **Titulares**           | Quem submete um evento — agentes culturais, associações, autarquias, particulares                                                                                                                                                                                                     |
+| **Categorias de dados** | Endereço de email (obrigatório); nome e organização (facultativos); conteúdo da submissão; no canal por formulário, hash com sal do endereço IP e agente do utilizador — **no canal por email não**, porque o pedido chega do fornecedor de webhooks e não de quem escreveu (ver 2.2) |
+| **Base legal**          | Artigo 6.º, n.º 1, alínea b) — diligências pré-contratuais a pedido do titular. Quem envia um evento pede que o tratemos e publiquemos                                                                                                                                                |
+| **Onde está**           | `public.submissions` (colunas `sender_email`, `sender_name`, `sender_organisation`, `payload`, `ip_hash`, `user_agent`)                                                                                                                                                               |
+| **Conservação**         | 24 meses após a data do evento                                                                                                                                                                                                                                                        |
+| **Destinatários**       | Quem modera. O conteúdo do evento é publicado; **os dados de contacto de quem o envia não são publicados**                                                                                                                                                                            |
 
 ### 2.2 Submissão de eventos por email
 
@@ -100,6 +100,7 @@ diferenças, todas relevantes para o registo:
 | **Categorias adicionais** | Assunto, corpo da mensagem e cabeçalhos originais; anexos (cartazes, PDF de agenda), que podem conter nomes, fotografias e contactos de terceiros                                                                                                 |
 | **Onde está**             | `public.submissions` (`raw_text`, `raw_subject`, `raw_headers`); `public.submission_attachments` (metadados) e o balde privado do Storage (os ficheiros); `public.sender_quotas` (endereço do remetente **em claro**, como chave da quota diária) |
 | **Nota**                  | O material em bruto é conservado de propósito: quando a leitura automática falha, é o que permite a uma pessoa tratar a submissão à mão                                                                                                           |
+| **O que não se guarda**   | O hash do endereço IP e o agente do utilizador: neste canal o pedido chega do fornecedor de webhooks, e o endereço e o agente eram os dele. Guardaram-se até 19 de setembro de 2026 como se fossem de quem escreveu; deixaram de se guardar       |
 
 **Dados de terceiros nos anexos.** Um cartaz pode trazer o nome e o contacto de
 quem organiza ou de quem atua. Esses dados não foram fornecidos pelo próprio,
@@ -383,12 +384,12 @@ se ter escolhido a forma que não identifica.
 
 ## 7. Subcontratantes e transferências
 
-| Subcontratante                                            | Para quê                                          | Onde trata                                              |
-| --------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------- |
-| Fornecedor da base de dados e do armazenamento (Supabase) | Guardar tudo o que está na secção 3               | Região da União Europeia, escolhida no aprovisionamento |
-| Fornecedor de alojamento (Vercel)                         | Servir o sítio e correr as funções de servidor    | Região `cdg1` (Paris), fixada em `vercel.json`          |
-| Fornecedor de estatísticas (PostHog)                      | Estatísticas de utilização, se ativadas           | Servidores na União Europeia                            |
-| Serviço de extração de texto                              | Ler um evento a partir de um email, PDF ou cartaz | **A inscrever** — ver abaixo                            |
+| Subcontratante                                                 | Para quê                                                                                                                                               | Onde trata                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Fornecedor da base de dados e do armazenamento (Supabase)      | Guardar tudo o que está na secção 3                                                                                                                    | Região da União Europeia, escolhida no aprovisionamento |
+| Fornecedor de alojamento (Vercel)                              | Servir o sítio e correr as funções de servidor                                                                                                         | Região `cdg1` (Paris), fixada em `vercel.json`          |
+| Fornecedor de estatísticas (PostHog)                           | Estatísticas de utilização, se ativadas                                                                                                                | Servidores na União Europeia                            |
+| Serviço de leitura de emails (Anthropic, PBC — Estados Unidos) | Propor os campos de um evento a partir do assunto e do texto de um email, e do texto extraído dos anexos, quando `EXTRACTION_API_KEY` está configurada | Servidores fora da União Europeia — ver abaixo          |
 
 Todos os tratamentos acima ocorrem em infraestrutura localizada na **União
 Europeia**. A escolha da região não é acessória: é o que mantém este quadro
@@ -404,22 +405,34 @@ Execução (UE) 2021/914) e pelas medidas suplementares que resultem da avaliaç
 de impacto da transferência. Os contratos de subcontratação (artigo 28.º, n.º 3)
 devem ser conservados junto deste registo.
 
-> **Serviço de extração de texto — a inscrever antes de ser usado**
+> **Serviço de leitura de emails — inscrito a 19 de setembro de 2026**
 >
 > Enquanto `EXTRACTION_API_KEY` não estiver configurada, este tratamento **não
-> existe**: as submissões ficam em bruto e são lidas por uma pessoa. A partir do
-> momento em que for configurada, passa a ser enviado para fora o assunto e o
-> texto do email, e o texto extraído dos anexos — que podem conter dados
-> pessoais.
->
-> Quem configurar a chave tem de, antes disso, inscrever aqui: a identidade e a
-> sede do fornecedor; o país onde o tratamento ocorre; o contrato de
-> subcontratação; e, se houver transferência para país terceiro, o respetivo
-> fundamento. O ponto de entrada no código é
+> existe**: as submissões ficam em bruto e são lidas por uma pessoa. Com a
+> chave configurada — e está, por decisão do responsável nesse dia —, o que
+> sai é o **assunto e o texto do email, e o texto extraído dos anexos**, para
+> a API da Anthropic, PBC (Estados Unidos). O ponto de entrada no código é
 > `apps/web/src/lib/intake/extract.ts`.
 >
-> Também tem de ser confirmado que o fornecedor **não usa o conteúdo enviado
-> para treinar modelos** e qual o prazo de retenção do lado dele.
+> **O que não sai, por desenho** (`minimizarTexto`, no mesmo ficheiro, com
+> testes): o endereço de quem enviou nunca faz parte do pedido; as mensagens
+> citadas (a partir de «Em … escreveu:» ou da primeira linha com `>`) e a
+> assinatura (a partir do separador `-- ` ou de «Enviado do meu …») são
+> cortadas antes; e os endereços de email que restem no corpo são trocados
+> por `[email]`. O que resta pode ainda conter dados pessoais que o próprio
+> remetente pôs no corpo do anúncio — o nome de quem atua, um telefone de
+> contacto —, e é por isso que o fornecedor está inscrito como subcontratante
+> e a política de privacidade o nomeia.
+>
+> **O que fica do lado do responsável pelo tratamento, e não do código:** o
+> contrato de subcontratação do artigo 28.º com o fornecedor e as cláusulas
+> contratuais-tipo para a transferência (os termos comerciais da Anthropic
+> incluem um _Data Processing Addendum_ com as cláusulas 2021/914, que tem
+> de ser aceite na conta e guardado junto deste registo); a confirmação de
+> que o conteúdo enviado **não é usado para treinar modelos** nos termos
+> desses termos comerciais; e o prazo de retenção do lado do fornecedor,
+> a inscrever aqui quando confirmado. Enquanto estas três linhas não
+> estiverem preenchidas, o registo está incompleto e diz que está.
 
 ---
 
@@ -441,10 +454,15 @@ devem ser conservados junto deste registo.
   ficheiro e não pelo que o remetente declara, e tecto de 10 MB por anexo.
 - **Verificação de origem** no canal de email, por assinatura HMAC. Sem segredo
   configurado, o canal recusa tudo.
-- **Política de segurança de conteúdo** restritiva, sem `unsafe-inline` para
-  scripts.
+- **Política de segurança de conteúdo** restritiva — com uma exceção, dita
+  por ser exceção: `script-src` leva `'unsafe-inline'`, porque a hidratação do
+  App Router arranca com scripts inline e a alternativa (um _nonce_ por
+  pedido) obriga a renderização dinâmica e deitava fora o ISR. O raciocínio
+  está em `apps/web/next.config.ts` e no `SECURITY.md`.
 - **Verificação contínua:** varrimento de segredos em cada alteração, sem
-  exceções silenciosas; análise estática de segurança; auditoria automática de
+  exceções silenciosas; análise estática de segurança (CodeQL) **quando o
+  repositório for público** — em repositório privado não corre, e o
+  `codeql.yml` explica porquê; auditoria automática de
   acessibilidade; e asserções sobre o esquema que impedem, entre outras coisas,
   que a tabela dos contadores ganhe uma coluna identificadora.
 - **Cópias de segurança** cifradas e guardadas fora do fornecedor da base de

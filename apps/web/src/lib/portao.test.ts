@@ -42,6 +42,7 @@ describe('temBarreira', () => {
     // simples para uma coisa temporária. Está escrito no painel a quem a liga,
     // e está aqui, para não deixar de ser verdade em silêncio.
     for (const caminho of [
+      '/fontes',
       '/feed.xml',
       '/agenda.ics',
       '/dados.json',

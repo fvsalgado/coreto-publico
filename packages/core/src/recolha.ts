@@ -41,6 +41,13 @@ export const HORAS_EM_PAUSA = 24;
  * A frase é do produto e não de uma região, de propósito: a mesma recolha
  * serve todas as regiões, e um agente que dissesse «do Médio Tejo» a bater à
  * porta de uma câmara de outra CIM estaria a apresentar-se como quem não é.
+ * **E o endereço também é do produto**, pela mesma razão: apontou para
+ * `mediotejo.coreto.org/fontes` até 19 de setembro de 2026, o que punha o
+ * agente a apresentar-se com o domínio de um cliente à porta das câmaras de
+ * qualquer outra região — e, com a barreira dessa região ligada, a levar quem
+ * o seguisse a uma página a pedir senha. A `/fontes` do produto diz o que a
+ * recolha é e faz, e liga à `/fontes` de cada agenda, que essa é a que lista
+ * as fontes dessa região.
  *
  * **Mora aqui, e não na recolha, pela razão escrita no topo deste ficheiro.**
  * A página `/fontes` é o destino deste endereço, e passou a mostrar a linha
@@ -51,5 +58,4 @@ export const HORAS_EM_PAUSA = 24;
  * descrever um agente que já não existe — que é como as outras duas moradas
  * mortas duraram tanto tempo.
  */
-export const USER_AGENT =
-  'Coreto/1.0 (+https://mediotejo.coreto.org/fontes; agenda cultural, Portugal)';
+export const USER_AGENT = 'Coreto/1.0 (+https://coreto.org/fontes; agenda cultural, Portugal)';

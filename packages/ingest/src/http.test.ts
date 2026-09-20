@@ -362,7 +362,9 @@ describe('o endereço com que o agente se apresenta', () => {
   it('é uma página pública do sítio, e traz o «+» que a convenção pede', () => {
     const url = /\+(https:\/\/[^\s;)]+)/.exec(USER_AGENT)?.[1];
     expect(url, 'o agente tem de trazer um endereço prefixado por «+»').toBeTruthy();
-    expect(url).toMatch(/^https:\/\/[a-z.-]+coreto\.org\//);
+    // O domínio do produto, com ou sem subdomínio: desde 19 de setembro de
+    // 2026 é a /fontes do próprio coreto.org, e não a de uma região.
+    expect(url).toMatch(/^https:\/\/(?:[a-z.-]+\.)?coreto\.org\//);
   });
 
   it('diz o que é, em português, para quem lê um registo de servidor', () => {

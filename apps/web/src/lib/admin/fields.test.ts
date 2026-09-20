@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   CAMPOS_DA_REGIAO,
-  EDITABLE_FIELDS,
   changedFields,
   comAviso,
+  destinoDoPainel,
+  EDITABLE_FIELDS,
   estadoDaLicenca,
   proposedFromPayload,
   proposedSessions,
@@ -394,5 +395,24 @@ describe('o formulário de revisão pergunta por tudo o que se pode editar', () 
 
   it.each(EDITABLE_FIELDS)('%s tem uma caixa', (campo) => {
     expect(comCaixa.has(campo)).toBe(true);
+  });
+});
+
+describe('destinoDoPainel', () => {
+  it('aceita caminhos do painel, com ou sem consulta', () => {
+    expect(destinoDoPainel('/admin/eventos?estado=publicado')).toBe(
+      '/admin/eventos?estado=publicado',
+    );
+    expect(destinoDoPainel('/admin')).toBe('/admin');
+    expect(destinoDoPainel('/admin/fila/abc')).toBe('/admin/fila/abc');
+  });
+
+  // Um `voltar` vem do corpo do pedido, e o corpo do pedido é do cliente.
+  it('recusa o que sai do painel e cai no destino por omissão', () => {
+    expect(destinoDoPainel('https://exemplo.pt/')).toBe('/admin/eventos');
+    expect(destinoDoPainel('//exemplo.pt/')).toBe('/admin/eventos');
+    expect(destinoDoPainel('/agenda')).toBe('/admin/eventos');
+    expect(destinoDoPainel('/administracao')).toBe('/admin/eventos');
+    expect(destinoDoPainel('', '/admin/fila')).toBe('/admin/fila');
   });
 });

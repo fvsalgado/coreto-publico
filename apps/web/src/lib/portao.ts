@@ -57,6 +57,13 @@ export interface BilheteDoPortao {
  * o `feed.xml` aberto, a agenda continua legível por outra porta.
  */
 const SEM_BARREIRA_EXATOS = new Set([
+  // A `/fontes` é o cartão de visita da recolha: é o endereço que o agente
+  // traz em cada pedido e para onde um administrador de sistemas segue
+  // quando nos vê nos registos dele. Com a barreira ligada respondia «Agenda
+  // reservada» — a uma pessoa que só queria saber quem lhe batia à porta, no
+  // meio de um incidente com oito servidores da CIM. Não mostra a agenda:
+  // mostra que fontes se leem, com que regras, e como pedir que se pare.
+  '/fontes',
   '/robots.txt',
   '/sitemap.xml',
   '/manifest.webmanifest',

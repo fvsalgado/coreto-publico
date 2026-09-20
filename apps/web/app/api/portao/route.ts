@@ -67,6 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     route: `portao:${regiao}`,
     limit: PORTAO_TENTATIVAS,
     windowSeconds: PORTAO_JANELA_SEGUNDOS,
+    falhaFechada: true,
   });
   if (!limite.allowed) return deVolta(request, de, 'demasiadas');
 

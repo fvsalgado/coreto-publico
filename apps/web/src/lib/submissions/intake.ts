@@ -341,6 +341,7 @@ async function enforceRateLimits(request: Request): Promise<IntakeOutcome | null
     route: 'submissions:hourly',
     limit: HOURLY_LIMIT,
     windowSeconds: 3600,
+    falhaFechada: true,
   });
   // O contacto da mensagem é o da região principal: o intake é um só para
   // todas as regiões até a fase 5 lhe dar região própria.
@@ -350,6 +351,7 @@ async function enforceRateLimits(request: Request): Promise<IntakeOutcome | null
     route: 'submissions:daily',
     limit: DAILY_LIMIT,
     windowSeconds: 86_400,
+    falhaFechada: true,
   });
   if (!daily.allowed) return rateLimited(daily, (await exigirRegiao(REGIAO_PRINCIPAL)).email);
 

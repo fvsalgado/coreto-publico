@@ -10,6 +10,7 @@ import {
   CAMPOS_DA_REGIAO,
   changedFields,
   comAviso,
+  destinoDoPainel,
   LOTE_MAX,
   readEvent,
   readSessions,
@@ -94,7 +95,7 @@ export async function bulkSetEventStatus(formData: FormData): Promise<void> {
 
   const ids = formData.getAll('ids').map(String).filter(Boolean);
   const status = String(formData.get('status') ?? '');
-  const voltarPara = String(formData.get('voltar') ?? '/admin/eventos');
+  const voltarPara = destinoDoPainel(String(formData.get('voltar') ?? '/admin/eventos'));
 
   if (ids.length === 0) redirect(comAviso(voltarPara, 'Não escolheste nenhum evento.'));
   if (!ESTADOS_PERMITIDOS.has(status)) redirect(comAviso(voltarPara, 'Estado desconhecido.'));

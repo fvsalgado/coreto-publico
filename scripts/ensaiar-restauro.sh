@@ -27,7 +27,8 @@
 #   AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… BACKUP_PASSPHRASE=… \
 #   ./scripts/ensaiar-restauro.sh
 #
-#   COPIA=diarias/coreto-20260901.dump.gpg   escolhe a cópia; a omissão é a mais recente de diarias/
+#   COPIA=semanais/coreto-20260920.dump.gpg   escolhe a cópia; a omissão é a mais recente de semanais/ ou diarias/
+#   COPIA_MAX_DIAS=8   a idade máxima da cópia escolhida pelo script; a omissão acompanha a cadência semanal
 #   COPIA_LOCAL=/caminho/coreto-20260901.dump.gpg   salta o balde: um ficheiro já descarregado
 #
 # Nunca aponta à base de produção. Recusa-se a restaurar numa base que já
@@ -84,11 +85,17 @@ else
   [ -z "$em_falta" ] || falhar "Falta configurar:${em_falta} — ver docs/BACKUPS.md."
 
   if [ -z "${COPIA:-}" ]; then
-    # A mais recente de diarias/: os nomes levam a data, e a data ordena.
-    ultima="$(aws s3 ls "s3://${BACKUP_S3_BUCKET}/diarias/" --endpoint-url "$BACKUP_S3_ENDPOINT" \
-      | awk '{print $4}' | grep -E '^coreto-[0-9]{8}\.dump\.gpg$' | sort | tail -1 || true)"
-    [ -n "$ultima" ] || falhar 'Não há nenhuma cópia em diarias/. A cópia diária nunca correu, ou o balde não é este.'
-    COPIA="diarias/${ultima}"
+    # A mais recente entre semanais/ e diarias/: os nomes levam a data, e a
+    # data ordena. Os dois prefixos porque a cópia foi diária até 17 de
+    # setembro de 2026 e as últimas diárias ainda vivem no balde até a regra de
+    # ciclo de vida as levar; procurar só no prefixo novo daria «não há cópia
+    # nenhuma» na semana da mudança, o que seria falso.
+    ultima="$(for prefixo in semanais diarias; do
+        aws s3 ls "s3://${BACKUP_S3_BUCKET}/${prefixo}/" --endpoint-url "$BACKUP_S3_ENDPOINT" \
+          | awk -v p="$prefixo" '{print $4 " " p}'
+      done | grep -E '^coreto-[0-9]{8}\.dump\.gpg ' | sort | tail -1 || true)"
+    [ -n "$ultima" ] || falhar 'Não há nenhuma cópia em semanais/ nem em diarias/. A cópia nunca correu, ou o balde não é este.'
+    COPIA="${ultima##* }/${ultima%% *}"
     escolhida_pelo_script=true
   fi
   ficheiro="$(basename "$COPIA")"
@@ -101,15 +108,24 @@ data_da_copia="$(basename "$ficheiro" | sed -n 's/^coreto-\([0-9]\{8\}\)\.dump\.
 dia_da_copia="${data_da_copia:0:4}-${data_da_copia:4:2}-${data_da_copia:6:2}"
 anotar "Cópia: ${origem}, de ${dia_da_copia}, com $(du -h "$ficheiro" | cut -f1)."
 
-# A mais recente tem de ser de hoje ou de ontem. Se não é, a cópia diária
-# parou de correr — e uma cópia que parou passa em todas as outras
+# A mais recente não pode ser mais velha do que a cadência permite. Se é, a
+# cópia parou de correr — e uma cópia que parou passa em todas as outras
 # verificações, porque o que se restaura está inteiro; só é velho.
+#
+# A janela acompanha a cadência de `backup.yml`: semanal ao domingo desde 17
+# de setembro de 2026, por isso sete dias mais um de folga para a fila do
+# GitHub. Esteve escrita «2» enquanto a cópia foi diária, e ficou «2» dois
+# dias depois de a cópia passar a semanal — o ensaio de 2 de outubro teria
+# reprovado a acusar uma cópia que estava a correr como devia. Quem mudar o
+# `cron` da cópia muda `COPIA_MAX_DIAS` no `restauro.yml`, e a asserção do CI
+# obriga os dois a concordar.
 if [ "$escolhida_pelo_script" = true ]; then
+  max_dias="${COPIA_MAX_DIAS:-8}"
   hoje="$(date --utc +%Y-%m-%d)"
   idade=$(( ( $(date --utc -d "$hoje" +%s) - $(date --utc -d "$dia_da_copia" +%s) ) / 86400 ))
-  [ "$idade" -le 2 ] \
-    || falhar "A cópia mais recente tem ${idade} dias. A cópia diária parou de correr: ver .github/workflows/backup.yml."
-  anotar "A cópia mais recente tem ${idade} dia(s): a cópia diária está a correr."
+  [ "$idade" -le "$max_dias" ] \
+    || falhar "A cópia mais recente tem ${idade} dias e a cadência admite ${max_dias}. A cópia semanal parou de correr: ver .github/workflows/backup.yml."
+  anotar "A cópia mais recente tem ${idade} dia(s), dentro dos ${max_dias} que a cadência semanal admite."
 fi
 
 # ---------------------------------------------------------------------------
