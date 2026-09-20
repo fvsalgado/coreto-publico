@@ -22,6 +22,7 @@
     "check:a11y": "node scripts/check-a11y.mjs",
     "check:selo": "node scripts/check-selo.mjs",
     "dossie": "node scripts/gerar-dossie.mjs",
+    "benchmark": "node scripts/benchmark/prints.mjs && node scripts/benchmark/redimensionar.mjs && node scripts/benchmark/gerar-galeria.mjs && node scripts/benchmark/gerar-markdown.mjs",
     "check:a11y:admin": "node scripts/check-a11y-admin.mjs",
     "check:migrations": "./scripts/verify-migrations.sh",
     "check:numeros": "node scripts/verificar-numeros.mjs",

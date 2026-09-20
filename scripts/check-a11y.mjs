@@ -606,6 +606,68 @@ for (const estado of ESTADOS) {
   await context.close();
 }
 
+// ---- O primeiro evento à vista: programação antes de controlos ----
+
+/*
+ * Não é um critério da WCAG; é a promessa que o benchmark de 20/09/2026
+ * apanhou por cumprir. A agenda mostrava um parágrafo, três atalhos, um
+ * formulário inteiro e a contagem antes do primeiro cartão: em secretária o
+ * cartão começava a 820 px de um ecrã de 900, e no telemóvel a 615 de 844,
+ * com a barra de baixo a tapar-lhe o fundo. Todas as agendas com que o Coreto
+ * se compara mostram um evento no primeiro ecrã.
+ *
+ * O que se mede é se o primeiro `[data-cartao-de-evento]` **cabe inteiro** no
+ * primeiro ecrã, nas duas larguras — do topo dele ao fundo, acima da barra
+ * fixa quando a há. É a promessa na forma em que se vê: quem abre a agenda vê
+ * um evento completo sem rolar. Dá para o cabeçalho, o título, as filas de
+ * pílulas e o resumo dos filtros; não dá para o formulário aberto. Sem
+ * cartão nenhum — uma corrida sem dados — salta-se e diz-se.
+ */
+{
+  const ROTA = '/agenda';
+  for (const vp of [
+    { nome: 'telemóvel', width: 390, height: 844 },
+    { nome: 'secretária', width: 1280, height: 900 },
+  ]) {
+    const context = await browser.newContext({
+      viewport: { width: vp.width, height: vp.height },
+      reducedMotion: 'reduce',
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${BASE_URL}${ROTA}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+      const medida = await page.evaluate(() => {
+        const cartao = document.querySelector('[data-cartao-de-evento]');
+        if (!cartao) return null;
+        const caixa = cartao.getBoundingClientRect();
+        const barra = document.querySelector('[data-barra-inferior]');
+        const alturaDaBarra = barra ? barra.getBoundingClientRect().height : 0;
+        // A barra é `sm:hidden`: em secretária está no documento com 0 px.
+        const limite = window.innerHeight - alturaDaBarra;
+        return { topo: caixa.top, fundo: caixa.bottom, limite, janela: window.innerHeight };
+      });
+      if (!medida) {
+        console.warn(`· primeiro evento ${vp.nome} ${ROTA} — saltado (sem cartões na agenda)`);
+        skipped += 1;
+      } else if (medida.fundo > medida.limite) {
+        failures += 1;
+        console.error(
+          `✗ primeiro evento ${vp.nome} ${ROTA} — o primeiro cartão vai de ${Math.round(medida.topo)} a ${Math.round(medida.fundo)}px e o primeiro ecrã acaba aos ${Math.round(medida.limite)}px`,
+        );
+      } else {
+        console.log(
+          `✓ primeiro evento ${vp.nome} ${ROTA} — o primeiro cartão cabe inteiro (${Math.round(medida.topo)}–${Math.round(medida.fundo)}px de ${Math.round(medida.limite)})`,
+        );
+      }
+    } catch (error) {
+      console.error(`✗ primeiro evento ${vp.nome} ${ROTA} — não correu: ${error.message}`);
+      failures += 1;
+    }
+    await context.close();
+  }
+}
+
 await browser.close();
 
 if (failures > 0) {

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AcoesDoCartao } from '@/src/components/AcoesDoCartao';
 import { Capa } from '@/src/components/Capa';
 import { Sinais, Sinal } from '@/src/components/Sinais';
 import { formatCategory, formatEventDates, formatTime } from '@/src/lib/format';
@@ -24,9 +25,15 @@ interface Props {
 /**
  * Cartão de evento.
  *
- * Um `article` com um único link, o do título, esticado sobre o cartão
- * inteiro: quem navega com leitor de ecrã ouve a lista de títulos, não
- * «link, link, link» — e quem usa rato clica em qualquer ponto.
+ * Um `article` com o link do título esticado sobre o cartão inteiro: quem usa
+ * rato clica em qualquer ponto, e quem navega por ligações ouve a lista de
+ * títulos. As duas acções de baixo — guardar no calendário, partilhar — ficam
+ * por cima dessa ligação e levam o título no nome acessível, para a lista de
+ * ligações não virar «Calendário, Partilhar, Calendário, Partilhar».
+ *
+ * `data-cartao-de-evento` é o gancho do `check-a11y.mjs`: a auditoria mede a
+ * que altura do primeiro ecrã começa o primeiro cartão da agenda, e um
+ * atributo com nome não se confunde com classes de estilo.
  */
 export function EventCard({
   event,
@@ -82,7 +89,10 @@ export function EventCard({
   ];
 
   return (
-    <article className="ct-lift relative flex gap-4 rounded-lg border border-border bg-surface p-3 sm:p-4">
+    <article
+      data-cartao-de-evento=""
+      className="ct-lift relative flex gap-4 rounded-lg border border-border bg-surface p-3 sm:p-4"
+    >
       <Capa event={event} today={today} className="w-21 shrink-0 self-start sm:w-27" />
 
       <div className="min-w-0 flex-1 py-0.5">
@@ -127,6 +137,8 @@ export function EventCard({
             </Sinais>
           </div>
         ) : null}
+
+        <AcoesDoCartao eventId={event.id} slug={event.slug} title={event.title} />
       </div>
     </article>
   );
