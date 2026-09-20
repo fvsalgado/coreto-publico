@@ -202,6 +202,15 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           cookie que o sítio pode criar é o de sessão da área de moderação, e só para quem tenha
           credenciais.
         </p>
+        <p>
+          A segunda chave é a dos eventos que guardar: o coração de cada evento escreve{' '}
+          <code className="rounded bg-accent-soft px-1">coreto-favoritos</code> no mesmo{' '}
+          <i lang="en">localStorage</i>, com o título, as datas e o sítio de cada um.{' '}
+          <strong>Essa lista nunca chega até nós</strong> — não é enviada para o servidor, não tem
+          conta associada, não passa para outro aparelho, e do nosso lado não há forma de saber que
+          alguém guardou o quê. Apaga-se em «Esquecer tudo», na página dos guardados, ou limpando os
+          dados do sítio no navegador.
+        </p>
 
         <h2 className="pt-2 font-semibold">Que dados são recolhidos</h2>
         <p>

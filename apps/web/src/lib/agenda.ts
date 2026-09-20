@@ -32,6 +32,10 @@ export const FILTER_KEYS = [
   'to',
   'free',
   'accessible',
+  'lgp',
+  'audiodescricao',
+  'legendas',
+  'relaxada',
   'venue',
   'series',
   'q',
@@ -41,7 +45,37 @@ export const FILTER_KEYS = [
 
 /** Os campos que se mostram como fichas removíveis. `page` e `limit` não são filtros. */
 export type FilterKey =
-  'q' | 'from' | 'to' | 'municipality' | 'category' | 'venue' | 'series' | 'free' | 'accessible';
+  | 'q'
+  | 'from'
+  | 'to'
+  | 'municipality'
+  | 'category'
+  | 'venue'
+  | 'series'
+  | 'free'
+  | EixoDeAcessibilidade;
+
+/**
+ * Os cinco eixos da acessibilidade, com o nome que têm no endereço.
+ *
+ * Uma lista só, e é dela que saem o esquema, a consulta, as caixas do
+ * formulário e as fichas dos filtros a valer. Acrescentar um eixo em quatro
+ * sítios à mão era garantir que um dia faltava num deles — foi o que já
+ * aconteceu: as colunas existem desde a 0004 e o filtro só conhecia uma.
+ */
+export const EIXOS_DE_ACESSIBILIDADE = [
+  {
+    chave: 'accessible',
+    coluna: 'wheelchair_accessible_resolved',
+    rotulo: 'Acesso a cadeiras de rodas',
+  },
+  { chave: 'lgp', coluna: 'has_sign_language', rotulo: 'Língua Gestual Portuguesa' },
+  { chave: 'audiodescricao', coluna: 'has_audio_description', rotulo: 'Com audiodescrição' },
+  { chave: 'legendas', coluna: 'has_subtitles', rotulo: 'Com legendagem' },
+  { chave: 'relaxada', coluna: 'is_relaxed_performance', rotulo: 'Sessão relaxada' },
+] as const satisfies readonly { chave: string; coluna: string; rotulo: string }[];
+
+export type EixoDeAcessibilidade = (typeof EIXOS_DE_ACESSIBILIDADE)[number]['chave'];
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -108,7 +142,9 @@ export function buildHref(
   if (filter.venue && keep('venue')) params.set('venue', filter.venue);
   if (filter.series && keep('series')) params.set('series', filter.series);
   if (filter.free && keep('free')) params.set('free', '1');
-  if (filter.accessible && keep('accessible')) params.set('accessible', '1');
+  for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+    if (filter[eixo.chave] && keep(eixo.chave)) params.set(eixo.chave, '1');
+  }
   if (filter.limit !== DEFAULTS.limit) params.set('limit', String(filter.limit));
   if (page > 1) params.set('page', String(page));
 
@@ -329,7 +365,9 @@ export function fichasDosFiltros(
     if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
   }
   if (filter.free) ficha('free', 'Entrada livre');
-  if (filter.accessible) ficha('accessible', 'Acesso a cadeiras de rodas');
+  for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+    if (filter[eixo.chave]) ficha(eixo.chave, eixo.rotulo);
+  }
 
   return fichas;
 }

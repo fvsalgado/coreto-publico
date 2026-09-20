@@ -82,6 +82,10 @@ const EVENTO: EventCard = {
   image_url: null,
   image_alt: null,
   wheelchair_accessible: true,
+  has_sign_language: false,
+  has_audio_description: false,
+  has_subtitles: false,
+  is_relaxed_performance: false,
   audience: 'all_ages',
 };
 

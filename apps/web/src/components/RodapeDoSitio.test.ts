@@ -85,6 +85,7 @@ describe('as navegações do rodapé', () => {
     const html = await marcacao([]);
 
     expect(navegacoes(html).map((referencia) => nomeAcessivel(html, referencia))).toEqual([
+      'Para si',
       'Para quem programa',
       'O projeto',
     ]);
