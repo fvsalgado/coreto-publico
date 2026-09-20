@@ -1,15 +1,17 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
-import { ActiveFilters, type ActiveFilter } from '@/src/components/ActiveFilters';
+import { ActiveFilters } from '@/src/components/ActiveFilters';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
+import { FilaDePilulas } from '@/src/components/FilaDePilulas';
 import { FilterBar } from '@/src/components/FilterBar';
 import { PageHeader } from '@/src/components/PageHeader';
 import { Pagination } from '@/src/components/Pagination';
 import { ListagemStructuredData } from '@/src/components/StructuredData';
+import { VistaDaAgenda } from '@/src/components/VistaDaAgenda';
 import {
+  contarFacetas,
   listCategories,
   listEvents,
   listMunicipalities,
@@ -21,73 +23,23 @@ import { listFeedSessions } from '@/src/lib/feeds/data';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
-import { formatLongDate } from '@/src/lib/format';
 import {
-  ATALHOS,
   PATH,
+  PATH_DO_MAPA,
   atalhosDeData,
   buildHref,
-  descreverDatas,
+  fichasDosFiltros,
   filtroIndexavel,
-  janelaActiva,
+  pilulasDeFaceta,
   readFilter,
-  type FilterKey,
   type SearchParams,
 } from '@/src/lib/agenda';
+import { descreverFiltro } from '@/src/lib/agenda-servidor';
 import { urlDoSitio, type Regiao } from '@/src/lib/regiao';
 
 interface Props {
   params: Promise<{ regiao: string }>;
   searchParams: Promise<SearchParams>;
-}
-
-interface Descricao {
-  /** Curto, para o título do separador e o cabeçalho da página. */
-  rotulo: string;
-  /** Uma frase inteira, para a descrição que vai para os motores de busca. */
-  frase: string;
-}
-
-/**
- * Os filtros activos por extenso — em duas medidas, e não numa.
- *
- * Havia uma cadeia só a servir o título e a descrição, e daí saíam frases como
- * «Eventos Música em Ourém nos onze concelhos do Médio Tejo», que diz uma
- * coisa e o contrário dela. E o intervalo de datas não entrava em nenhuma das
- * duas: a agenda de um fim-de-semana anunciava-se como a agenda inteira, sem
- * dizer de que dias falava — no título, na descrição e no cabeçalho da página.
- */
-async function describeFilter(
-  regiao: Regiao,
-  filter: EventFilter,
-  hoje: string,
-): Promise<Descricao> {
-  const [municipalities, categories] = await Promise.all([
-    listMunicipalities(regiao.id),
-    listCategories(),
-  ]);
-  const municipality = municipalities.find((item) => item.id === filter.municipality);
-  const category = categories.find((item) => item.slug === filter.category);
-  const datas = descreverDatas(filter.from, filter.to, hoje);
-
-  const partes: string[] = [];
-  if (category) partes.push(category.name);
-  if (municipality) partes.push(`em ${municipality.name}`);
-  if (filter.free) partes.push('com entrada livre');
-  if (filter.accessible) partes.push('com acesso a cadeiras de rodas');
-  if (filter.q) partes.push(`sobre «${filter.q}»`);
-
-  // As datas ficam para o fim e atrás de uma vírgula: «Música em Tomar, a
-  // partir de domingo» lê-se; sem a vírgula, os dois complementos colam-se.
-  const semDatas = partes.join(' ');
-  const rotulo = datas ? (semDatas ? `${semDatas}, ${datas}` : datas) : semDatas;
-  // «nos onze concelhos» só quando não há concelho escolhido: com um escolhido,
-  // a frase estaria a dizer que é em Ourém e nos onze ao mesmo tempo.
-  const onde =
-    municipality || regiao.concelhosDeclarados === 0
-      ? ''
-      : ` nos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}`;
-  return { rotulo, frase: rotulo ? `Eventos ${rotulo}${onde}.` : '' };
 }
 
 /**
@@ -140,7 +92,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const origem = urlDoSitio(regiao, SITE_URL);
   const filter = readFilter(await searchParams);
   const hoje = todayInLisbon();
-  const description = await describeFilter(regiao, filter, hoje);
+  const description = await descreverFiltro(regiao, filter, hoje);
 
   return {
     title: description.rotulo ? `Agenda: ${description.rotulo}` : 'Agenda',
@@ -155,67 +107,13 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   };
 }
 
-/**
- * As fichas dos filtros a valer, por extenso.
- *
- * O identificador é traduzido para nome sempre que há por onde: um concelho,
- * uma categoria, um espaço e um ciclo têm nome, e «Espaço: cine-teatro-paraiso»
- * não é uma coisa que se ponha à frente de quem lê. Quando o nome não se
- * encontra — um espaço apagado, um ciclo que mudou de identificador — mostra-se
- * o que veio no endereço, que é melhor do que esconder um filtro a valer.
- */
-function activeFilters(
-  filter: EventFilter,
-  hoje: string,
-  names: {
-    municipalities: Record<string, string>;
-    categories: Record<string, string>;
-    venues: Record<string, string>;
-    series: Record<string, string>;
-  },
-): ActiveFilter[] {
-  const fichas: ActiveFilter[] = [];
-  const ficha = (key: FilterKey, label: string) =>
-    fichas.push({ label, href: buildHref(filter, 1, key) });
-
-  if (filter.q) ficha('q', `«${filter.q}»`);
-  if (filter.municipality)
-    ficha('municipality', names.municipalities[filter.municipality] ?? filter.municipality);
-  if (filter.category) ficha('category', names.categories[filter.category] ?? filter.category);
-  if (filter.venue) ficha('venue', names.venues[filter.venue] ?? filter.venue);
-  if (filter.series) ficha('series', names.series[filter.series] ?? filter.series);
-  /*
-   * Um recorte com nome é uma ficha só, e larga-se inteiro.
-   *
-   * Sem isto, «Hoje» aparecia como «De 5 de setembro» **e** «Até 5 de
-   * setembro» — duas fichas para um filtro, removíveis uma de cada vez e a
-   * deixar meia janela para trás. E o contador do formulário dizia «2», o que
-   * levava quem carregou num atalho a pensar que tinha escondido dois filtros
-   * que não pôs.
-   */
-  const atalho = janelaActiva(filter, hoje);
-  if (atalho) {
-    fichas.push({
-      label: ATALHOS.find((item) => item.id === atalho)?.rotulo ?? 'Datas',
-      href: buildHref(filter, 1, ['from', 'to']),
-    });
-  } else {
-    if (filter.from) ficha('from', `De ${formatLongDate(filter.from)}`);
-    if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
-  }
-  if (filter.free) ficha('free', 'Entrada livre');
-  if (filter.accessible) ficha('accessible', 'Acesso a cadeiras de rodas');
-
-  return fichas;
-}
-
 export default async function AgendaPage({ params, searchParams }: Props) {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
   const filter = readFilter(await searchParams);
   const today = todayInLisbon();
 
-  const [result, municipalities, categories, venueNames, series] = await Promise.all([
+  const [result, municipalities, categories, venueNames, series, facetas] = await Promise.all([
     listEvents(regiao.id, filter),
     listMunicipalities(regiao.id),
     listCategories(),
@@ -223,6 +121,9 @@ export default async function AgendaPage({ params, searchParams }: Props) {
     // dar nome ao espaço filtrado mesmo quando o concelho não está escolhido.
     listVenueNames(regiao.id, filter.municipality),
     listSeries(regiao.id),
+    // Os números das pílulas. Sem base, ou acima do tecto, vêm a `null` e as
+    // pílulas saem sem número — nunca com um número errado.
+    contarFacetas(regiao.id, filter),
   ]);
 
   // A hora de cada cartão, na mesma leitura de sessões que a API pública faz
@@ -234,15 +135,42 @@ export default async function AgendaPage({ params, searchParams }: Props) {
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
 
-  const fichas = activeFilters(filter, today, {
+  const fichas = fichasDosFiltros(filter, today, {
     municipalities: municipalityNames,
     categories: Object.fromEntries(categories.map((category) => [category.slug, category.name])),
     venues: venueNames,
     series: Object.fromEntries(series.map((item) => [item.id, item.name])),
   });
 
-  const descricao = await describeFilter(regiao, filter, today);
+  const descricao = await descreverFiltro(regiao, filter, today);
   const atalhos = atalhosDeData(filter, today);
+
+  /*
+   * As três filas de pílulas: quando, onde, o quê.
+   *
+   * Por esta ordem porque é a ordem das perguntas. O concelho só se oferece
+   * quando há por onde escolher — numa região de um concelho a fila dizia uma
+   * coisa só. As categorias saem pela ordem da taxonomia, e as vazias caem
+   * quando há contagem (ver `pilulasDeFaceta`).
+   */
+  const pilulasDeConcelho =
+    municipalities.length > 1
+      ? pilulasDeFaceta(
+          filter,
+          'municipality',
+          municipalities.map((municipality) => ({
+            valor: municipality.id,
+            rotulo: municipality.name,
+          })),
+          facetas.municipality,
+        )
+      : [];
+  const pilulasDeCategoria = pilulasDeFaceta(
+    filter,
+    'category',
+    categories.map((category) => ({ valor: category.slug, rotulo: category.name })),
+    facetas.category,
+  );
   const totalPages = Math.max(1, Math.ceil(result.total / filter.limit));
   const origem = urlDoSitio(regiao, SITE_URL);
 
@@ -317,52 +245,65 @@ export default async function AgendaPage({ params, searchParams }: Props) {
       {/* Com filtros a valer, o cabeçalho diz quais — a mesma frase que vai
           para o título do separador. As fichas por baixo dão-nos um a um e
           deixam tirá-los; isto é a leitura de conjunto, para quem chega de
-          fora e cai numa lista já recortada sem saber por quê. */}
+          fora e cai numa lista já recortada sem saber por quê. Sem filtros
+          não há parágrafo nenhum: o que se quer ver primeiro é a programação,
+          e a frase sobre os filtros passou para dentro do formulário. */}
       <PageHeader
         title="Agenda"
         eyebrow="A programação"
-        lead={
-          descricao.rotulo
-            ? `A mostrar: ${descricao.rotulo}. Cada filtro é uma ligação — dá para guardar nos favoritos e para partilhar tal como está.`
-            : `A programação dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}. Cada filtro é uma ligação — dá para guardar nos favoritos e para partilhar tal como está.`
+        compacto
+        lead={descricao.rotulo ? `A mostrar: ${descricao.rotulo}.` : undefined}
+        lado={
+          <VistaDaAgenda
+            vista="lista"
+            hrefLista={buildHref(filter, 1)}
+            hrefMapa={buildHref(filter, 1, undefined, PATH_DO_MAPA)}
+          />
         }
       />
 
-      {/* Fora do recolhível de propósito: no telemóvel o formulário está
-          fechado por omissão e sem JavaScript, e um atalho atrás de uma gaveta
-          é um campo de formulário com outro nome. São três fichas numa linha,
-          não os dois ecrãs de formulário que o recolhível existe para poupar. */}
-      <nav aria-label="Atalhos de data" className="mt-5">
-        <ul className="flex flex-wrap gap-2">
-          {atalhos.map((atalho) => (
-            <li key={atalho.id}>
-              <Link
-                href={atalho.href}
-                aria-current={atalho.activo ? 'page' : undefined}
-                className={
-                  atalho.activo
-                    ? 'inline-flex min-h-11 items-center rounded-full border border-accent bg-accent-soft px-4 text-sm font-semibold text-accent'
-                    : 'inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-4 text-sm font-medium hover:border-accent/40'
-                }
-              >
-                {atalho.rotulo}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      {/* Fora do recolhível de propósito: são ligações, funcionam sem
+          JavaScript, e um atalho atrás de uma gaveta é um campo de formulário
+          com outro nome. Quando, onde, o quê — três filas, cada uma numa
+          linha que desliza no telemóvel. A partir do tablet as três correm
+          numa só caixa que embrulha: cada fila a ocupar a sua linha gastava
+          quatro linhas onde três chegam, e cada linha é meio cartão a menos
+          no primeiro ecrã. */}
+      <div className="sm:flex sm:flex-wrap sm:items-start sm:gap-x-6 sm:gap-y-2">
+        <FilaDePilulas
+          nome="Atalhos de data"
+          pilulas={atalhos.map((atalho) => ({
+            chave: atalho.id,
+            rotulo: atalho.rotulo,
+            href: atalho.href,
+            activa: atalho.activo,
+          }))}
+        />
+        <FilaDePilulas
+          nome="Concelhos"
+          className="mt-2 sm:mt-0"
+          pilulas={pilulasDeConcelho.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
+        />
+        <FilaDePilulas
+          nome="Categorias"
+          className="mt-2 sm:mt-0"
+          pilulas={pilulasDeCategoria.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
+        />
+      </div>
 
-      <FilterBar
-        filter={filter}
-        municipalities={municipalities}
-        categories={categories}
-        action={PATH}
-        activeCount={fichas.length}
-      />
+      <div className="mt-4">
+        <FilterBar
+          filter={filter}
+          municipalities={municipalities}
+          categories={categories}
+          action={PATH}
+          activeCount={fichas.length}
+        />
+      </div>
 
       <ActiveFilters filters={fichas} clearHref={PATH} />
 
-      <p role="status" className="mt-5 text-sm text-muted">
+      <p role="status" className="mt-3 text-sm text-muted">
         {summary}
         {totalPages > 1 ? ` A mostrar a página ${filter.page} de ${totalPages}.` : ''}
       </p>

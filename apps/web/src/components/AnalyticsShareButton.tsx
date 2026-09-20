@@ -2,14 +2,13 @@
 
 import { useState, useSyncExternalStore } from 'react';
 import { recordStat } from '@/src/lib/analytics/beacon';
+import { partilhar, type ResultadoDaPartilha } from '@/src/lib/partilhar';
 
 interface Props {
   eventId: string;
   title: string;
   url: string;
 }
-
-type Feedback = 'idle' | 'copied' | 'failed';
 
 /**
  * Partilhar um evento — e contar que foi partilhado.
@@ -43,31 +42,16 @@ function useIsClient(): boolean {
 
 export function AnalyticsShareButton({ eventId, title, url }: Props) {
   const isClient = useIsClient();
-  const [feedback, setFeedback] = useState<Feedback>('idle');
+  const [feedback, setFeedback] = useState<ResultadoDaPartilha | null>(null);
 
   if (!isClient) return null;
 
+  // A regra de partilhar — menu do sistema, senão copiar — está em
+  // `lib/partilhar.ts`, que os cartões da agenda também usam.
   const share = async (): Promise<void> => {
     recordStat(eventId, 'share');
-    setFeedback('idle');
-
-    if (typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title, url });
-        return;
-      } catch {
-        // Desistir a meio do menu de partilha do sistema é uma decisão de quem
-        // visita, não um erro: não se avisa nem se tenta outra coisa.
-        return;
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      setFeedback('copied');
-    } catch {
-      setFeedback('failed');
-    }
+    setFeedback(null);
+    setFeedback(await partilhar(title, url));
   };
 
   return (
@@ -80,8 +64,8 @@ export function AnalyticsShareButton({ eventId, title, url }: Props) {
         Partilhar
       </button>
       <span aria-live="polite" className="text-sm text-muted">
-        {feedback === 'copied' ? 'Ligação copiada.' : null}
-        {feedback === 'failed' ? 'Não foi possível copiar. Copie o endereço da barra.' : null}
+        {feedback === 'copiado' ? 'Ligação copiada.' : null}
+        {feedback === 'falhou' ? 'Não foi possível copiar. Copie o endereço da barra.' : null}
       </span>
     </span>
   );

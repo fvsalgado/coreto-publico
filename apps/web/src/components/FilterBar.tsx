@@ -27,14 +27,21 @@ const LABEL_CLASS = 'block text-sm font-medium';
  * do navegador faz o que se espera. Sem `page` no formulário de propósito —
  * mudar um filtro tem de voltar à primeira página, senão cai-se num «sem
  * resultados» que é só a página 7 de uma lista que agora tem duas.
+ *
+ * **Recolhido em qualquer largura** desde 20/09/2026. Em secretária abria
+ * por inteiro e empurrava o primeiro evento para fora do ecrã; o que
+ * interessa ter à vista — as datas, os concelhos, as categorias — está em
+ * pílulas por cima deste formulário (`FilaDePilulas`). O concelho e a
+ * categoria ficam também aqui como listas, de propósito: as pílulas são
+ * ligações e as listas são campos, e quem prefere um controlo só — ou quem
+ * navega com leitor de ecrã pela lista de campos do formulário — encontra
+ * tudo no mesmo sítio. Escrevem no mesmo endereço.
  */
 export function FilterBar({ filter, municipalities, categories, action, activeCount = 0 }: Props) {
   return (
-    <details className="ct-recolhivel rounded border border-border bg-surface">
-      {/* Só se vê no telemóvel — a partir do tablet o CSS esconde o resumo e
-          deixa o formulário aberto, sem `open` nem JavaScript. */}
-      <summary aria-label="Mostrar ou esconder os filtros da agenda">
-        <span>Filtrar e pesquisar</span>
+    <details className="ct-recolhivel ct-recolhivel-sempre rounded border border-border bg-surface">
+      <summary aria-label="Mostrar ou esconder a pesquisa e os filtros da agenda">
+        <span>Pesquisar e filtrar</span>
         {activeCount > 0 ? (
           <span className="ct-octagon grid size-6 shrink-0 place-items-center bg-accent text-xs font-semibold text-on-accent">
             {activeCount}
@@ -47,12 +54,18 @@ export function FilterBar({ filter, municipalities, categories, action, activeCo
         action={action}
         role="search"
         aria-label="Filtrar a agenda"
-        className="px-4 pt-1 pb-4 sm:pt-4"
+        className="px-4 pt-1 pb-4"
       >
         {/* O espaço e o ciclo não têm campo próprio, mas quem chega por uma
           ligação com eles não os pode perder ao carregar em «Filtrar». */}
         {filter.venue ? <input type="hidden" name="venue" value={filter.venue} /> : null}
         {filter.series ? <input type="hidden" name="series" value={filter.series} /> : null}
+
+        {/* Estava no cabeçalho da página, antes de tudo; aqui é onde faz
+            sentido — é sobre isto que fala. */}
+        <p className="mb-3 text-sm text-muted">
+          Cada filtro é uma ligação — dá para guardar nos favoritos e para partilhar tal como está.
+        </p>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="lg:col-span-3">

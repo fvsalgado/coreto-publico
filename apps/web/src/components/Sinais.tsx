@@ -40,6 +40,7 @@ export type NomeDeIcone =
   | 'calendario'
   | 'codigo'
   | 'etiqueta'
+  | 'partilhar'
   | 'externo';
 
 /**
@@ -151,6 +152,16 @@ const TRACOS: Record<NomeDeIcone, ReactNode> = {
     <>
       <path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
       <circle cx="7.5" cy="7.5" r=".5" />
+    </>
+  ),
+  // Três nós e duas arestas: o desenho de partilhar que todos os telemóveis
+  // já ensinaram.
+  partilhar: (
+    <>
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="m8.2 10.8 7.6-4.6M8.2 13.2l7.6 4.6" />
     </>
   ),
   externo: (

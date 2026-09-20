@@ -90,8 +90,17 @@ export interface EventListResult {
  * todo» quando o intervalo pedido caiu além do fim e a resposta com linhas foi
  * recusada.
  */
-function consultaDeEventos(supabase: ClientePublico, contar: 'com-linhas' | 'so') {
-  return supabase.from('events').select(`${CARD_EVENT_FIELDS}, municipalities!inner()`, {
+function consultaDeEventos(
+  supabase: ClientePublico,
+  contar: 'com-linhas' | 'so',
+  /**
+   * As colunas a trazer. As do cartão por omissão; o mapa pede as suas e a
+   * contagem por faceta pede duas — o recorte é o mesmo para os três, e é por
+   * ser o mesmo que passa pelo mesmo `filtrarEventos`.
+   */
+  campos: string = CARD_EVENT_FIELDS,
+) {
+  return supabase.from('events').select(`${campos}, municipalities!inner()`, {
     count: 'exact',
     head: contar === 'so',
   });
@@ -208,6 +217,70 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
   return { events: (data ?? []) as unknown as EventCard[], total: count ?? 0 };
 }
 
+/**
+ * Quantos eventos há por concelho e por categoria, dado o resto do filtro.
+ *
+ * É o número entre parênteses nas pílulas da agenda. Cada faceta conta-se
+ * **sem ela própria** no filtro: com «Tomar» escolhido, as pílulas dos outros
+ * concelhos têm de dizer quantos eventos teriam — senão diziam todas zero e
+ * ninguém percebia porquê.
+ *
+ * Duas consultas de duas colunas, contadas aqui, e não vinte pedidos de
+ * `head: true`: são vinte e uma opções entre concelhos e categorias, e vinte
+ * e um pedidos por página de agenda é uma factura. A janela tem tecto (o
+ * PostgREST corta a mil linhas por omissão), e quando o tecto é atingido a
+ * faceta sai **sem** contagem em vez de sair com uma contagem errada — as
+ * pílulas continuam a funcionar, só não dizem números.
+ */
+export interface ContagemPorFaceta {
+  municipality: Readonly<Record<string, number>> | null;
+  category: Readonly<Record<string, number>> | null;
+}
+
+const JANELA_DAS_FACETAS = 1000;
+
+async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {
+  const supabase = publicClient();
+  if (!supabase) return { municipality: null, category: null };
+
+  const from = filter.from ?? todayInLisbon();
+  const contar = async (
+    coluna: 'municipality_id' | 'category_slug',
+    semEsta: 'municipality' | 'category',
+  ): Promise<Readonly<Record<string, number>> | null> => {
+    const { data, error } = await filtrarEventos(
+      consultaDeEventos(supabase, 'com-linhas', coluna),
+      regiao,
+      { ...filter, [semEsta]: undefined },
+      from,
+    ).range(0, JANELA_DAS_FACETAS - 1);
+    // Degrada em vez de propagar: a contagem das pílulas é um enfeite útil, e
+    // uma agenda sem números nas pílulas é melhor do que uma agenda em erro.
+    if (error) return null;
+    const linhas = (data ?? []) as unknown as Array<Record<string, string | null>>;
+    if (linhas.length >= JANELA_DAS_FACETAS) return null;
+    const contagem: Record<string, number> = {};
+    for (const linha of linhas) {
+      const valor = linha[coluna];
+      if (valor) contagem[valor] = (contagem[valor] ?? 0) + 1;
+    }
+    return contagem;
+  };
+
+  const [municipality, category] = await Promise.all([
+    contar('municipality_id', 'municipality'),
+    contar('category_slug', 'category'),
+  ]);
+  return { municipality, category };
+}
+
+export function contarFacetas(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {
+  return unstable_cache(fetchFacetCounts, ['events-facets', regiao, JSON.stringify(filter)], {
+    tags: [CACHE_TAGS.events],
+    revalidate: REVALIDATE_SECONDS,
+  })(regiao, filter);
+}
+
 export function listEvents(regiao: string, filter: EventFilter): Promise<EventListResult> {
   const tags: string[] = [CACHE_TAGS.events];
   if (filter.municipality) tags.push(CACHE_TAGS.municipality(filter.municipality));
@@ -315,27 +388,30 @@ export async function withCardTimes<T extends EventCard>(
 }
 
 /**
- * Todos os eventos por acontecer, para o mapa.
+ * Todos os eventos por acontecer, para o mapa — ou os que passam num filtro.
  *
  * O mesmo recorte da agenda — publicado, canónico, ainda não acabou —, mas sem
  * paginação: um mapa que só mostrasse a primeira página seria um mapa que mente
  * por omissão. O tecto existe na mesma, porque uma consulta sem limite nenhum é
  * uma consulta que um dia traz tudo o que a base tiver.
+ *
+ * O filtro é o da agenda, tal e qual, e passa pelo mesmo `filtrarEventos`: é o
+ * que faz «Ver no mapa» mostrar exactamente o que a lista mostrava. Sem filtro
+ * é o mapa de sempre — o `DEFAULTS` do esquema, que não corta nada.
  */
 const MAX_MAP_EVENTS = 1000;
 
-async function fetchEventsForMap(regiao: string): Promise<EventPoint[]> {
+async function fetchEventsForMap(regiao: string, filter: EventFilter): Promise<EventPoint[]> {
   const supabase = publicClient();
   if (!supabase) return [];
 
-  const from = todayInLisbon();
-  const { data, error } = await supabase
-    .from('events')
-    .select(`${MAP_EVENT_FIELDS}, municipalities!inner()`)
-    .eq('municipalities.region_id', regiao)
-    .eq('status', 'published')
-    .eq('is_canonical', true)
-    .or(`date_end.gte.${from},date_start.gte.${from}`)
+  const from = filter.from ?? todayInLisbon();
+  const { data, error } = await filtrarEventos(
+    consultaDeEventos(supabase, 'com-linhas', MAP_EVENT_FIELDS),
+    regiao,
+    filter,
+    from,
+  )
     .order('agenda_date', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true })
     .limit(MAX_MAP_EVENTS);
@@ -348,10 +424,12 @@ async function fetchEventsForMap(regiao: string): Promise<EventPoint[]> {
   return (data ?? []) as unknown as EventPoint[];
 }
 
-export const listEventsForMap = unstable_cache(fetchEventsForMap, ['events-map'], {
-  tags: [CACHE_TAGS.events],
-  revalidate: REVALIDATE_SECONDS,
-});
+export function listEventsForMap(regiao: string, filter: EventFilter): Promise<EventPoint[]> {
+  return unstable_cache(fetchEventsForMap, ['events-map', regiao, JSON.stringify(filter)], {
+    tags: [CACHE_TAGS.events],
+    revalidate: REVALIDATE_SECONDS,
+  })(regiao, filter);
+}
 
 async function fetchEvent(regiao: string, slug: string): Promise<EventDetail | null> {
   const supabase = publicClient();
