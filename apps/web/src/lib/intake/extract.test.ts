@@ -5,7 +5,7 @@ vi.mock('../env', () => ({
   env: { EXTRACTION_API_KEY: 'chave-de-teste', EXTRACTION_MODEL: 'modelo-de-teste' },
 }));
 
-const { extractEvent, extractJsonObject } = await import('./extract');
+const { extractEvent, extractJsonObject, minimizarTexto } = await import('./extract');
 
 const ENTRADA = {
   subject: 'Concerto de Outono',
@@ -107,5 +107,74 @@ describe('extractEvent e o juízo sobre o que devolve', () => {
     // A proposta chega inteira: o juiz marca, não recusa.
     expect(outcome.event.title).toBe('Concerto de Outono');
     expect(outcome.naoVerificados).toEqual(['data 2026-10-04']);
+  });
+});
+
+describe('minimizarTexto — o que não sai daqui', () => {
+  it('corta a conversa citada a partir do «Em … escreveu:»', () => {
+    const texto = [
+      'Sábado há baile no coreto às 21h.',
+      '',
+      'Em qui., 18 de set. de 2026 às 10:02, Maria <maria@exemplo.pt> escreveu:',
+      '> Olá, conseguem publicar?',
+      '> Maria, 912 345 678',
+    ].join('\n');
+    expect(minimizarTexto(texto)).toBe('Sábado há baile no coreto às 21h.');
+  });
+
+  it('corta a partir da primeira linha citada com «>»', () => {
+    expect(minimizarTexto('Concerto dia 20.\n> texto antigo\nmais')).toBe('Concerto dia 20.');
+  });
+
+  it('corta a assinatura a partir do separador da RFC 3676 e do «Enviado do meu»', () => {
+    expect(minimizarTexto('Feira do livro, 3 a 5 de outubro.\n-- \nJoão Silva\nPresidente')).toBe(
+      'Feira do livro, 3 a 5 de outubro.',
+    );
+    expect(minimizarTexto('Feira do livro.\nEnviado do meu iPhone\nJoão')).toBe('Feira do livro.');
+  });
+
+  it('troca os endereços de email que restem por [email]', () => {
+    expect(minimizarTexto('Inscrições por cultura@cm-exemplo.pt até dia 3.')).toBe(
+      'Inscrições por [email] até dia 3.',
+    );
+  });
+
+  it('não toca no que é o evento', () => {
+    const texto =
+      'Teatro «A Sapateira», 14 de novembro, 21h30, Cine-Teatro. Bilhetes 5 €, 912 345 678.';
+    expect(minimizarTexto(texto)).toBe(texto);
+  });
+});
+
+describe('o pedido ao fornecedor leva o texto minimizado', () => {
+  it('a assinatura e o email do remetente não saem no prompt', async () => {
+    let corpoEnviado = '';
+    vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
+      corpoEnviado = init.body;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                title: 'Concerto de Outono',
+                municipalityId: 'tomar',
+                confidence: 0.9,
+                dates: [{ date: '2026-09-20', startTime: '21:30' }],
+              }),
+            },
+          ],
+        }),
+      };
+    });
+    await extractEvent({
+      ...ENTRADA,
+      text: `${ENTRADA.text}\n-- \nAna Costa · ana.costa@exemplo.pt · 912 000 000`,
+    });
+    expect(corpoEnviado).toContain('Concerto de Outono a 20 de setembro');
+    expect(corpoEnviado).not.toContain('Ana Costa');
+    expect(corpoEnviado).not.toContain('ana.costa@exemplo.pt');
   });
 });

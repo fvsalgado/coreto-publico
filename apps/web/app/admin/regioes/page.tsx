@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
@@ -101,7 +102,7 @@ export default async function Regioes({ searchParams }: Props) {
     listRegionGates(),
   ]);
 
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayInLisbon();
   const comSenha = new Set(barreiras.map((linha) => linha.region_id));
   const abertas = regioes.filter((r) => r.is_enabled && !r.gate_enabled).length;
   const tapadas = regioes.filter((r) => r.is_enabled && r.gate_enabled).length;

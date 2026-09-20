@@ -266,6 +266,32 @@
     color-scheme: light;
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+
+    /*
+     * O que a barra do polegar tapava, e o critério que o proíbe.
+     *
+     * A `BarraInferior` é `fixed bottom-0` no telemóvel, com 3.5rem mais a
+     * área segura do iPhone. Quando se navega por teclado numa página longa, o
+     * navegador leva o elemento focado até à margem do ecrã — que é
+     * exatamente onde a barra está por cima. O critério 2.4.11 da WCAG 2.2
+     * (AA) exige que o elemento focado não fique inteiramente tapado por
+     * conteúdo do autor, e era isso que acontecia.
+     *
+     * `scroll-padding-block-end` diz ao navegador que a parte de baixo da
+     * janela «acaba» acima da barra. A conta é a mesma da barra, e se uma
+     * mudar sem a outra volta o problema — por isso as duas saem da mesma
+     * expressão, e há um teste que percorre a página com Tab a compará-las.
+     *
+     * Só até `sm`, porque a barra é `sm:hidden`: num ecrã largo não há nada a
+     * tapar, e um padding a mais fazia o foco parar mais cedo sem razão.
+     */
+    scroll-padding-block-end: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (width >= 40rem) {
+    html {
+      scroll-padding-block-end: 0;
+    }
   }
 
   /*

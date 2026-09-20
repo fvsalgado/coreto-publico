@@ -12,10 +12,16 @@
 #
 #   avisar.sh <título> <prioridade> [ficheiro com o corpo]
 #
-# Sem `NTFY_URL` configurada não faz nada e sai a zero, de propósito: um passo
-# de aviso que faz falhar a execução por não estar configurado transforma «a
-# cópia correu bem» em «a cópia falhou», e ensina toda a gente a ignorar o
-# vermelho.
+# Sem `NTFY_URL` configurada, o que acontece depende da prioridade — e isto
+# mudou a 19 de setembro de 2026. Para `low` e `default` (o resumo da semana,
+# uma recolha que falhou e já tem issue) não faz nada e sai a zero, como
+# sempre: um passo de aviso que faz falhar a execução por não estar
+# configurado transforma «a cópia correu bem» em «a cópia falhou». Para `high`
+# e `urgent` (o sítio não responde, a cópia falhou, a publicação falhou) sai
+# a 1 e diz porquê: esses só correm quando alguma coisa já falhou, e «falhou e
+# ninguém foi avisado» não pode terminar a verde. Um alarme que termina num
+# issue que ninguém lê à noite não é um alarme — e foi exatamente assim que
+# a vigilância esteve a correr durante semanas sem um NTFY_URL nos secrets.
 #
 # `NTFY_URL` é o endereço completo, tópico incluído — `https://ntfy.sh/<tópico>`
 # ou um servidor próprio.
@@ -35,8 +41,16 @@ PRIORIDADE="${2:-default}"
 CORPO_FICHEIRO="${3:-}"
 
 if [ -z "${NTFY_URL:-}" ]; then
-  echo "::notice::Sem NTFY_URL configurada: o aviso fica só no issue."
-  exit 0
+  case "${PRIORIDADE}" in
+    high | urgent | max | 4 | 5)
+      echo "::error title=Ninguém foi avisado::«${TITULO}» é um aviso de prioridade ${PRIORIDADE} e não há NTFY_URL nos secrets: ficou só no issue, que ninguém lê à noite. Ver docs/CONFIGURACAO-DO-DONO.md."
+      exit 1
+      ;;
+    *)
+      echo "::notice::Sem NTFY_URL configurada: o aviso fica só no issue."
+      exit 0
+      ;;
+  esac
 fi
 
 corpo=''

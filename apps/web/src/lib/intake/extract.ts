@@ -60,6 +60,44 @@ export interface ExtractionInput {
 const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
+ * O que se corta do email antes de ele sair daqui.
+ *
+ * O texto vai para um fornecedor fora da União Europeia, e o que lá chega
+ * deve ser o evento — não a conversa à volta dele. Três cortes, todos
+ * conservadores, porque um corte a mais tira ao modelo a frase que tinha a
+ * data:
+ *
+ * 1. **As mensagens citadas.** A partir da primeira linha «Em … escreveu:» /
+ *    «On … wrote:» ou da primeira linha a começar por `>`, tudo o que se
+ *    segue é o histórico da conversa, que é de outras pessoas e não anuncia
+ *    nada.
+ * 2. **A assinatura.** A partir do separador `-- ` (RFC 3676) ou de um
+ *    «Enviado do meu …» / «Sent from my …», o que vem a seguir é o nome, o
+ *    cargo e os contactos de quem escreveu — e isso já está na fila, não
+ *    precisa de viajar.
+ * 3. **Os endereços de email** que restem no corpo, trocados por `[email]`.
+ *    O contacto do organizador pode ser um deles; se for, a pessoa que revê
+ *    a submissão tem o original inteiro, e é ela quem publica.
+ *
+ * Aplica-se no prompt e no texto contra o qual o juiz confronta a resposta,
+ * pela razão de sempre: julgar contra mais do que o modelo viu dá
+ * «verificado» por acidente.
+ */
+export function minimizarTexto(texto: string): string {
+  const linhas = texto.replace(/\r\n?/g, '\n').split('\n');
+  const CITACAO =
+    /^\s*(?:>|(?:Em|On|El|Le)\b.{3,120}\b(?:escreveu|wrote|escribió|a écrit)\s*:?\s*$)/i;
+  const ASSINATURA =
+    /^(?:-- ?$|(?:Enviado|Sent|Envoyé)\s+(?:do|from|de|depuis)\s+(?:o\s+)?(?:meu|my|mon|mi)\b)/i;
+  const corte = linhas.findIndex((linha) => CITACAO.test(linha) || ASSINATURA.test(linha));
+  const util = corte === -1 ? linhas : linhas.slice(0, corte);
+  return util
+    .join('\n')
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
+    .trim();
+}
+
+/**
  * Até onde vai o corpo do email no pedido — e, por isso, no juízo.
  *
  * Tem um nome porque é lido em dois sítios que **têm** de concordar: o prompt
@@ -116,7 +154,7 @@ function buildPrompt(input: ExtractionInput): string {
     `Assunto: ${input.subject}`,
     '',
     'Mensagem:',
-    input.text.slice(0, PROMPT_TEXT_LIMIT),
+    minimizarTexto(input.text).slice(0, PROMPT_TEXT_LIMIT),
   ].join('\n');
 }
 
@@ -128,7 +166,7 @@ function buildPrompt(input: ExtractionInput): string {
  * julgar contra menos marcava campos que ele leu bem.
  */
 function textoJulgavel(input: ExtractionInput): string {
-  return `${input.subject}\n${input.text.slice(0, PROMPT_TEXT_LIMIT)}`;
+  return `${input.subject}\n${minimizarTexto(input.text).slice(0, PROMPT_TEXT_LIMIT)}`;
 }
 
 /**

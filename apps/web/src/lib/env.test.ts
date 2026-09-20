@@ -53,12 +53,14 @@ describe('SITE_URL', () => {
     expect(url).toBe('https://coreto-sage.vercel.app');
   });
 
-  it('só usa o domínio próprio quando não há mais nada', async () => {
+  it('só usa o domínio do produto quando não há mais nada', async () => {
     const url = await siteUrlWith({
       NEXT_PUBLIC_SITE_URL: undefined,
       VERCEL_PROJECT_PRODUCTION_URL: undefined,
     });
-    expect(url).toBe('https://coreto.mediotejo.pt');
+    // O produto, e não o domínio de uma região: este degrau serve qualquer
+    // instalação, e uma segunda CIM não pode nascer a anunciar a primeira.
+    expect(url).toBe('https://coreto.org');
   });
 
   // Um valor mal formado não deve derrubar o arranque: o campo falha, cai no
@@ -68,7 +70,7 @@ describe('SITE_URL', () => {
       NEXT_PUBLIC_SITE_URL: 'isto-não-é-um-endereço',
       VERCEL_PROJECT_PRODUCTION_URL: undefined,
     });
-    expect(url).toBe('https://coreto.mediotejo.pt');
+    expect(url).toBe('https://coreto.org');
   });
 });
 

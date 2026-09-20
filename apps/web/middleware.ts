@@ -52,6 +52,10 @@ const CAMINHOS_DE_FICHEIROS = [
   '/og/',
   '/produto/',
   '/.well-known/',
+  // O processador do MapLibre, copiado do pacote para `public/maplibre/<versão>/`
+  // (ver `scripts/copiar-maplibre.mjs`). Entrou depois de dar 404 no primeiro
+  // ensaio: o `setWorkerUrl` apontava para cá e isto tratava-o como página.
+  '/maplibre/',
 ] as const;
 const FICHEIROS_DE_RAIZ = ['/favicon.ico', '/icon.svg', '/apple-icon.png'] as const;
 
@@ -82,6 +86,9 @@ const PAGINA_DO_PRODUTO = '/pagina-do-produto';
 const CAMINHOS_DA_MONTRA = new Map<string, string>([
   ['/', PAGINA_DO_PRODUTO],
   ['/seguranca', `${PAGINA_DO_PRODUTO}/seguranca`],
+  // O destino do endereço que a recolha traz em cada pedido (`USER_AGENT`,
+  // em `@coreto/core`): quem nos vê nos registos do servidor dele chega aqui.
+  ['/fontes', `${PAGINA_DO_PRODUTO}/fontes`],
   ['/.well-known/security.txt', `${PAGINA_DO_PRODUTO}/seguranca-txt`],
   ['/sitemap.xml', `${PAGINA_DO_PRODUTO}/sitemap-xml`],
 ]);

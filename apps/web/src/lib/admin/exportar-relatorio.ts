@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import 'server-only';
 import { hasServiceRole } from '../env';
 import { requireAdmin } from './auth';
@@ -46,7 +47,7 @@ export async function prepararExportacao(request: Request): Promise<Exportacao> 
 
   const params = new URL(request.url).searchParams;
   const mesPedido = params.get('mes');
-  const mes = mesPedido ? lerMes(mesPedido) : mesAnterior(new Date().toISOString().slice(0, 10));
+  const mes = mesPedido ? lerMes(mesPedido) : mesAnterior(todayInLisbon());
   if (!mes) return { ok: false, resposta: recusa(400, 'o mês tem de ser AAAA-MM') };
 
   const regiao = escolherRegiao(await listRegionsAdmin(), params.get('regiao'));

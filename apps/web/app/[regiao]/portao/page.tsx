@@ -72,12 +72,29 @@ export default async function Portao({ params, searchParams }: Props) {
         <label htmlFor="senha" className="block text-sm font-medium">
           Senha
         </label>
+        {/*
+         * `current-password` e não `off`, que era o que estava aqui.
+         *
+         * O critério 3.3.8 da WCAG 2.2 (AA) trata uma palavra-passe como teste
+         * de função cognitiva, e só a dá por cumprida quando existe **mecanismo
+         * de apoio** — na prática, um gestor de palavras-passe conseguir
+         * preencher o campo. `autocomplete="off"` é dizer-lhe explicitamente
+         * que não ajude.
+         *
+         * A intenção original era defensável: esta senha é da região, dada numa
+         * reunião, e não uma credencial pessoal — guardá-la no perfil do
+         * navegador de uma máquina partilhada não é boa ideia. Mas `off` não
+         * impede isso: os navegadores ignoram-no há anos em campos de
+         * palavra-passe, e o que ele consegue mesmo é estorvar quem precisa de
+         * ajuda para escrever. Era acessibilidade real trocada por segurança
+         * que não acontecia.
+         */}
         <input
           id="senha"
           name="senha"
           type="password"
           required
-          autoComplete="off"
+          autoComplete="current-password"
           autoFocus
           className="mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink"
         />

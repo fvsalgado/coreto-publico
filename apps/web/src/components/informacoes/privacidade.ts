@@ -1,4 +1,4 @@
-import { hasAnalytics } from '@/src/lib/env';
+import { hasAnalytics, hasExtraction } from '@/src/lib/env';
 import { IcCarta, IcContagem, IcSemRasto, IcTema, type Ponto } from './Pontos';
 
 /**
@@ -40,8 +40,23 @@ export const PRIVACIDADE: readonly Ponto[] = [
 /**
  * A lista de subcontratantes acompanha a configuração real desta instalação:
  * sem chave do PostHog, o PostHog não corre — e uma política que o listasse
- * na mesma estaria a descrever um tratamento que não existe.
+ * na mesma estaria a descrever um tratamento que não existe. O mesmo para o
+ * serviço que lê os emails: até 19 de setembro de 2026 a lista só sabia do
+ * PostHog, e com `EXTRACTION_API_KEY` configurada o assunto e o corpo de cada
+ * email iam para um fornecedor fora da União Europeia que a política não
+ * nomeava. O que se envia, e o que se corta antes de enviar, está em
+ * `lib/intake/extract.ts`; o registo de tratamentos é o `docs/RGPD.md` §7.
  */
-export const SUBCONTRATANTES = hasAnalytics
-  ? 'o do alojamento do sítio, o da base de dados e o PostHog, que recebe as estatísticas de utilização em servidores na União Europeia'
-  : 'o do alojamento do sítio e o da base de dados';
+export const SUBCONTRATANTES = [
+  'o do alojamento do sítio',
+  'o da base de dados',
+  hasAnalytics
+    ? 'o PostHog, que recebe as estatísticas de utilização em servidores na União Europeia'
+    : null,
+  hasExtraction
+    ? 'a Anthropic, que recebe o assunto e o texto de cada email enviado à agenda — sem o endereço de quem o enviou, e com as citações e a assinatura cortadas antes — para propor os campos do evento, em servidores fora da União Europeia'
+    : null,
+]
+  .filter((parte): parte is string => parte !== null)
+  .join(', ')
+  .replace(/, ([^,]*)$/, ' e $1');

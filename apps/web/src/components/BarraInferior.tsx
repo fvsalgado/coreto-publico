@@ -237,6 +237,18 @@ export function BarraInferior({
        * este `env()` — sem ele responde sempre zero.
        */
       className="ct-bloco-escuro fixed inset-x-0 bottom-0 z-40 bg-accent-deep pb-[env(safe-area-inset-bottom)] text-white sm:hidden"
+      /*
+       * O gancho de que a auditoria precisa para saber qual é a barra.
+       *
+       * O `check-a11y.mjs` verifica o critério 2.4.11 da WCAG 2.2 — que o
+       * elemento focado não fique inteiramente tapado por ela — e para isso
+       * tem de a encontrar. Procurava-a por `.fixed.bottom-0`, e isso
+       * apanhava o véu que esta barra abre por cima da página, que também é
+       * `fixed`: a medição saía com 1798px de «barra» e não queria dizer
+       * nada. Um atributo com nome não se confunde com classes de estilo, e
+       * não desaparece quando alguém reordena o Tailwind.
+       */
+      data-barra-inferior=""
     >
       {/*
        * O véu por cima da página, para a gaveta se ler como uma camada e não

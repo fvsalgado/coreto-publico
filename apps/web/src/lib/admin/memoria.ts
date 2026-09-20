@@ -111,5 +111,8 @@ export function compararQualidade(fotografia: QualityRow[], hoje: QualityRow[]):
 export function fimDoMesPassado(hoje: Date): string {
   const primeiroDesteMes = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1));
   const ultimoDoPassado = new Date(primeiroDesteMes.getTime() - 86_400_000);
-  return ultimoDoPassado.toISOString().slice(0, 10);
+  const ano = ultimoDoPassado.getUTCFullYear();
+  const mes = String(ultimoDoPassado.getUTCMonth() + 1).padStart(2, '0');
+  const dia = String(ultimoDoPassado.getUTCDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
 }

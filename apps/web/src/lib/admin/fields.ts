@@ -288,6 +288,19 @@ export const LOTE_MAX = 50;
  * uma constante lá dentro derruba o módulo inteiro — «has no exports at all»,
  * diz o compilador, sobre um ficheiro cheio delas.
  */
+/**
+ * Um destino de regresso vindo de um formulário só vale se for do painel.
+ *
+ * `voltar` chega no corpo do pedido, e um corpo de pedido é do cliente. Só
+ * quem tem sessão o envia — o CSRF das Server Actions fecha o resto —, mas
+ * uma sessão não é razão para o painel redirecionar para onde lhe mandarem:
+ * um caminho absoluto (`https://…`) ou de rede (`//…`) saía do sítio com a
+ * mensagem de aviso na barra. Fica o painel, ou o sítio por omissão.
+ */
+export function destinoDoPainel(destino: string, omissao = '/admin/eventos'): string {
+  return /^\/admin(?:\/|\?|$)/.test(destino) ? destino : omissao;
+}
+
 export function comAviso(destino: string, aviso: string): string {
   const [caminho = '/admin/eventos', query = ''] = destino.split('?');
   const params = new URLSearchParams(query);

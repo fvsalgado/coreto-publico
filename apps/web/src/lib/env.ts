@@ -100,6 +100,13 @@ function validarCampoACampo(fonte: NodeJS.ProcessEnv): Env {
 
 export const env: Env = validarCampoACampo(process.env);
 
+// Em produção, sem sal, os hashes de IP deixam de se guardar (ver `ip.ts`).
+// O sítio serve na mesma; o que se perde é a memória de abuso entre
+// reinícios, e isso merece uma linha no registo de erros em vez de silêncio.
+if (process.env.NODE_ENV === 'production' && !env.IP_HASH_SALT) {
+  reportarErro('configuração incompleta', 'IP_HASH_SALT ausente: os hashes de IP não se guardam');
+}
+
 /** `true` quando há credenciais para ler a base de dados. */
 export const hasDatabase = Boolean(
   env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -114,6 +121,13 @@ export const hasServiceRole = Boolean(
 export const hasAnalytics = Boolean(env.NEXT_PUBLIC_POSTHOG_KEY);
 
 /**
+ * `true` quando há chave do serviço de leitura de emails. Sem ela, o
+ * tratamento não existe e a política de privacidade não o pode listar; com
+ * ela, tem de o listar — a lista de subcontratantes lê isto.
+ */
+export const hasExtraction = Boolean(env.EXTRACTION_API_KEY);
+
+/**
  * O endereço público do sítio — a base de todos os canónicos, do
  * `sitemap.xml`, do `robots.txt`, dos feeds e do widget.
  *
@@ -124,15 +138,18 @@ export const hasAnalytics = Boolean(env.NEXT_PUBLIC_POSTHOG_KEY);
  * 2. O domínio de produção que o Vercel atribui ao projeto. Uma instalação
  *    ainda sem domínio passa a descrever-se pelo endereço onde realmente
  *    está, em vez de apontar para outro.
- * 3. `coreto.mediotejo.pt`, para quem construir isto fora do Vercel.
+ * 3. `coreto.org`, o domínio do produto, para quem construir isto fora do
+ *    Vercel sem dizer onde está.
  *
- * O domínio do degrau 3 é o que o projeto vai ter, e **ainda não resolve**.
- * É de propósito que ele fica em último: antes de haver o degrau 2, uma
- * instalação por configurar anunciava-o como canónico de todas as páginas, e
- * um motor de busca que passasse por lá ficava a saber que o conteúdo
- * verdadeiro estava noutro sítio — que não respondia. No dia em que o DNS
- * existir, o que muda é uma variável (`NEXT_PUBLIC_SITE_URL`), não este
- * ficheiro.
+ * O degrau 3 foi `coreto.mediotejo.pt` até 19 de setembro de 2026 — o
+ * domínio que a primeira região ia ter. Estava errado por duas razões: ainda
+ * não resolvia (um motor de busca que passasse por uma instalação por
+ * configurar ficava a saber que o conteúdo verdadeiro estava num sítio que não
+ * respondia), e era o domínio de **um cliente**, que uma segunda CIM a
+ * construir isto fora do Vercel anunciaria como canónico de todas as suas
+ * páginas. O produto é o único endereço que é de todas as instalações. Numa
+ * instalação a sério, o que muda é uma variável (`NEXT_PUBLIC_SITE_URL`), não
+ * este ficheiro.
  *
  * A variável do Vercel não tem prefixo `NEXT_PUBLIC_` e só existe no
  * servidor. Não faz mal: tudo o que usa `SITE_URL` é renderizado no
@@ -145,7 +162,7 @@ function resolveSiteUrl(): string {
   const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
   if (production) return `https://${production.replace(/\/$/, '')}`;
 
-  return 'https://coreto.mediotejo.pt';
+  return 'https://coreto.org';
 }
 
 export const SITE_URL = resolveSiteUrl();

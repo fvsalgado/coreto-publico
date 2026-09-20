@@ -1,4 +1,11 @@
-import { isoWeekday, weekdayName } from '@coreto/core/dates';
+// Do submódulo, e não do barril `@coreto/core` — como a linha de baixo, que
+// já o fazia. O barril re-exporta `schemas.ts`, que importa o Zod; este
+// ficheiro é usado por componentes do cliente (`EventCard`, `Capa`), e um
+// import do barril aqui manda o Zod inteiro para o navegador de **todas** as
+// páginas. Medido a 19 de setembro de 2026: a entrada passou de 144 kB de
+// JavaScript para 357, contra um tecto de 170, e o `check:desempenho`
+// apanhou-o.
+import { addDays, isoWeekday, weekdayName } from '@coreto/core/dates';
 
 /**
  * Datas e horas em português, para leitura humana.
@@ -285,9 +292,7 @@ export function formatSeriesKind(kind: string): string {
  */
 export function formatRelativeDay(iso: string, today: string): string {
   if (iso === today) return 'Hoje';
-  const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  const tomorrow = addDays(today, 1);
   if (iso === tomorrow) return 'Amanhã';
 
   const diff = Math.round(

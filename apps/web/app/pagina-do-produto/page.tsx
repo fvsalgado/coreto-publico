@@ -5,6 +5,7 @@ import { BandstandMark } from '@/src/components/BandstandMark';
 import { PaginaDaMontra } from '@/src/components/PaginaDaMontra';
 import { ThemeToggle } from '@/src/components/ThemeToggle';
 import { REGIAO_DA_FICHA } from '@/src/lib/analytics/posthog';
+import { FORNECEDOR, identidadeNumaLinha } from '@/src/lib/fornecedor';
 import { CORES_DO_TOLDO } from '@/src/lib/marca';
 import { AUTOR, PRODUTO } from '@/src/lib/produto';
 
@@ -144,6 +145,25 @@ export default function PaginaDoProduto() {
                 {AUTOR.nome}
               </a>
               .
+            </p>
+
+            {/*
+             * Quem fornece o serviço, que o artigo 10.º do Decreto-Lei n.º
+             * 7/2004 manda dar em acesso fácil, direto e permanente.
+             *
+             * Aqui e não no rodapé de uma região: o serviço é oferecido neste
+             * domínio, e a agenda do Médio Tejo é da CIM — o rodapé dela diz
+             * quem a promove, que é outra pergunta. Sai de `lib/fornecedor.ts`
+             * inteira, morada incluída no dia em que houver uma.
+             */}
+            <p className="mt-2 text-sm text-on-deep-muted">
+              Fornecido por {identidadeNumaLinha()} ·{' '}
+              <a
+                href={`mailto:${FORNECEDOR.email}`}
+                className="underline underline-offset-4 hover:text-white"
+              >
+                {FORNECEDOR.email}
+              </a>
             </p>
           </div>
         </div>
