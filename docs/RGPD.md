@@ -177,17 +177,34 @@ Se alguém alterar esta configuração — ativando cookies, gravação de sess�
 criação de perfis —, a análise acima deixa de valer e passa a ser exigível
 consentimento prévio.
 
-### 2.6 A escolha de tema, e porque é a única coisa gravada
+### 2.6 O que fica no equipamento de quem visita: duas chaves, e mais nada
 
-O botão de tema claro/escuro do cabeçalho escreve a chave `coreto-theme` no
-`localStorage`, com o valor `light` ou `dark`. É a **única** coisa que este
-sítio guarda no equipamento de quem visita, e só depois de a pessoa carregar
-no botão: sem escolha feita não fica lá nada e vale a preferência do sistema
-operativo, que o navegador anuncia sozinho pelo `prefers-color-scheme`.
+Este sítio grava **duas** chaves no `localStorage` do navegador, as duas só
+depois de a pessoa carregar num botão, e nenhuma delas é lida do lado do
+servidor:
 
-O valor não é lido do lado do servidor, não sai do navegador, não entra em
-nenhuma tabela e não distingue uma pessoa de outra — dois visitantes com o
-tema escuro são indistinguíveis.
+| chave              | escrita quando                         | conteúdo                                                                      |
+| ------------------ | -------------------------------------- | ----------------------------------------------------------------------------- |
+| `coreto-theme`     | alguém carrega no botão do tema        | `light` ou `dark`                                                             |
+| `coreto-favoritos` | alguém carrega no coração de um evento | a lista do que guardou: identificador, título, datas, hora e sítio de cada um |
+
+Sem essas escolhas feitas não fica lá nada: o tema vale pela preferência do
+sistema operativo, que o navegador anuncia sozinho pelo `prefers-color-scheme`,
+e a lista de guardados está vazia.
+
+**Os guardados não são um tratamento de dados pessoais desta casa, e a razão
+é que nunca chegam cá.** A lista é escrita e lida pelo navegador de quem a
+fez, não é enviada para o servidor, não entra em nenhuma tabela, não é
+sincronizada entre aparelhos e não tem conta associada — não há conta
+nenhuma. Do lado do Coreto não existe forma de saber que alguém guardou o quê:
+não há o que consultar, o que exportar nem o que apagar a pedido, porque o
+próprio titular apaga tudo ao limpar os dados do sítio ou ao carregar em
+«Esquecer tudo». É deliberado que assim seja: a alternativa — a lista guardada
+do nosso lado — obrigaria a pedir um email e a criar um tratamento onde hoje
+não há nenhum.
+
+Nenhum dos valores distingue uma pessoa de outra para nós: não são lidos, não
+saem do navegador, e dois visitantes com o tema escuro são indistinguíveis.
 
 **Não pede consentimento** porque o **artigo 5.º da Lei n.º 41/2004**, a par
 de exigir consentimento para guardar informação no equipamento, ressalva o
@@ -198,10 +215,14 @@ manual dessa ressalva — é a mesma categoria da escolha de idioma. Pedir
 consentimento para executar a escolha que se acabou de fazer seria perguntar
 duas vezes a mesma coisa.
 
-**Isto muda se** a chave passar a guardar mais do que uma preferência de
-visualização, ou se o valor passar a ser lido pelo servidor ou associado a
-qualquer outro dado — nesse momento deixa de ser armazenamento necessário e
-passa a ser identificação.
+A mesma ressalva cobre a lista de guardados, pela mesma razão e com mais
+força: guardar um evento **é** o serviço pedido, e é pedido com um clique
+inequívoco num coração que diz o que faz.
+
+**Isto muda se** qualquer uma das chaves passar a ser lida pelo servidor,
+enviada para fora do navegador ou associada a outro dado — nesse momento
+deixa de ser armazenamento necessário e passa a ser identificação, e esta
+secção deixa de descrever a realidade.
 
 ### 2.7 Registos técnicos do alojamento
 

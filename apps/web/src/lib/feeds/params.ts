@@ -15,7 +15,14 @@ import { eventFilterSchema, type EventFilter } from '@coreto/core';
 const TRUTHY = new Set(['1', 'true', 'sim', 'yes', 'on']);
 const FALSY = new Set(['0', 'false', 'nao', 'não', 'no', 'off', '']);
 
-const BOOLEAN_KEYS = ['free', 'accessible'] as const;
+const BOOLEAN_KEYS = [
+  'free',
+  'accessible',
+  'lgp',
+  'audiodescricao',
+  'legendas',
+  'relaxada',
+] as const;
 
 const SCALAR_KEYS = [
   'municipality',
@@ -95,6 +102,27 @@ export const API_PARAMETERS: readonly ApiParameter[] = [
     name: 'accessible',
     values: '1 ou 0',
     description: 'A 1, devolve apenas eventos com acesso declarado a cadeiras de rodas.',
+  },
+  {
+    name: 'lgp',
+    values: '1 ou 0',
+    description:
+      'A 1, devolve apenas eventos com interpretação declarada em Língua Gestual Portuguesa.',
+  },
+  {
+    name: 'audiodescricao',
+    values: '1 ou 0',
+    description: 'A 1, devolve apenas eventos com audiodescrição declarada.',
+  },
+  {
+    name: 'legendas',
+    values: '1 ou 0',
+    description: 'A 1, devolve apenas eventos com legendagem declarada.',
+  },
+  {
+    name: 'relaxada',
+    values: '1 ou 0',
+    description: 'A 1, devolve apenas eventos declarados como sessão relaxada.',
   },
   { name: 'venue', values: 'identificador do espaço', description: 'Eventos de um espaço.' },
   {

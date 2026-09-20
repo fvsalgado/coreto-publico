@@ -2,7 +2,7 @@
  * Disciplina de colunas.
  *
  * Nenhuma listagem faz `select('*')`. Um cartão de evento precisa das colunas
- * que estão em `CARD_EVENT_FIELDS` aqui em baixo — dezassete; a tabela tem
+ * que estão em `CARD_EVENT_FIELDS` aqui em baixo — vinte e uma; a tabela tem
  * mais de sessenta, e várias são texto longo. Puxar tudo em listas de cem
  * custa largura de banda a cada visita e não serve para nada — a ficha do
  * evento é que pede o resto.
@@ -66,6 +66,19 @@ export const CARD_EVENT_FIELDS = [
    * derivada, por fora continua a chamar-se o que sempre se chamou.
    */
   'wheelchair_accessible:wheelchair_accessible_resolved',
+  /*
+   * Os outros quatro eixos da acessibilidade, a partir de 20/09/2026.
+   *
+   * Quatro booleanos — a coluna mais barata que há — e estavam a ser puxados
+   * só para a ficha. O cartão desenhava a cadeira de rodas e calava os
+   * outros: um espetáculo com audiodescrição anunciava-se como um espetáculo
+   * qualquer até alguém o abrir. Numa lista de quarenta, quem precisa de
+   * audiodescrição não abre quarenta fichas.
+   */
+  'has_sign_language',
+  'has_audio_description',
+  'has_subtitles',
+  'is_relaxed_performance',
   'audience',
 ].join(', ');
 
@@ -143,17 +156,14 @@ export const DETAIL_EVENT_FIELDS = [
   'series_id',
   'tags',
   'min_age',
-  // `is_ongoing` não está aqui: já vem do cartão. Uma coluna repetida no
-  // `select` do PostgREST é um pedido malformado, não uma redundância inócua.
+  // `is_ongoing` e os cinco eixos da acessibilidade não estão aqui: já vêm
+  // do cartão. Uma coluna repetida no `select` do PostgREST é um pedido
+  // malformado, não uma redundância inócua.
   'duration_minutes',
   'price_min',
   'price_max',
   'price_raw',
   'ticketing_url',
-  'has_sign_language',
-  'has_audio_description',
-  'has_subtitles',
-  'is_relaxed_performance',
   'accessibility_notes',
   'image_credit',
   // As medidas do cartaz: é com elas que a ficha reserva a caixa certa antes

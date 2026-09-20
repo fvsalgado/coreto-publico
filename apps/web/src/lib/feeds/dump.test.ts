@@ -22,6 +22,10 @@ const EVENTO: EventCard = {
   image_url: 'https://exemplo.pt/cartaz.jpg',
   image_alt: 'O cartaz',
   wheelchair_accessible: true,
+  has_sign_language: false,
+  has_audio_description: false,
+  has_subtitles: false,
+  is_relaxed_performance: false,
   audience: 'all_ages',
 };
 

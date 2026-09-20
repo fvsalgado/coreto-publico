@@ -8,6 +8,7 @@ import {
   RODAPE_ANCORAS,
   RODAPE_PROGRAMAR,
   RODAPE_PROJETO,
+  RODAPE_VISITANTE,
   SECCOES_OPCIONAIS,
   caminhoPublico,
   colunasDoRodape,
@@ -162,12 +163,16 @@ describe('a gaveta do «+»', () => {
 describe('o rodapé e a gaveta', () => {
   it('mostram exactamente os mesmos destinos', () => {
     const naGaveta = new Set(MAIS.map((atalho) => atalho.href));
-    const noRodape = new Set([...RODAPE_PROGRAMAR, ...RODAPE_PROJETO].map((item) => item.href));
+    const noRodape = new Set(
+      [...RODAPE_VISITANTE, ...RODAPE_PROGRAMAR, ...RODAPE_PROJETO].map((item) => item.href),
+    );
     expect(noRodape).toEqual(naGaveta);
   });
 
   it('não repetem um destino em duas colunas nem o deixam fora das duas', () => {
-    const colunas = [...RODAPE_PROGRAMAR, ...RODAPE_PROJETO].map((item) => item.href);
+    const colunas = [...RODAPE_VISITANTE, ...RODAPE_PROGRAMAR, ...RODAPE_PROJETO].map(
+      (item) => item.href,
+    );
     expect(colunas).toHaveLength(MAIS.length);
     expect(new Set(colunas).size).toBe(colunas.length);
   });
@@ -177,7 +182,7 @@ describe('o rodapé e a gaveta', () => {
     // para o mesmo sítio, e quem carrega tem de reconhecer onde chegou pelo
     // nome por que veio.
     const rotuloNaGaveta = new Map(MAIS.map((atalho) => [atalho.href, atalho.label]));
-    for (const item of [...RODAPE_PROGRAMAR, ...RODAPE_PROJETO]) {
+    for (const item of [...RODAPE_VISITANTE, ...RODAPE_PROGRAMAR, ...RODAPE_PROJETO]) {
       expect(item.label, item.href).toBe(rotuloNaGaveta.get(item.href));
     }
     for (const destino of DESTINOS) {
@@ -261,7 +266,9 @@ describe('o que fica de pé com uma secção desligada', () => {
       semAsDesligadas(MAIS, [...SECCOES_OPCIONAIS]),
       'coreto@exemplo.pt',
     ).map((atalho) => atalho.href);
-    expect(restantes).toEqual(['/submeter', '/levar', 'mailto:coreto@exemplo.pt']);
+    // Os guardados não são uma secção que se desligue: vivem no navegador de
+    // quem visita e não dependem de nada que a base sirva.
+    expect(restantes).toEqual(['/favoritos', '/submeter', '/levar', 'mailto:coreto@exemplo.pt']);
   });
 
   it('deixa de pé a privacidade e a acessibilidade quando as informações se apagam', () => {
@@ -274,7 +281,10 @@ describe('o que fica de pé com uma secção desligada', () => {
     expect(hrefs).not.toContain('/informacoes');
     expect(hrefs).toContain('/privacidade');
     expect(hrefs).toContain('/acessibilidade');
-    expect(hrefs).toContain('/coretos');
+    // Os coretos são de quem visita e mudaram de coluna; continuam de pé.
+    expect(semAsDesligadas(RODAPE_VISITANTE, ['informacoes']).map((i) => i.href)).toContain(
+      '/coretos',
+    );
   });
 
   it('devolve uma lista nova e não a original', () => {
@@ -284,23 +294,28 @@ describe('o que fica de pé com uma secção desligada', () => {
 });
 
 describe('as colunas do rodapé', () => {
-  it('são duas enquanto as duas audiências têm de que falar', () => {
+  it('são três enquanto as três audiências têm de que falar', () => {
+    // A terceira coluna nasceu com os guardados: o que é de quem visita — o
+    // que guardou, os coretos, os ciclos — estava dentro de «O projeto», que
+    // é onde se diz quem somos, e não é a mesma pergunta.
     const colunas = colunasDoRodape([], 'coreto@exemplo.pt');
-    expect(colunas.map((c) => c.titulo)).toEqual(['Para quem programa', 'O projeto']);
+    expect(colunas.map((c) => c.titulo)).toEqual(['Para si', 'Para quem programa', 'O projeto']);
     expect(colunas.every((c) => c.itens.length >= 2)).toBe(true);
+    expect(colunas[0]?.itens.map((i) => i.href)).toEqual(['/favoritos', '/coretos', '/ciclos']);
   });
 
-  it('continuam a ser duas com tudo desligado: as páginas legais seguram «O projeto»', () => {
-    // Com as quatro secções desligadas, «O projeto» chegou a ficar só com o
-    // «Escrever-nos» — um título com uma linha por baixo, que se lê como
-    // coisa partida, e foi o que trouxe a regra de juntar as colunas. Isso
-    // era enquanto a privacidade e a acessibilidade caíam com as
-    // informações; hoje não caem — e o estado, que também não tem secção,
-    // segura-a a par delas. A coluna nunca desce de quatro.
+  it('juntam-se numa só com tudo desligado, porque «Para si» fica com uma linha', () => {
+    // A regra de nunca deixar uma coluna com uma linha só é a mesma de
+    // sempre: um título com uma linha por baixo lê-se como coisa partida.
+    // Com as quatro secções desligadas caem os coretos e os ciclos, «Para si»
+    // fica com os guardados e mais nada, e as três juntam-se — sem perder um
+    // único destino, que é o que este teste segura.
     const colunas = colunasDoRodape([...SECCOES_OPCIONAIS], 'coreto@exemplo.pt');
-    expect(colunas.map((c) => c.titulo)).toEqual(['Para quem programa', 'O projeto']);
-    expect(colunas[0]?.itens.map((i) => i.href)).toEqual(['/submeter', '/levar']);
-    expect(colunas[1]?.itens.map((i) => i.href)).toEqual([
+    expect(colunas.map((c) => c.titulo)).toEqual(['No sítio']);
+    expect(colunas[0]?.itens.map((i) => i.href)).toEqual([
+      '/favoritos',
+      '/submeter',
+      '/levar',
       'mailto:coreto@exemplo.pt',
       '/privacidade',
       '/acessibilidade',
