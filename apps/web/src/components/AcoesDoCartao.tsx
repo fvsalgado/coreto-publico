@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
+import { BotaoFavorito } from '@/src/components/BotaoFavorito';
 import { Icone } from '@/src/components/Sinais';
 import { recordStat } from '@/src/lib/analytics/beacon';
 import { partilhar, type ResultadoDaPartilha } from '@/src/lib/partilhar';
@@ -9,6 +10,17 @@ interface Props {
   eventId: string;
   slug: string;
   title: string;
+  /**
+   * A fotografia que o coração guarda. Vem do cartão porque é o cartão que
+   * já a tem desenhada — pedir de novo ao servidor o que está no ecrã seria
+   * um pedido por cada coração de uma lista de quarenta.
+   */
+  paraGuardar: {
+    date_start: string | null;
+    date_end: string | null;
+    start_time: string | null;
+    location: string | null;
+  };
 }
 
 const ACAO =
@@ -24,7 +36,8 @@ function useNoNavegador(): boolean {
 }
 
 /**
- * As duas coisas que se fazem a um evento sem o abrir: guardar e avisar alguém.
+ * As três coisas que se fazem a um evento sem o abrir: guardar para depois,
+ * pôr no calendário e avisar alguém.
  *
  * A Viral Agenda e a OpenAgenda têm-nas em cada cartão; aqui só existiam na
  * ficha, e decidir ir a um evento obrigava a abri-lo primeiro. O `.ics` já
@@ -38,7 +51,7 @@ function useNoNavegador(): boolean {
  * Guardar é uma âncora e funciona sem JavaScript; partilhar só aparece no
  * navegador, porque sem JavaScript era um botão que não fazia nada.
  */
-export function AcoesDoCartao({ eventId, slug, title }: Props) {
+export function AcoesDoCartao({ eventId, slug, title, paraGuardar }: Props) {
   const noNavegador = useNoNavegador();
   const [resultado, setResultado] = useState<ResultadoDaPartilha | null>(null);
 
@@ -50,6 +63,7 @@ export function AcoesDoCartao({ eventId, slug, title }: Props) {
 
   return (
     <div className="relative z-10 mt-2.5 flex flex-wrap items-center gap-2">
+      <BotaoFavorito evento={{ slug, title, ...paraGuardar }} />
       <a
         href={`/evento/${slug}/agenda.ics`}
         aria-label={`Guardar «${title}» no calendário`}

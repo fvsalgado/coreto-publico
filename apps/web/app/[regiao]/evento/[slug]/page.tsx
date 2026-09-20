@@ -11,6 +11,7 @@ import {
 import { listSitemapEvents } from '@/src/lib/feeds/data';
 import { AnalyticsEventTracker } from '@/src/components/AnalyticsEventTracker';
 import { AnalyticsShareButton } from '@/src/components/AnalyticsShareButton';
+import { BotaoFavorito } from '@/src/components/BotaoFavorito';
 import {
   EventDetailAccessibility,
   temAcessibilidade,
@@ -519,6 +520,17 @@ export default async function EventPage({ params }: Props) {
             Adicionar ao calendário
           </a>
         )}
+        <BotaoFavorito
+          variante="ficha"
+          evento={{
+            slug: event.slug,
+            title: event.title,
+            date_start: event.date_start,
+            date_end: event.date_end,
+            start_time: null,
+            location: event.location_name,
+          }}
+        />
         <AnalyticsShareButton
           eventId={event.id}
           title={event.title}

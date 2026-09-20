@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceRow } from '../adapter.js';
 import { HttpClient } from '../http.js';
 import { RunLogger } from '../run-logger.js';
-import { lerResumo, lerSinopse, paraisoAdapter } from './paraiso.js';
+import { lerPrecoDaFicha, lerResumo, lerSinopse, paraisoAdapter } from './paraiso.js';
 
 import { comRobots } from '../robots-de-teste.js';
 /**
@@ -172,5 +172,35 @@ describe('lerSinopse', () => {
 
   it('devolve null quando não há bloco de texto', () => {
     expect(lerSinopse('<div class="outro">nada</div>')).toBeNull();
+  });
+});
+
+describe('lerPrecoDaFicha', () => {
+  /*
+   * A cicatriz: oito espetáculos do Cine-Teatro entravam sem preço porque o
+   * adaptador só lia a sinopse, e o preço vive na coluna do lado. O que se
+   * devolve é o texto; quem o lê é o `parsePrice` do core.
+   */
+  it('lê o preço da caixa lateral da página real', () => {
+    const body = readFileSync(join(FIXTURES, 'cine-teatro-paraiso-detalhe.html'), 'utf8');
+    expect(lerPrecoDaFicha(body)).toBe('Bilhete: 4.80 euros');
+  });
+
+  it('lê a outra forma que a casa serve, com o vendedor ao lado', () => {
+    const caixa =
+      "<div class='boxDestaque titulo3 light'><p>M/16</p><p>Duração: 1h15</p>" +
+      '<p>12,50€ (à venda na Ticketline)</p></div>';
+    expect(lerPrecoDaFicha(caixa)).toBe('12,50€ (à venda na Ticketline)');
+  });
+
+  // «Bilheteira: 1h antes do filme» é um horário e não um bilhete: o que o
+  // exclui é não ter valor nenhum, e não o rótulo com que aparece.
+  it('não confunde o horário da bilheteira com um preço', () => {
+    const caixa = "<div class='boxDestaque'><p>M/12</p><p>Bilheteira: 1h antes do filme</p></div>";
+    expect(lerPrecoDaFicha(caixa)).toBeNull();
+  });
+
+  it('devolve null quando a página não tem caixa nenhuma', () => {
+    expect(lerPrecoDaFicha('<div class="stdText"><p>só sinopse</p></div>')).toBeNull();
   });
 });

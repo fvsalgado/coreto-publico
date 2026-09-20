@@ -702,13 +702,29 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
 }
 
 presente('apps/web/src/components/FilterBar.tsx', /filtro-acessivel-nota/, {
-  afirmacao: 'a caixa «Acesso a cadeiras de rodas» serve a ressalva ao lado dela',
+  afirmacao: 'as caixas de acessibilidade servem a ressalva ao lado delas',
   porque:
-    'o filtro mostra só o que declara acesso, e sem a ressalva um zero lê-se como «não há nada acessível»',
+    'o filtro mostra só o que declara, e sem a ressalva um zero lê-se como «não há nada acessível»',
 });
-presente('apps/web/src/components/FilterBar.tsx', /mostra só os eventos que o declaram/, {
+presente('apps/web/src/components/FilterBar.tsx', /mostram só os eventos que o declaram/, {
   afirmacao: 'a ressalva do filtro diz o que o filtro faz',
   porque: 'a mesma cicatriz: ausência de declaração não é ausência de acesso',
+});
+// Os cinco eixos saem de uma lista só — o esquema, a consulta, o formulário e
+// as fichas leem a mesma. Acrescentar um eixo em quatro sítios à mão era
+// garantir que um dia faltava num deles, e foi o que aconteceu: as colunas
+// existem desde a 0004 e o filtro conheceu uma durante um ano.
+presente('apps/web/src/lib/agenda.ts', /EIXOS_DE_ACESSIBILIDADE/, {
+  afirmacao: 'os eixos da acessibilidade estão escritos num sítio só',
+  porque:
+    'o esquema, a consulta, o formulário e as fichas leem a mesma lista; escritos à mão em quatro sítios, um deles fica para trás',
+});
+// Uma caixa que devolve sempre zero é uma armadilha, e esta já foi uma: a do
+// acesso a cadeiras de rodas mostrava uma agenda vazia sem dizer porquê.
+presente('apps/web/src/components/FilterBar.tsx', /eixosDeAcessibilidade/, {
+  afirmacao: 'um eixo de acessibilidade só se oferece quando há eventos que o declarem',
+  porque:
+    'quatro dos cinco eixos estão a zero em produção; oferecê-los sem contagem é prometer um filtro que devolve sempre uma lista vazia',
 });
 
 presente('apps/web/app/[regiao]/page.tsx', /recorte: \{ accessible: true \}/, {

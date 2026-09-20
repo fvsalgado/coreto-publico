@@ -46,7 +46,9 @@ export async function RodapeDoSitio({
 }) {
   // Quantas colunas aguentam, e com que nome, decide-se em `navegacao.ts`.
   const colunas = colunasDoRodape(desligadas, regiao.email);
-  const emDuas = colunas.length === 2;
+  // A grelha conta com o bloco de apresentação à cabeça: três colunas de
+  // ligações são quatro células, duas são três.
+  const celulas = colunas.length + 1;
 
   // A banda dos concelhos vem da base, como tudo o que é da região. Sem base,
   // vem vazia e a banda não se desenha — o rodapé aguenta.
@@ -85,7 +87,11 @@ export async function RodapeDoSitio({
 
           <div
             className={`mt-8 grid gap-6 text-sm text-on-deep-muted ${
-              emDuas ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
+              celulas >= 4
+                ? 'sm:grid-cols-2 lg:grid-cols-4'
+                : celulas === 3
+                  ? 'sm:grid-cols-3'
+                  : 'sm:grid-cols-2'
             }`}
           >
             <div>

@@ -118,12 +118,12 @@ export interface Atalho extends DeUmaSeccao {
    * empurrava o «Enviar um evento» para o fundo, que é o contrário do que ela
    * é para. O grupo serve o rodapé, onde há espaço para duas colunas.
    */
-  grupo: 'programar' | 'projeto';
+  grupo: 'visitante' | 'programar' | 'projeto';
 }
 
 /** Os desenhos que a barra de baixo sabe fazer. */
 export type IconeDeAtalho =
-  'coreto' | 'email' | 'ciclo' | 'fontes' | 'informacoes' | 'submeter' | 'widget';
+  'coreto' | 'email' | 'ciclo' | 'favoritos' | 'fontes' | 'informacoes' | 'submeter' | 'widget';
 
 /**
  * A gaveta do «+».
@@ -134,12 +134,19 @@ export type IconeDeAtalho =
  */
 export const MAIS: readonly Atalho[] = [
   {
+    href: '/favoritos',
+    label: 'Guardados',
+    icone: 'favoritos',
+    nota: 'O que guardou neste navegador, e mais em lado nenhum.',
+    grupo: 'visitante',
+  },
+  {
     href: '/coretos',
     seccao: 'coretos',
     label: 'Coretos',
     icone: 'coreto',
     nota: 'O levantamento dos coretos da região, com mapa.',
-    grupo: 'projeto',
+    grupo: 'visitante',
   },
   {
     href: '/submeter',
@@ -155,7 +162,7 @@ export const MAIS: readonly Atalho[] = [
     icone: 'ciclo',
     nota: 'A programação que atravessa concelhos e anos.',
     prefixos: ['/ciclo'],
-    grupo: 'projeto',
+    grupo: 'visitante',
   },
   {
     href: '/fontes',
@@ -219,6 +226,9 @@ export function comEmailDaRegiao<T extends Atalho | Ancora>(
  * entrava numa e faltava na outra, e ninguém dava por isso até alguém não o
  * encontrar.
  */
+export const RODAPE_VISITANTE: readonly Atalho[] = MAIS.filter(
+  (atalho) => atalho.grupo === 'visitante',
+);
 export const RODAPE_PROGRAMAR: readonly Atalho[] = MAIS.filter(
   (atalho) => atalho.grupo === 'programar',
 );
@@ -328,26 +338,36 @@ export function colunasDoRodape(
   desligadas: readonly SeccaoOpcional[],
   email: string,
 ): ColunaDoRodape[] {
-  const programar = comEmailDaRegiao(
-    semAsDesligadas<Atalho | Ancora>(
-      [...RODAPE_PROGRAMAR, ...RODAPE_ANCORAS.programar],
-      desligadas,
-    ),
-    email,
-  );
-  const projeto = comEmailDaRegiao(
-    semAsDesligadas<Atalho | Ancora>([...RODAPE_PROJETO, ...RODAPE_ANCORAS.projeto], desligadas),
-    email,
-  );
+  const coluna = (fonte: readonly (Atalho | Ancora)[]) =>
+    comEmailDaRegiao(semAsDesligadas<Atalho | Ancora>([...fonte], desligadas), email);
 
-  if (programar.length >= 2 && projeto.length >= 2) {
-    return [
-      { titulo: 'Para quem programa', itens: programar },
-      { titulo: 'O projeto', itens: projeto },
-    ];
-  }
+  const visitante = coluna(RODAPE_VISITANTE);
+  const programar = coluna([...RODAPE_PROGRAMAR, ...RODAPE_ANCORAS.programar]);
+  const projeto = coluna([...RODAPE_PROJETO, ...RODAPE_ANCORAS.projeto]);
 
-  const juntas = [...programar, ...projeto];
+  /*
+   * Três colunas quando as três se aguentam de pé, e uma quando não.
+   *
+   * A regra de nunca deixar uma coluna com uma linha só continua a valer, e
+   * continua pela razão que a trouxe: um título com uma linha por baixo lê-se
+   * como coisa partida. O que mudou foi haver um terceiro assunto — o que é de
+   * quem visita: o que guardou, os coretos, os ciclos. Estava disperso pela
+   * coluna «O projeto», que é onde se diz quem somos, e não é a mesma pergunta.
+   *
+   * Com as quatro secções desligadas, «Para si» fica só com os guardados e as
+   * três colunas deixam de se aguentar: juntam-se todas, como sempre se
+   * juntaram. Uma coluna honesta e sem nome próprio é melhor do que três com
+   * uma linha cada.
+   */
+  const colunas = [
+    { titulo: 'Para si', itens: visitante },
+    { titulo: 'Para quem programa', itens: programar },
+    { titulo: 'O projeto', itens: projeto },
+  ];
+
+  if (colunas.every((c) => c.itens.length >= 2)) return colunas;
+
+  const juntas = colunas.flatMap((c) => c.itens);
   return juntas.length > 0 ? [{ titulo: 'No sítio', itens: juntas }] : [];
 }
 

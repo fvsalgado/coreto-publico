@@ -298,6 +298,7 @@ export default async function AgendaPage({ params, searchParams }: Props) {
           categories={categories}
           action={PATH}
           activeCount={fichas.length}
+          eixosDeAcessibilidade={facetas.acessibilidade}
         />
       </div>
 

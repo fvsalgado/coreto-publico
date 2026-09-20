@@ -88,6 +88,15 @@ const ROUTES = [
   '/privacidade',
   '/acessibilidade',
   '/submeter',
+  /*
+   * A página dos guardados, que é pública e não se desliga.
+   *
+   * Sem armazenamento, o que a auditoria vê é o estado vazio — que é
+   * exatamente o estado que mais gente vê, e o que tem o único botão da
+   * página. A declaração de `/acessibilidade` promete a auditoria «sobre
+   * todas as páginas públicas», e esta é uma delas.
+   */
+  '/favoritos',
   '/fontes',
   '/levar',
   // O estado não se desliga e não está no mapa do sítio (é `noindex`, por

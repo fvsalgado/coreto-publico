@@ -167,7 +167,24 @@ export const eventFilterSchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
   free: z.coerce.boolean().optional(),
+  /*
+   * Os eixos da acessibilidade, um filtro cada.
+   *
+   * `accessible` é o acesso a cadeiras de rodas e tinha o nome de todos —
+   * ficou com o dele por já viver em endereços partilhados e em favoritos de
+   * quem os guardou. Os outros quatro são os que o `extractAccessibility` já
+   * lê da prosa e que a base já guarda em colunas próprias: língua gestual,
+   * audiodescrição, legendagem, sessão relaxada.
+   *
+   * Quem precisa de audiodescrição para decidir se sai de casa não faz a
+   * mesma pergunta de quem precisa de uma rampa, e até aqui a agenda só sabia
+   * responder à segunda.
+   */
   accessible: z.coerce.boolean().optional(),
+  lgp: z.coerce.boolean().optional(),
+  audiodescricao: z.coerce.boolean().optional(),
+  legendas: z.coerce.boolean().optional(),
+  relaxada: z.coerce.boolean().optional(),
   venue: z.string().max(120).optional(),
   series: z.string().max(120).optional(),
   q: z.string().trim().max(120).optional(),

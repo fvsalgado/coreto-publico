@@ -48,6 +48,10 @@ export interface EventCard {
    * publicado (`/api/events`, documentado em `/levar`).
    */
   wheelchair_accessible: boolean | null;
+  has_sign_language: boolean;
+  has_audio_description: boolean;
+  has_subtitles: boolean;
+  is_relaxed_performance: boolean;
   audience: EventAudience | null;
 }
 

@@ -2,6 +2,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
 import type { AnelDeFronteira } from '../mapa';
+import { EIXOS_DE_ACESSIBILIDADE } from '../agenda';
 import { consultaDePesquisa } from '../pesquisa';
 import { publicClient } from '../supabase/server';
 import { degradarForaDaCache, ehPaginaAlemDoFim, exigirLeitura } from './falhas';
@@ -146,6 +147,15 @@ function filtrarEventos(
    * mesmos que a ficha já dizia serem acessíveis.
    */
   if (filter.accessible) q = q.eq('wheelchair_accessible_resolved', true);
+  /*
+   * Os outros quatro eixos, pela mesma lista que o esquema e o formulário
+   * usam. São colunas `not null default false`, por isso um `true` é uma
+   * declaração e um `false` é silêncio — filtrar por `true` é a única leitura
+   * que não inventa nada.
+   */
+  for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+    if (eixo.chave !== 'accessible' && filter[eixo.chave]) q = q.eq(eixo.coluna, true);
+  }
   if (filter.q) {
     /*
      * Texto integral em português (0116): a coluna gerada `search_vector`
@@ -235,13 +245,21 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
 export interface ContagemPorFaceta {
   municipality: Readonly<Record<string, number>> | null;
   category: Readonly<Record<string, number>> | null;
+  /**
+   * Quantos eventos declaram cada eixo de acessibilidade, dado o resto do
+   * filtro. É o que permite ao formulário **não oferecer** um eixo que não
+   * tem nada por trás: uma caixa «Com audiodescrição» que devolve sempre zero
+   * é a mesma armadilha que a caixa das cadeiras de rodas já foi, e que já
+   * custou uma nota a explicá-la.
+   */
+  acessibilidade: Readonly<Record<string, number>> | null;
 }
 
 const JANELA_DAS_FACETAS = 1000;
 
 async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {
   const supabase = publicClient();
-  if (!supabase) return { municipality: null, category: null };
+  if (!supabase) return { municipality: null, category: null, acessibilidade: null };
 
   const from = filter.from ?? todayInLisbon();
   const contar = async (
@@ -267,11 +285,39 @@ async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<Co
     return contagem;
   };
 
-  const [municipality, category] = await Promise.all([
+  /*
+   * Os eixos contam-se numa leitura só, e sem tirar nenhum do filtro.
+   *
+   * Ao contrário do concelho e da categoria — em que a pílula tem de dizer
+   * quantos eventos **teria** se fosse escolhida, e por isso se conta sem ela
+   * —, aqui o que interessa é o contrário: quantos dos que já estão à vista
+   * declaram cada coisa. Com «Tomar» escolhido, a caixa da audiodescrição só
+   * se deve oferecer se houver audiodescrição em Tomar.
+   */
+  const contarEixos = async (): Promise<Readonly<Record<string, number>> | null> => {
+    const colunas = EIXOS_DE_ACESSIBILIDADE.map((eixo) => eixo.coluna).join(', ');
+    const { data, error } = await filtrarEventos(
+      consultaDeEventos(supabase, 'com-linhas', colunas),
+      regiao,
+      filter,
+      from,
+    ).range(0, JANELA_DAS_FACETAS - 1);
+    if (error) return null;
+    const linhas = (data ?? []) as unknown as Array<Record<string, boolean | null>>;
+    if (linhas.length >= JANELA_DAS_FACETAS) return null;
+    const contagem: Record<string, number> = {};
+    for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+      contagem[eixo.chave] = linhas.filter((linha) => linha[eixo.coluna] === true).length;
+    }
+    return contagem;
+  };
+
+  const [municipality, category, acessibilidade] = await Promise.all([
     contar('municipality_id', 'municipality'),
     contar('category_slug', 'category'),
+    contarEixos(),
   ]);
-  return { municipality, category };
+  return { municipality, category, acessibilidade };
 }
 
 export function contarFacetas(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {

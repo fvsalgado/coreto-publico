@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { EventFilter } from '@coreto/core';
+import { EIXOS_DE_ACESSIBILIDADE, type EixoDeAcessibilidade } from '@/src/lib/agenda';
 import type { Category, Municipality } from '@/src/lib/queries/types';
 
 interface Props {
@@ -10,6 +11,11 @@ interface Props {
   action: string;
   /** Quantos filtros estão a valer, para o resumo dizer o que esconde. */
   activeCount?: number;
+  /**
+   * Quantos eventos declaram cada eixo de acessibilidade, dado o resto do
+   * filtro — ou `null` quando não se contou. Um eixo a zero não se oferece.
+   */
+  eixosDeAcessibilidade?: Readonly<Record<string, number>> | null;
 }
 
 // `border-field` e não `border-border`: a moldura de um campo identifica um
@@ -37,7 +43,29 @@ const LABEL_CLASS = 'block text-sm font-medium';
  * navega com leitor de ecrã pela lista de campos do formulário — encontra
  * tudo no mesmo sítio. Escrevem no mesmo endereço.
  */
-export function FilterBar({ filter, municipalities, categories, action, activeCount = 0 }: Props) {
+export function FilterBar({
+  filter,
+  municipalities,
+  categories,
+  action,
+  activeCount = 0,
+  eixosDeAcessibilidade = null,
+}: Props) {
+  /*
+   * Que eixos se oferecem.
+   *
+   * Sem contagem — um build sem base, ou uma janela grande de mais para se
+   * contar — mostra-se o das cadeiras de rodas e mais nada: é o que existia
+   * antes disto e o único que se sabe estar preenchido em produção. Com
+   * contagem, oferece-se o que tem eventos, mais o que já esteja a valer no
+   * endereço (senão não havia como o desligar).
+   */
+  const eixos = EIXOS_DE_ACESSIBILIDADE.filter((eixo) => {
+    if (filter[eixo.chave]) return true;
+    if (eixosDeAcessibilidade === null) return eixo.chave === 'accessible';
+    return (eixosDeAcessibilidade[eixo.chave] ?? 0) > 0;
+  });
+
   return (
     <details className="ct-recolhivel ct-recolhivel-sempre rounded border border-border bg-surface">
       <summary aria-label="Mostrar ou esconder a pesquisa e os filtros da agenda">
@@ -167,21 +195,24 @@ export function FilterBar({ filter, municipalities, categories, action, activeCo
                 Entrada livre
               </label>
 
-              <label
-                htmlFor="filtro-acessivel"
-                className="flex min-h-11 items-center gap-2.5 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  id="filtro-acessivel"
-                  name="accessible"
-                  value="1"
-                  defaultChecked={filter.accessible === true}
-                  aria-describedby="filtro-acessivel-nota"
-                  className="size-5 accent-accent"
-                />
-                Acesso a cadeiras de rodas
-              </label>
+              {eixos.map((eixo) => (
+                <label
+                  key={eixo.chave}
+                  htmlFor={`filtro-${eixo.chave}`}
+                  className="flex min-h-11 items-center gap-2.5 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    id={`filtro-${eixo.chave}`}
+                    name={eixo.chave}
+                    value="1"
+                    defaultChecked={filter[eixo.chave as EixoDeAcessibilidade] === true}
+                    aria-describedby="filtro-acessivel-nota"
+                    className="size-5 accent-accent"
+                  />
+                  {eixo.rotulo}
+                </label>
+              ))}
             </div>
             {/* A caixa dizia o que filtra e não o que isso deixa de fora, e a
                 diferença não é académica: o acesso é uma declaração do evento,
@@ -191,10 +222,15 @@ export function FilterBar({ filter, municipalities, categories, action, activeCo
                 região para região; diz o que o filtro faz, que é igual em
                 todas. Por `aria-describedby` para quem ouve a caixa ouvir
                 também a ressalva. */}
+            {/* A nota vale para os cinco eixos e não só para as cadeiras de
+                rodas: todos filtram pela declaração, e a ausência de
+                declaração não é ausência de acesso. Os eixos que nenhum
+                evento desta agenda declara não aparecem aqui — uma caixa que
+                devolve sempre zero é uma armadilha, e esta já foi uma. */}
             <p id="filtro-acessivel-nota" className="mt-2 text-sm text-muted">
-              «Acesso a cadeiras de rodas» mostra só os eventos que o declaram: sem declaração, o
-              evento fica de fora mesmo que o espaço seja acessível. O que se sabe do espaço está na
-              ficha de cada evento.
+              Estas caixas mostram só os eventos que o declaram: sem declaração, o evento fica de
+              fora mesmo que o espaço o ofereça. O que se sabe do espaço está na ficha de cada
+              evento.
             </p>
           </fieldset>
         </div>

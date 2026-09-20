@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { eventFilterSchema } from '@coreto/core';
 import {
+  EIXOS_DE_ACESSIBILIDADE,
   PATH_DO_MAPA,
   atalhosDeData,
   buildHref,
   descreverDatas,
+  fichasDosFiltros,
   filtroIndexavel,
   janelaActiva,
   pilulasDeFaceta,
@@ -53,6 +55,52 @@ describe('buildHref', () => {
     const atual = filtro({ municipality: 'tomar', free: '1' });
     expect(buildHref(atual, 1, undefined, PATH_DO_MAPA)).toBe('/mapa?municipality=tomar&free=1');
     expect(buildHref(filtro(), 1, undefined, PATH_DO_MAPA)).toBe('/mapa');
+  });
+});
+
+describe('os eixos da acessibilidade', () => {
+  const NOMES = { municipalities: {}, categories: {}, venues: {}, series: {} };
+
+  /*
+   * As colunas dos cinco eixos existem desde a 0004 e o filtro conhecia uma.
+   * Quem precisa de audiodescrição para decidir se sai de casa não faz a
+   * mesma pergunta de quem precisa de uma rampa.
+   */
+  it('são cinco, e cada um vai para o endereço com o seu nome', () => {
+    expect(EIXOS_DE_ACESSIBILIDADE.map((e) => e.chave)).toEqual([
+      'accessible',
+      'lgp',
+      'audiodescricao',
+      'legendas',
+      'relaxada',
+    ]);
+    const todos = filtro({
+      accessible: '1',
+      lgp: '1',
+      audiodescricao: '1',
+      legendas: '1',
+      relaxada: '1',
+    });
+    expect(buildHref(todos, 1)).toBe(
+      '/agenda?accessible=1&lgp=1&audiodescricao=1&legendas=1&relaxada=1',
+    );
+  });
+
+  it('cada um larga-se sozinho, sem levar os outros atrás', () => {
+    const atual = filtro({ lgp: '1', legendas: '1' });
+    expect(buildHref(atual, 1, 'lgp')).toBe('/agenda?legendas=1');
+  });
+
+  it('cada um aparece como ficha com o nome por extenso', () => {
+    const fichas = fichasDosFiltros(filtro({ audiodescricao: '1' }), QUARTA, NOMES);
+    expect(fichas.map((f) => f.label)).toEqual(['Com audiodescrição']);
+    expect(fichas[0]?.href).toBe('/agenda');
+  });
+
+  // O nome antigo fica: vive em endereços partilhados e em favoritos de quem
+  // os guardou, e renomeá-lo partia-os todos de uma vez.
+  it('o acesso a cadeiras de rodas manteve o nome que já tinha', () => {
+    expect(buildHref(filtro({ accessible: '1' }), 1)).toBe('/agenda?accessible=1');
   });
 });
 

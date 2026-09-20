@@ -75,6 +75,13 @@ const ICONES_MAIS: Record<IconeDeAtalho, (props: { className: string }) => React
     </svg>
   ),
 
+  // Um coração, o mesmo do botão de guardar.
+  favoritos: ({ className }) => (
+    <svg {...traco} className={className}>
+      <path d="M12 20.3 4.3 12.6a4.6 4.6 0 0 1 6.5-6.5l1.2 1.2 1.2-1.2a4.6 4.6 0 0 1 6.5 6.5z" />
+    </svg>
+  ),
+
   submeter: ({ className }) => (
     <svg {...traco} className={className}>
       <rect x="3" y="5" width="18" height="14" rx="2.5" />

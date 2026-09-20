@@ -146,6 +146,47 @@ export function lerSinopse(body: string): string | null {
   );
 }
 
+/**
+ * O preço, que mora na caixa lateral e não na sinopse.
+ *
+ * A página de cada espetáculo tem, à direita, uma caixa com a ficha técnica
+ * curta: a classificação etária, a duração e — o que aqui interessa — quanto
+ * custa. São as formas que a casa serve, as duas medidas a 20/09/2026:
+ *
+ *     <div class='boxDestaque …'><p>M/16</p><p>Duração: 1h15</p>
+ *       <p>12,50€ (à venda na Ticketline)</p></div>
+ *
+ *     …<p>Bilhete: 4.80 euros</p><p>Bilheteira: 1h antes do filme</p></div>
+ *
+ * **Isto estava a ser deitado fora, e são oito espetáculos.** O adaptador lia
+ * a sinopse (`.stdText`) e mais nada, e a caixa do preço vive noutra coluna do
+ * documento: os oito eventos do Cine-Teatro Paraíso entravam no catálogo sem
+ * preço nenhum, numa agenda onde dezanove dos cento e dezasseis o têm. Não é
+ * um campo a mais numa ficha — é a pergunta que se faz a seguir a «quando» e
+ * «onde».
+ *
+ * Devolve-se o **texto tal como está** e não um número: quem sabe ler preços é
+ * o `parsePrice` do `@coreto/core`, que já trata do «12,50€» e do «4.80
+ * euros» com a mesma regra e que decide sozinho o que é entrada livre. Um
+ * segundo leitor de preços nesta casa era garantir que um dia discordavam.
+ *
+ * A linha da bilheteira fica de fora por não ter valor nenhum — «Bilheteira:
+ * 1h antes do filme» é um horário, não um bilhete —, e é a ausência de `€` ou
+ * de «euros» que a exclui, não o seu rótulo.
+ */
+export function lerPrecoDaFicha(body: string): string | null {
+  const caixa = selectFirst(body, '.boxDestaque');
+  if (!caixa) return null;
+
+  const linhas = caixa.inner
+    .replace(/<\s*(?:br\s*\/?|\/p|\/div|\/li)\s*>/gi, '\n')
+    .split('\n')
+    .map((linha) => stripTags(linha).replace(/\s+/g, ' ').trim())
+    .filter((linha) => linha.length > 0);
+
+  return linhas.find((linha) => /(?:€|\beuros?\b)/i.test(linha)) ?? null;
+}
+
 function primeiroTexto(bloco: string, seletor: string): string | null {
   const texto = stripTags(selectFirst(bloco, seletor)?.inner ?? '')
     .replace(/\s+/g, ' ')
@@ -244,6 +285,10 @@ export const paraisoAdapter: Adapter = {
         continue;
       }
       event.description = lerSinopse(detalhe.body);
+      // A caixa lateral do preço vive na mesma página da sinopse: lê-se de uma
+      // vez só, sem um segundo pedido. O `priceRaw` é texto; quem o interpreta
+      // é o `parsePrice` do core, na harmonização.
+      event.priceRaw = lerPrecoDaFicha(detalhe.body) ?? event.priceRaw ?? null;
     }
 
     if (events.length === 0) context.log.warn('nenhum evento com data na entrada do sítio');
