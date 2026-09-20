@@ -561,6 +561,33 @@
     .ct-recolhivel > summary {
       display: none;
     }
+
+    /*
+     * A variante que fica recolhida em qualquer largura.
+     *
+     * A agenda deixou de abrir o formulário em secretária: o benchmark de
+     * 20/09/2026 mediu o primeiro evento a 820 px de um ecrã de 900, atrás
+     * de pesquisa, duas datas, duas listas, duas caixas e uma nota. O que se
+     * quer à vista — as datas, os concelhos, as categorias — passou a
+     * pílulas fora do formulário; o resto fica atrás do resumo, como no
+     * telemóvel. Os espaços continuam com a regra de cima, que lhes serve.
+     *
+     * As três regras desfazem as três de cima, uma a uma, só quando o
+     * `<details>` está fechado.
+     */
+    .ct-recolhivel.ct-recolhivel-sempre > summary {
+      display: flex;
+    }
+
+    .ct-recolhivel.ct-recolhivel-sempre:not([open])::details-content {
+      content-visibility: hidden;
+      block-size: 0;
+    }
+
+    .ct-recolhivel.ct-recolhivel-sempre:not([open]) > form,
+    .ct-recolhivel.ct-recolhivel-sempre:not([open]) > .ct-recolhivel-conteudo {
+      display: none;
+    }
   }
 
   /*

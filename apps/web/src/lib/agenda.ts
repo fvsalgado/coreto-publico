@@ -6,7 +6,7 @@ import {
   type EventFilter,
   type JanelaDeDatas,
 } from '@coreto/core';
-import { formatShortDate, formatWeekdayDate } from './format';
+import { formatLongDate, formatShortDate, formatWeekdayDate } from './format';
 
 /**
  * A parte da agenda que não fala com a base nem com o React.
@@ -87,6 +87,12 @@ export function buildHref(
   filter: EventFilter,
   page: number,
   omit?: FilterKey | readonly FilterKey[],
+  /**
+   * O caminho a que os filtros se colam. É a agenda por omissão; o mapa passa
+   * o dele para levar os mesmos filtros — a mesma função, para os dois
+   * endereços não poderem divergir num parâmetro.
+   */
+  base: string = PATH,
 ): string {
   const params = new URLSearchParams();
   const fora = new Set<FilterKey>(
@@ -107,7 +113,56 @@ export function buildHref(
   if (page > 1) params.set('page', String(page));
 
   const query = params.toString();
-  return query ? `${PATH}?${query}` : PATH;
+  return query ? `${base}?${query}` : base;
+}
+
+/** O caminho do mapa, que aceita os mesmos filtros da agenda. */
+export const PATH_DO_MAPA = '/mapa';
+
+/**
+ * Os dois recortes que se oferecem como pílulas, fora do formulário.
+ *
+ * O concelho e a categoria têm menos de quinze valores cada, e uma lista
+ * suspensa escondia-os atrás de dois toques. Como pílulas ficam à vista, e
+ * cada uma é uma ligação: o estado continua no endereço, sem JavaScript.
+ */
+export type Faceta = 'municipality' | 'category';
+
+export interface Pilula {
+  valor: string;
+  rotulo: string;
+  href: string;
+  activa: boolean;
+  /** Quantos eventos há com este valor, dado o resto do filtro; `null` quando não se contou. */
+  quantos: number | null;
+}
+
+/**
+ * As pílulas de uma faceta, já com endereço.
+ *
+ * Carregar na que está acesa tira-a; carregar noutra troca. Ambas voltam à
+ * primeira página, pela mesma razão que as fichas de `activeFilters`. As
+ * opções sem eventos ficam de fora quando há contagem — uma pílula que leva a
+ * uma lista vazia é um convite para uma porta fechada —, excepto a que está
+ * acesa, que tem de estar lá para se poder apagar.
+ */
+export function pilulasDeFaceta(
+  filter: EventFilter,
+  faceta: Faceta,
+  opcoes: readonly { valor: string; rotulo: string }[],
+  contagem: Readonly<Record<string, number>> | null,
+): Pilula[] {
+  const actual = filter[faceta];
+  return opcoes
+    .map((opcao) => {
+      const activa = actual === opcao.valor;
+      const quantos = contagem ? (contagem[opcao.valor] ?? 0) : null;
+      const href = activa
+        ? buildHref(filter, 1, faceta)
+        : buildHref({ ...filter, [faceta]: opcao.valor }, 1);
+      return { valor: opcao.valor, rotulo: opcao.rotulo, href, activa, quantos };
+    })
+    .filter((pilula) => pilula.activa || pilula.quantos === null || pilula.quantos > 0);
 }
 
 /**
@@ -210,4 +265,71 @@ export function filtroIndexavel(filter: EventFilter): boolean {
   if (filter.q || filter.venue || filter.series) return false;
   if (filter.from || filter.to) return false;
   return true;
+}
+
+/** Uma ficha de filtro a valer: o que está a filtrar, e o endereço sem ele. */
+export interface FichaDeFiltro {
+  label: string;
+  href: string;
+}
+
+/** Os nomes por trás dos identificadores do filtro. */
+export interface NomesDosFiltros {
+  municipalities: Record<string, string>;
+  categories: Record<string, string>;
+  venues: Record<string, string>;
+  series: Record<string, string>;
+}
+
+/**
+ * As fichas dos filtros a valer, por extenso.
+ *
+ * O identificador é traduzido para nome sempre que há por onde: um concelho,
+ * uma categoria, um espaço e um ciclo têm nome, e «Espaço: cine-teatro-paraiso»
+ * não é uma coisa que se ponha à frente de quem lê. Quando o nome não se
+ * encontra — um espaço apagado, um ciclo que mudou de identificador — mostra-se
+ * o que veio no endereço, que é melhor do que esconder um filtro a valer.
+ *
+ * `base` é o caminho a que a ficha volta sem o filtro: a agenda por omissão, o
+ * mapa quando é o mapa que as mostra.
+ */
+export function fichasDosFiltros(
+  filter: EventFilter,
+  hoje: string,
+  names: NomesDosFiltros,
+  base: string = PATH,
+): FichaDeFiltro[] {
+  const fichas: FichaDeFiltro[] = [];
+  const ficha = (key: FilterKey, label: string) =>
+    fichas.push({ label, href: buildHref(filter, 1, key, base) });
+
+  if (filter.q) ficha('q', `«${filter.q}»`);
+  if (filter.municipality)
+    ficha('municipality', names.municipalities[filter.municipality] ?? filter.municipality);
+  if (filter.category) ficha('category', names.categories[filter.category] ?? filter.category);
+  if (filter.venue) ficha('venue', names.venues[filter.venue] ?? filter.venue);
+  if (filter.series) ficha('series', names.series[filter.series] ?? filter.series);
+  /*
+   * Um recorte com nome é uma ficha só, e larga-se inteiro.
+   *
+   * Sem isto, «Hoje» aparecia como «De 5 de setembro» **e** «Até 5 de
+   * setembro» — duas fichas para um filtro, removíveis uma de cada vez e a
+   * deixar meia janela para trás. E o contador do formulário dizia «2», o que
+   * levava quem carregou num atalho a pensar que tinha escondido dois filtros
+   * que não pôs.
+   */
+  const atalho = janelaActiva(filter, hoje);
+  if (atalho) {
+    fichas.push({
+      label: ATALHOS.find((item) => item.id === atalho)?.rotulo ?? 'Datas',
+      href: buildHref(filter, 1, ['from', 'to'], base),
+    });
+  } else {
+    if (filter.from) ficha('from', `De ${formatLongDate(filter.from)}`);
+    if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
+  }
+  if (filter.free) ficha('free', 'Entrada livre');
+  if (filter.accessible) ficha('accessible', 'Acesso a cadeiras de rodas');
+
+  return fichas;
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BandstandMark } from '@/src/components/BandstandMark';
+import { ThemeToggle } from '@/src/components/ThemeToggle';
 import {
   caminhoPublico,
   BARRA,
@@ -362,6 +363,18 @@ export function BarraInferior({
                   </li>
                 );
               })}
+              {/*
+               * O tema, no fim da gaveta.
+               *
+               * No telemóvel o toldo passou a ter uma linha só — o nome e o
+               * promotor — e o botão do tema, que lá vivia, veio para aqui
+               * com o «Enviar um evento». Uma linha como as outras, com o
+               * mesmo desenho, para quem abre a gaveta não ter de aprender um
+               * segundo tipo de controlo.
+               */}
+              <li className="mt-1 border-t border-border pt-1">
+                <ThemeToggle variante="gaveta" />
+              </li>
             </ul>
           </details>
         </li>

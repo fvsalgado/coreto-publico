@@ -1,54 +1,107 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { todayInLisbon } from '@coreto/core';
+import { ActiveFilters } from '@/src/components/ActiveFilters';
 import { EmptyState } from '@/src/components/EmptyState';
 import { MapaDosEventos } from '@/src/components/MapaDosEventos';
 import { PageHeader } from '@/src/components/PageHeader';
+import { VistaDaAgenda } from '@/src/components/VistaDaAgenda';
+import {
+  PATH_DO_MAPA,
+  buildHref,
+  fichasDosFiltros,
+  readFilter,
+  type SearchParams,
+} from '@/src/lib/agenda';
+import { descreverFiltro } from '@/src/lib/agenda-servidor';
 import { formatEventDates } from '@/src/lib/format';
 import { agruparEmLugares, type ConcelhoNoMapa } from '@/src/lib/mapa';
 import {
+  listCategories,
   listEventsForMap,
   listMunicipalities,
   listMunicipalityBoundaries,
   listPublicSources,
+  listSeries,
+  listVenueNames,
   listVenues,
 } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 
-export const revalidate = 3600;
+/*
+ * Sem `revalidate` de página desde que o mapa lê filtros do endereço: uma
+ * página que lê `searchParams` é servida a pedido, e o que a poupa é a cache
+ * das leituras (`unstable_cache`, em `queries/events.ts`), a mesma da agenda.
+ */
 
 interface Props {
   params: Promise<{ regiao: string }>;
+  searchParams: Promise<SearchParams>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+/** O mapa está a mostrar um recorte — há pelo menos um filtro no endereço. */
+function estaFiltrado(filter: ReturnType<typeof readFilter>): boolean {
+  return buildHref(filter, 1, undefined, PATH_DO_MAPA) !== PATH_DO_MAPA;
+}
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
+  const filter = readFilter(await searchParams);
+  const filtrado = estaFiltrado(filter);
+  const descricao = filtrado ? await descreverFiltro(regiao, filter, todayInLisbon()) : null;
   return {
-    title: 'Mapa',
-    description: `Onde é que acontece o quê ${regiao.noNome}: todos os eventos por acontecer no mapa da região, e a lista completa concelho a concelho.`,
-    alternates: { canonical: '/mapa' },
+    title: descricao?.rotulo ? `Mapa: ${descricao.rotulo}` : 'Mapa',
+    description:
+      descricao?.frase ||
+      `Onde é que acontece o quê ${regiao.noNome}: todos os eventos por acontecer no mapa da região, e a lista completa concelho a concelho.`,
+    // O canónico é sempre o mapa inteiro: um mapa filtrado é a mesma vista
+    // que a agenda filtrada, e essa já decidiu não se indexar (ver
+    // `filtroIndexavel`); aqui a regra é mais simples porque não há página 2.
+    alternates: { canonical: PATH_DO_MAPA },
+    robots: filtrado ? { index: false, follow: true } : undefined,
   };
 }
 
-export default async function MapaPage({ params }: Props) {
+export default async function MapaPage({ params, searchParams }: Props) {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
+  const filter = readFilter(await searchParams);
+  const filtrado = estaFiltrado(filter);
   const [haCiclos, haFontes] = await Promise.all([
     seccaoLigada(regiao.id, 'ciclos'),
     seccaoLigada(regiao.id, 'fontes'),
   ]);
   const hoje = todayInLisbon();
 
-  const [concelhos, fronteiras, eventos, espacos, fontes] = await Promise.all([
-    listMunicipalities(regiao.id),
-    // Os contornos vêm à parte: pesam, e só esta página os quer.
-    listMunicipalityBoundaries(regiao.id),
-    listEventsForMap(regiao.id),
-    listVenues(regiao.id),
-    listPublicSources(regiao.id),
-  ]);
+  const [concelhos, fronteiras, eventos, espacos, fontes, categorias, nomesDeEspaco, ciclos] =
+    await Promise.all([
+      listMunicipalities(regiao.id),
+      // Os contornos vêm à parte: pesam, e só esta página os quer.
+      listMunicipalityBoundaries(regiao.id),
+      // O mesmo filtro da agenda, pelo mesmo caminho: é o que «Ver no mapa»
+      // promete.
+      listEventsForMap(regiao.id, filter),
+      listVenues(regiao.id),
+      listPublicSources(regiao.id),
+      listCategories(),
+      listVenueNames(regiao.id, filter.municipality),
+      listSeries(regiao.id),
+    ]);
+
+  const fichas = fichasDosFiltros(
+    filter,
+    hoje,
+    {
+      municipalities: Object.fromEntries(concelhos.map((c) => [c.id, c.name])),
+      categories: Object.fromEntries(categorias.map((c) => [c.slug, c.name])),
+      venues: nomesDeEspaco,
+      series: Object.fromEntries(ciclos.map((c) => [c.id, c.name])),
+    },
+    PATH_DO_MAPA,
+  );
+  const descricao = filtrado ? await descreverFiltro(regiao, filter, hoje) : null;
 
   const paraOMapa: ConcelhoNoMapa[] = concelhos.map((concelho) => ({
     id: concelho.id,
@@ -98,13 +151,31 @@ export default async function MapaPage({ params }: Props) {
 
   return (
     <>
-      <PageHeader title="Mapa" eyebrow="O território" />
+      {/* A mesma alternância da agenda, ao lado do título, com os mesmos
+          filtros nos dois sentidos; e as fichas para os tirar um a um sem
+          sair do mapa. */}
+      <PageHeader
+        title="Mapa"
+        eyebrow="O território"
+        compacto
+        lead={descricao?.rotulo ? `A mostrar: ${descricao.rotulo}.` : undefined}
+        lado={
+          <VistaDaAgenda
+            vista="mapa"
+            hrefLista={buildHref(filter, 1)}
+            hrefMapa={buildHref(filter, 1, undefined, PATH_DO_MAPA)}
+          />
+        }
+      >
+        <ActiveFilters filters={fichas} clearHref={PATH_DO_MAPA} />
+      </PageHeader>
 
       <MapaDosEventos
         lugares={lugares}
         concelhos={paraOMapa}
         eventosPorConcelho={eventosPorConcelho}
         hoje={hoje}
+        filtrado={filtrado}
       />
 
       <h2 className="font-display mt-10 text-2xl leading-tight font-semibold">
@@ -167,10 +238,16 @@ export default async function MapaPage({ params }: Props) {
                         foi publicada onde a possamos ler. A distinção é a
                         diferença entre um convite e um veredicto. */}
                     <td colSpan={3} className="py-2.5 text-muted">
-                      {comFonte.has(concelho.id)
-                        ? 'Lemos as fontes deste concelho todas as noites e, de momento, não há nada marcado.'
-                        : 'Ainda sem fonte que possamos ler todas as noites.'}{' '}
-                      <span className="text-ink">Enviem o que se prepara.</span>
+                      {filtrado ? (
+                        'Nada neste concelho com estes filtros.'
+                      ) : (
+                        <>
+                          {comFonte.has(concelho.id)
+                            ? 'Lemos as fontes deste concelho todas as noites e, de momento, não há nada marcado.'
+                            : 'Ainda sem fonte que possamos ler todas as noites.'}{' '}
+                          <span className="text-ink">Enviem o que se prepara.</span>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -202,8 +279,9 @@ export default async function MapaPage({ params }: Props) {
           painel. Cada uma cai por si: o parágrafo continua a dizer o que a
           tabela é, e não fica a mandar ninguém a uma página que não existe. */}
       <p className="mt-8 max-w-2xl text-sm text-muted">
-        O mapa e a tabela são dos eventos marcados de hoje em diante: um mapa do que já passou seria
-        um mapa de sítios onde não há nada para ir fazer.
+        {filtrado
+          ? 'O mapa e a tabela mostram só o que passa nos filtros de cima, de hoje em diante.'
+          : 'O mapa e a tabela são dos eventos marcados de hoje em diante: um mapa do que já passou seria um mapa de sítios onde não há nada para ir fazer.'}
         {haCiclos ? (
           <>
             {' '}

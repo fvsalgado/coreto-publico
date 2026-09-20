@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   agruparNoEcra,
   contornosDosConcelhos,
+  folgaDoEnquadramento,
   limitesDaRegiao,
   nomeDaMarca,
   type ConcelhoNoMapa,
@@ -188,13 +189,16 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
 
       const limites = limitesDaRegiao(concelhos);
       const guardada = vista.current;
+      // A folga cresce com a caixa: 24 px fixos deixavam os agregados colados
+      // às bordas num telemóvel. Ver `folgaDoEnquadramento`.
+      const folga = folgaDoEnquadramento(alvo.clientWidth, alvo.clientHeight);
       const mapa = new maplibre.Map({
         container: alvo,
         style: escuro ? ESTILOS.escuro : ESTILOS.claro,
         ...(guardada
           ? { center: guardada.centro, zoom: guardada.zoom }
           : limites
-            ? { bounds: limites, fitBoundsOptions: { padding: 24 } }
+            ? { bounds: limites, fitBoundsOptions: { padding: folga } }
             : { center: [-8.4, 39.5] as [number, number], zoom: 8.5 }),
         // A atribuição é obrigação e não enfeite: os dados são do OpenStreetMap,
         // sob ODbL, e quem os usa diz de onde vieram.

@@ -179,9 +179,15 @@ export default async function RegiaoLayout({ children, params }: Props) {
         cinzento: é a cor viva da marca, com a saia do lambrequim a pender
         dele. Por cima vai tinta escura e não branco — o branco sobre este
         turquesa dá 2,2:1 e desfaz-se.
+
+        No telemóvel é uma linha só: o nome e o promotor. O «Enviar evento» e
+        o tema, que aqui estavam numa segunda linha, passaram para a gaveta
+        da barra de baixo — o benchmark de 20/09/2026 mediu 125 px de toldo
+        antes do título, contra 56 nas agendas com que se compara, e cada
+        pixel aqui em cima é um pixel a menos de programação no primeiro ecrã.
       */}
       <header className="ct-bloco-marca ct-grain bg-brand text-on-brand">
-        <div className="ct-goteira relative z-10 mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 py-3.5 sm:gap-x-5">
+        <div className="ct-goteira relative z-10 mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 py-2 sm:gap-x-5 sm:py-3.5">
           <Link
             href="/"
             className="font-display flex min-h-11 items-center gap-2.5 text-2xl font-semibold tracking-tight"
@@ -224,9 +230,11 @@ export default async function RegiaoLayout({ children, params }: Props) {
             </a>
           )}
 
-          {/* Os cinco destinos vivem na barra de baixo no telemóvel; aqui em
-              cima ficam só a partir do tablet, onde há linha para eles. */}
-          <nav aria-label="Principal" className="flex-1">
+          {/* Os destinos, o envio e o tema vivem na barra de baixo e na gaveta
+              dela no telemóvel; aqui em cima ficam só a partir do tablet, onde
+              há linha para eles. A navegação inteira sai do documento no
+              telemóvel — um marco «Principal» vazio era um marco a mentir. */}
+          <nav aria-label="Principal" className="hidden flex-1 sm:block">
             <ul className="flex items-center justify-end gap-x-1 text-sm">
               <NavegacaoDoToldo destinos={nav} regiao={regiao.id} />
               <li>
@@ -234,7 +242,7 @@ export default async function RegiaoLayout({ children, params }: Props) {
                   href="/submeter"
                   className="ml-1.5 inline-flex min-h-11 items-center rounded-full border border-on-brand/60 px-4 font-medium hover:bg-on-brand/10"
                 >
-                  Enviar<span className="hidden sm:inline">&nbsp;evento</span>
+                  Enviar evento
                 </Link>
               </li>
               <li className="ml-1.5">

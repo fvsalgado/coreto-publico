@@ -206,6 +206,21 @@ export function limitesDaRegiao(
   ];
 }
 
+/**
+ * A folga do enquadramento inicial, em pixéis, para uma caixa deste tamanho.
+ *
+ * Era um número fixo — 24 px — e num telemóvel isso deixava os agregados
+ * colados às bordas: o benchmark de 20/09/2026 apanhou o «16» meio fora do
+ * ecrã à esquerda e o «14» encostado ao canto de baixo. Um décimo do lado
+ * menor dá 32 px numa caixa de 320 de altura e 56 numa de 560; os 24 ficam
+ * como mínimo para uma caixa pequena não perder o mapa todo em margem.
+ */
+export function folgaDoEnquadramento(largura: number, altura: number): number {
+  const menor = Math.min(largura, altura);
+  if (!Number.isFinite(menor) || menor <= 0) return 24;
+  return Math.max(24, Math.round(menor * 0.1));
+}
+
 /** O contorno de um concelho como `Feature` de GeoJSON. */
 export interface ContornoGeoJson {
   type: 'Feature';

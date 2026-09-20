@@ -60,7 +60,57 @@ function subscreverTema(avisar: () => void): () => void {
  * Sem JavaScript o botão não faz nada — e não faz falta: sem atributo na
  * raiz vale a preferência do sistema, como sempre.
  */
-export function ThemeToggle() {
+function IconeDoTema({ tema }: { tema: Tema }) {
+  if (tema === 'light') {
+    return (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        className="size-4.5"
+      >
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </svg>
+    );
+  }
+  if (tema === 'dark') {
+    return (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        className="size-4.5"
+      >
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+      </svg>
+    );
+  }
+  // Meio a meio: o círculo com metade cheia é o «automático».
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4.5">
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * Onde o botão vive muda a forma dele.
+ *
+ * No toldo é um círculo com moldura, ao lado do «Enviar evento». Na gaveta da
+ * barra de baixo é uma linha como as outras — ícone, rótulo, nota —, porque é
+ * para lá que o tema foi no telemóvel quando o cabeçalho ficou com uma linha
+ * só (benchmark de 20/09/2026: 125 px de toldo antes do título, contra os 56
+ * dos pares).
+ */
+export function ThemeToggle({ variante = 'toldo' }: { variante?: 'toldo' | 'gaveta' }) {
   const tema = useSyncExternalStore(subscreverTema, lerTema, (): Tema => 'system');
 
   const mudar = () => {
@@ -77,6 +127,27 @@ export function ThemeToggle() {
     }
   };
 
+  if (variante === 'gaveta') {
+    return (
+      <button
+        type="button"
+        onClick={mudar}
+        aria-label={`Mudar o tema (agora: ${ROTULO[tema]})`}
+        className="flex min-h-14 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left"
+      >
+        <span className="ct-octagon grid size-9 shrink-0 place-items-center bg-accent-soft text-accent">
+          <IconeDoTema tema={tema} />
+        </span>
+        <span className="min-w-0">
+          <span className="block font-medium">Tema</span>
+          <span className="block text-xs text-muted" aria-live="polite">
+            Agora: {ROTULO[tema]}. Toque para mudar.
+          </span>
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -85,38 +156,7 @@ export function ThemeToggle() {
       title={`Tema: ${ROTULO[tema]}`}
       className="grid size-11 place-items-center rounded-full border border-on-brand/60 hover:bg-on-brand/10"
     >
-      {tema === 'light' ? (
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          className="size-4.5"
-        >
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-      ) : tema === 'dark' ? (
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinejoin="round"
-          className="size-4.5"
-        >
-          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-        </svg>
-      ) : (
-        // Meio a meio: o círculo com metade cheia é o «automático».
-        <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4.5">
-          <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
-          <path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="currentColor" />
-        </svg>
-      )}
+      <IconeDoTema tema={tema} />
       <span className="sr-only" aria-live="polite">
         Tema: {ROTULO[tema]}
       </span>

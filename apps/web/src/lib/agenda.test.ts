@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { eventFilterSchema } from '@coreto/core';
 import {
+  PATH_DO_MAPA,
   atalhosDeData,
   buildHref,
   descreverDatas,
   filtroIndexavel,
   janelaActiva,
+  pilulasDeFaceta,
   readFilter,
 } from './agenda';
 
@@ -43,6 +45,50 @@ describe('buildHref', () => {
   it('larga os dois campos de uma janela de uma vez', () => {
     const atual = filtro({ from: '2026-09-11', to: '2026-09-13', municipality: 'tomar' });
     expect(buildHref(atual, 1, ['from', 'to'])).toBe('/agenda?municipality=tomar');
+  });
+
+  // O mapa leva os mesmos filtros pela mesma função: é o que faz «Ver no
+  // mapa» e «Ver em lista» irem e voltarem sem perder um parâmetro.
+  it('cola os mesmos filtros a outro caminho quando lho pedem', () => {
+    const atual = filtro({ municipality: 'tomar', free: '1' });
+    expect(buildHref(atual, 1, undefined, PATH_DO_MAPA)).toBe('/mapa?municipality=tomar&free=1');
+    expect(buildHref(filtro(), 1, undefined, PATH_DO_MAPA)).toBe('/mapa');
+  });
+});
+
+describe('pilulasDeFaceta', () => {
+  const concelhos = [
+    { valor: 'tomar', rotulo: 'Tomar' },
+    { valor: 'ourem', rotulo: 'Ourém' },
+    { valor: 'sardoal', rotulo: 'Sardoal' },
+  ];
+
+  it('uma pílula apagada liga o valor; a acesa desliga-o', () => {
+    const atual = filtro({ municipality: 'tomar', category: 'musica' });
+    const pilulas = pilulasDeFaceta(atual, 'municipality', concelhos, null);
+    expect(pilulas.find((p) => p.valor === 'tomar')).toMatchObject({
+      activa: true,
+      href: '/agenda?category=musica',
+    });
+    expect(pilulas.find((p) => p.valor === 'ourem')).toMatchObject({
+      activa: false,
+      href: '/agenda?municipality=ourem&category=musica',
+    });
+  });
+
+  it('com contagem, esconde as opções vazias mas nunca a acesa', () => {
+    const atual = filtro({ municipality: 'sardoal' });
+    const pilulas = pilulasDeFaceta(atual, 'municipality', concelhos, { tomar: 4, ourem: 0 });
+    expect(pilulas.map((p) => [p.valor, p.quantos])).toEqual([
+      ['tomar', 4],
+      ['sardoal', 0],
+    ]);
+  });
+
+  it('sem contagem, mostra todas e não inventa números', () => {
+    const pilulas = pilulasDeFaceta(filtro(), 'category', concelhos, null);
+    expect(pilulas).toHaveLength(3);
+    expect(pilulas.every((p) => p.quantos === null)).toBe(true);
   });
 });
 

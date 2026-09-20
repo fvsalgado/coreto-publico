@@ -3,6 +3,7 @@ import {
   agruparEmLugares,
   agruparNoEcra,
   contornosDosConcelhos,
+  folgaDoEnquadramento,
   limitesDaRegiao,
   type ConcelhoNoMapa,
   type Precisao,
@@ -433,5 +434,18 @@ describe('nomeDaMarca', () => {
       6,
     );
     expect(nomeDaMarca(junta)).toBe('3 sítios em 3 concelhos — 6 eventos');
+  });
+});
+
+describe('folgaDoEnquadramento', () => {
+  it('é um décimo do lado menor, com 24 px de mínimo', () => {
+    expect(folgaDoEnquadramento(358, 320)).toBe(32);
+    expect(folgaDoEnquadramento(1024, 560)).toBe(56);
+    expect(folgaDoEnquadramento(200, 900)).toBe(24);
+  });
+
+  it('numa caixa sem medida ainda, fica pelo mínimo', () => {
+    expect(folgaDoEnquadramento(0, 0)).toBe(24);
+    expect(folgaDoEnquadramento(Number.NaN, 400)).toBe(24);
   });
 });

@@ -31,13 +31,21 @@ interface Props {
   eventosPorConcelho: Record<string, number>;
   /** Hoje em Lisboa, vindo do servidor: o cliente não decide que dia é. */
   hoje: string;
+  /** O mapa está a mostrar um recorte da agenda, e não a região inteira. */
+  filtrado?: boolean;
 }
 
 function contarEventos(quantos: number): string {
   return quantos === 1 ? '1 evento' : `${quantos} eventos`;
 }
 
-export function MapaDosEventos({ lugares, concelhos, eventosPorConcelho, hoje }: Props) {
+export function MapaDosEventos({
+  lugares,
+  concelhos,
+  eventosPorConcelho,
+  hoje,
+  filtrado = false,
+}: Props) {
   // A marca escolhida guarda-se inteira, e não pelo identificador: a
   // composição das marcas muda a cada zoom, e um identificador guardado
   // apontava para uma junção que já não existe assim que alguém se aproximasse.
@@ -49,8 +57,9 @@ export function MapaDosEventos({ lugares, concelhos, eventosPorConcelho, hoje }:
   if (lugares.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
-        Não há nada marcado de hoje em diante, e por isso não há mapa. A tabela por baixo mostra
-        concelho a concelho o que se sabe — e, em cada um, de onde vem a programação.
+        {filtrado
+          ? 'Nenhum evento passa nestes filtros, e por isso não há mapa. Tire um filtro, ou volte à lista.'
+          : 'Não há nada marcado de hoje em diante, e por isso não há mapa. A tabela por baixo mostra concelho a concelho o que se sabe — e, em cada um, de onde vem a programação.'}
       </p>
     );
   }
