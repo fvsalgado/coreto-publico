@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { InterruptoresDeSeccoes } from '@/src/components/InterruptoresDeSeccoes';
@@ -53,7 +54,7 @@ export default async function AdminDashboard({ searchParams }: Props) {
 
   // Só as que pedem atenção: prazo a 30 dias ou já passado. Uma região sem
   // licença registada não grita daqui — a ficha dela di-lo, sem alarme.
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayInLisbon();
   const licencasEmAlerta = regioes
     .map((regiao) => ({
       regiao,

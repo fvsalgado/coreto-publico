@@ -1,16 +1,34 @@
 'use client';
 
-// A versão 5 do MapLibre, e é uma escolha e não um atraso.
+// A versão 6 do MapLibre, e as duas coisas que ela obriga a fazer.
 //
-// A 6 deriva o endereço do seu `worker` de `import.meta.url` e desiste em
-// silêncio quando ele não é um `http(s)` — que é exatamente o que acontece
-// depois de um empacotador inlinar a biblioteca. O resultado: `new Worker('')`,
-// nenhuma fonte chega a carregar, e o mapa fica um retângulo vazio **sem um
-// único erro na consola**. Foi preciso medir `isSourceLoaded()` para dar por
-// isso. A 5 traz o `worker` embutido e funciona com qualquer empacotador.
+// **Esta casa ficou na 5 de propósito, e a razão estava escrita aqui.** Dizia,
+// à letra: a 6 deriva o endereço do seu processador de `import.meta.url` e
+// desiste em silêncio quando ele não é um `http(s)` — que é o que acontece
+// depois de um empacotador inlinar a biblioteca; o resultado é
+// `new Worker('')`, nenhuma fonte carrega, e o mapa fica um retângulo vazio
+// sem um único erro na consola. A análise estava certa: a 19 de setembro de
+// 2026 subiu-se à 6 por causa de uma vulnerabilidade crítica na 5 e
+// reencontrou-se exatamente isso, num Chromium, contra a compilação de
+// produção.
 //
-// `Map` e `Marker` vêm renomeados porque `Map` é o da linguagem.
-import { Map as MapaLibre, Marker as MarcaLibre, NavigationControl } from 'maplibre-gl';
+// O que mudou não foi o diagnóstico: foi haver saída. A 6 expõe
+// `setWorkerUrl`, e o processador passa a ser servido por nós, de
+// `public/maplibre/<versão>/` (ver `scripts/copiar-maplibre.mjs`) — dito em
+// vez de descoberto. A versão vai no caminho para que a cache de um navegador
+// nunca junte um processador antigo a um módulo principal novo.
+//
+// **E a biblioteca carrega-se aqui dentro, não no topo.** A 6 é ESM puro, e um
+// `import` estático punha-a no pacote comum a todas as páginas: medido, a
+// entrada — que não tem mapa nenhum — passou de 144 kB de JavaScript para 357,
+// contra um tecto de 170. Um `await import()` dentro do efeito devolve-a ao seu
+// próprio pedaço, pedido só por quem abre o mapa. O `dynamic()` de
+// `MapaDosEventos` não chegava para isso: separa este componente, não o que ele
+// importa estaticamente.
+//
+// `Map` e `Marker` vêm renomeados porque `Map` é o da linguagem; aqui são só
+// tipos, que não sobrevivem à compilação e não pesam nada.
+import type { Map as MapaLibre, Marker as MarcaLibre } from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import {
   agruparNoEcra,
@@ -24,6 +42,25 @@ import {
 import { estaEscuro } from '@/src/lib/tema';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+/**
+ * A biblioteca, carregada uma vez e guardada.
+ *
+ * `import()` é ele próprio memoizado pelo navegador, mas guardar a promessa
+ * aqui poupa a segunda travessia do módulo e, mais importante, deixa dito num
+ * sítio só que isto se carrega uma vez: o `setWorkerUrl` tem de acontecer
+ * antes do primeiro `new Map` e nunca mais, e amarrá-lo ao carregamento é o
+ * que o garante sem uma bandeira à parte.
+ */
+let biblioteca: Promise<typeof import('maplibre-gl')> | null = null;
+
+function carregarMapLibre(): Promise<typeof import('maplibre-gl')> {
+  biblioteca ??= import('maplibre-gl').then((modulo) => {
+    modulo.setWorkerUrl(`/maplibre/${modulo.getVersion()}/maplibre-gl-worker.mjs`);
+    return modulo;
+  });
+  return biblioteca;
+}
 
 interface Props {
   lugares: Lugar[];
@@ -129,83 +166,106 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
   // dissesse. Reconstruir é uma linha, acontece só quando alguém carrega no
   // botão do tema, e a vista de quem lá está é guardada e reposta.
   const vista = useRef<Vista | null>(null);
+  // O construtor das marcas, para o efeito de baixo: vem do mesmo carregamento,
+  // e guardá-lo evita um segundo `await` num efeito que corre a cada zoom. Fica
+  // preenchido antes de `setMapa`, e o efeito das marcas só corre com o mapa.
+  const marcador = useRef<typeof MarcaLibre | null>(null);
   useEffect(() => {
-    if (!caixa.current || escuro === null) return;
+    const alvo = caixa.current;
+    if (!alvo || escuro === null) return;
 
-    const limites = limitesDaRegiao(concelhos);
-    const guardada = vista.current;
-    const instancia = new MapaLibre({
-      container: caixa.current,
-      style: escuro ? ESTILOS.escuro : ESTILOS.claro,
-      ...(guardada
-        ? { center: guardada.centro, zoom: guardada.zoom }
-        : limites
-          ? { bounds: limites, fitBoundsOptions: { padding: 24 } }
-          : { center: [-8.4, 39.5] as [number, number], zoom: 8.5 }),
-      // A atribuição é obrigação e não enfeite: os dados são do OpenStreetMap,
-      // sob ODbL, e quem os usa diz de onde vieram.
-      attributionControl: { compact: true },
-      // Sem rotação: um mapa regional torto não ajuda ninguém a orientar-se, e
-      // rodá-lo por engano com dois dedos é a maneira mais rápida de o deixar
-      // ilegível num telemóvel.
-      dragRotate: false,
-      pitchWithRotate: false,
+    // O efeito é síncrono e o carregamento da biblioteca não é. A limpeza tem
+    // de saber desfazer os dois estados possíveis: «ainda não chegou» — e
+    // então não se cria mapa nenhum quando chegar — e «já cá está», que é o
+    // caso de sempre. Sem esta bandeira, trocar de tema duas vezes depressa
+    // deixava para trás um mapa que ninguém mais destruía.
+    let vivo = true;
+    let instancia: MapaLibre | null = null;
+
+    void carregarMapLibre().then((maplibre) => {
+      if (!vivo) return;
+      marcador.current = maplibre.Marker;
+
+      const limites = limitesDaRegiao(concelhos);
+      const guardada = vista.current;
+      const mapa = new maplibre.Map({
+        container: alvo,
+        style: escuro ? ESTILOS.escuro : ESTILOS.claro,
+        ...(guardada
+          ? { center: guardada.centro, zoom: guardada.zoom }
+          : limites
+            ? { bounds: limites, fitBoundsOptions: { padding: 24 } }
+            : { center: [-8.4, 39.5] as [number, number], zoom: 8.5 }),
+        // A atribuição é obrigação e não enfeite: os dados são do OpenStreetMap,
+        // sob ODbL, e quem os usa diz de onde vieram.
+        attributionControl: { compact: true },
+        // Sem rotação: um mapa regional torto não ajuda ninguém a orientar-se, e
+        // rodá-lo por engano com dois dedos é a maneira mais rápida de o deixar
+        // ilegível num telemóvel.
+        dragRotate: false,
+        pitchWithRotate: false,
+      });
+      instancia = mapa;
+
+      mapa.touchZoomRotate.disableRotation();
+      mapa.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
+      // Sem `GeolocateControl`: o cabeçalho `Permissions-Policy` desta casa nega
+      // a geolocalização ao sítio inteiro, e o botão ficava a pedir uma coisa que
+      // o navegador já decidiu recusar.
+
+      // O MapLibre não deixa um erro chegar à consola por si: emite-o como evento
+      // e cala-se. Um mapa que não carrega os mosaicos ficava um retângulo vazio
+      // sem uma linha que dissesse porquê.
+      mapa.on('error', (evento) => {
+        console.warn('mapa:', evento.error?.message ?? evento);
+      });
+
+      const desenhar = () => {
+        if (!mapa.isStyleLoaded()) return;
+        if (mapa.getSource('concelhos')) return;
+
+        const acesa = corDoTema(alvo, '--color-accent', '#14676b');
+        const apagada = corDoTema(alvo, '--color-muted', '#4b545c');
+
+        mapa.addSource('concelhos', {
+          type: 'geojson',
+          data: contornosDosConcelhos(concelhos, eventosPorConcelho),
+        });
+        mapa.addLayer({
+          id: 'concelhos-fundo',
+          type: 'fill',
+          source: 'concelhos',
+          paint: {
+            // Um concelho com programação acende; um sem nada marcado desenha-se
+            // na mesma, ao de leve. Ver `contornosDosConcelhos`.
+            'fill-color': ['case', ['>', ['get', 'eventos'], 0], acesa, apagada],
+            'fill-opacity': ['case', ['>', ['get', 'eventos'], 0], 0.14, 0.06],
+          },
+        });
+        mapa.addLayer({
+          id: 'concelhos-linha',
+          type: 'line',
+          source: 'concelhos',
+          paint: {
+            'line-color': ['case', ['>', ['get', 'eventos'], 0], acesa, apagada],
+            'line-width': 2,
+            'line-opacity': 0.9,
+          },
+        });
+      };
+
+      // `styledata` chega várias vezes e a última chega com o estilo ainda por
+      // acabar; `idle` é o sinal de que o mapa assentou mesmo. Os dois, porque
+      // nenhum deles sozinho chegou.
+      mapa.on('styledata', desenhar);
+      mapa.on('idle', desenhar);
+
+      setMapa(mapa);
     });
-    instancia.touchZoomRotate.disableRotation();
-    instancia.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-    // Sem `GeolocateControl`: o cabeçalho `Permissions-Policy` desta casa nega
-    // a geolocalização ao sítio inteiro, e o botão ficava a pedir uma coisa que
-    // o navegador já decidiu recusar.
 
-    // O MapLibre não deixa um erro chegar à consola por si: emite-o como evento
-    // e cala-se. Um mapa que não carrega os mosaicos ficava um retângulo vazio
-    // sem uma linha que dissesse porquê.
-    instancia.on('error', (evento) => {
-      console.warn('mapa:', evento.error?.message ?? evento);
-    });
-
-    const desenhar = () => {
-      if (!instancia.isStyleLoaded()) return;
-      if (instancia.getSource('concelhos')) return;
-
-      const acesa = corDoTema(caixa.current, '--color-accent', '#14676b');
-      const apagada = corDoTema(caixa.current, '--color-muted', '#4b545c');
-
-      instancia.addSource('concelhos', {
-        type: 'geojson',
-        data: contornosDosConcelhos(concelhos, eventosPorConcelho),
-      });
-      instancia.addLayer({
-        id: 'concelhos-fundo',
-        type: 'fill',
-        source: 'concelhos',
-        paint: {
-          // Um concelho com programação acende; um sem nada marcado desenha-se
-          // na mesma, ao de leve. Ver `contornosDosConcelhos`.
-          'fill-color': ['case', ['>', ['get', 'eventos'], 0], acesa, apagada],
-          'fill-opacity': ['case', ['>', ['get', 'eventos'], 0], 0.14, 0.06],
-        },
-      });
-      instancia.addLayer({
-        id: 'concelhos-linha',
-        type: 'line',
-        source: 'concelhos',
-        paint: {
-          'line-color': ['case', ['>', ['get', 'eventos'], 0], acesa, apagada],
-          'line-width': 2,
-          'line-opacity': 0.9,
-        },
-      });
-    };
-
-    // `styledata` chega várias vezes e a última chega com o estilo ainda por
-    // acabar; `idle` é o sinal de que o mapa assentou mesmo. Os dois, porque
-    // nenhum deles sozinho chegou.
-    instancia.on('styledata', desenhar);
-    instancia.on('idle', desenhar);
-
-    setMapa(instancia);
     return () => {
+      vivo = false;
+      if (!instancia) return;
       vista.current = {
         centro: [instancia.getCenter().lng, instancia.getCenter().lat],
         zoom: instancia.getZoom(),
@@ -229,7 +289,8 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
   const marcas = useRef<globalThis.Map<string, MarcaLibre>>(new globalThis.Map());
   const composicao = useRef<string>('');
   useEffect(() => {
-    if (!mapa) {
+    const Marca = marcador.current;
+    if (!mapa || !Marca) {
       marcas.current.clear();
       composicao.current = '';
       return;
@@ -268,7 +329,7 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
 
           marcas.current.set(
             agrupada.id,
-            new MarcaLibre({ element: elemento })
+            new Marca({ element: elemento })
               .setLngLat([agrupada.longitude, agrupada.latitude])
               .addTo(mapa),
           );

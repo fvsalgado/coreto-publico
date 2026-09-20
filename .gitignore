@@ -67,3 +67,19 @@ __pycache__/
 # artefacto, e não tem nada que fazer no repositório — são contagens de um dia.
 resumo-*.json
 corpo-*.txt
+
+# O processador do MapLibre, copiado do pacote instalado em cada build
+# (apps/web/scripts/copiar-maplibre.mjs). Nunca se comete: a versão é a do lockfile.
+apps/web/public/maplibre/
+
+# O relatório JSON do Vitest que o CI escreve para o check:numeros
+.bateria.json
+
+# O que o CI e os guiões escrevem para se lerem depois, e que se regenera.
+# O dossiê contratual é o caso a explicar: a fonte são os seis Markdown em
+# `docs/contrato/`, que se revêem em diff e têm asserções; o PDF é o que sai
+# deles. Versioná-lo era guardar um binário que muda de data a cada geração e
+# que um dia diverge da fonte sem ninguém reparar — e a versão que alguém
+# anexou a um processo seria a errada. Gera-se com `pnpm dossie`, e o CI
+# publica-o como artefacto descarregável em cada alteração.
+estado/

@@ -8,6 +8,7 @@ import { UNKNOWN_SENDER, checkExtractionQuota, recordQuotaUsage } from '@/src/li
 import { resolveLocation, submissionConfidence } from '@/src/lib/intake/resolve';
 import {
   createEmailSubmission,
+  findEmailSubmissionByMessageId,
   loadLookups,
   regiaoDoDestinatario,
   saveAttachments,
@@ -15,7 +16,6 @@ import {
   updateSubmission,
 } from '@/src/lib/intake/store';
 import { plainTextOf, readInboundWebhook, webhookRejection } from '@/src/lib/intake/webhook';
-import { hashIp } from '@/src/lib/ip';
 import { checkRateLimit, tooManyRequests } from '@/src/lib/rate-limit';
 import { reportarErro } from '@/src/lib/registo';
 import { adminClient } from '@/src/lib/supabase/server';
@@ -55,9 +55,6 @@ export const dynamic = 'force-dynamic';
 const SENDER_HOURLY_LIMIT = 20;
 const SENDER_HOURLY_CEILING = 100;
 
-/** O suficiente para identificar um cliente; o resto não interessa a ninguém. */
-const USER_AGENT_MAX_LENGTH = 300;
-
 export async function POST(request: Request): Promise<Response> {
   const read = await readInboundWebhook(request, env.INBOUND_MAIL_SECRET);
   if (read.status !== 'ok') return webhookRejection(read);
@@ -73,11 +70,22 @@ export async function POST(request: Request): Promise<Response> {
     // que é o do fornecedor, e por isso um balde partilhado. É o mais apertado
     // que se consegue ser sem inventar uma identidade.
     key: sender ?? undefined,
+    falhaFechada: true,
   });
   if (traffic.hits > SENDER_HOURLY_CEILING) return tooManyRequests(traffic);
 
   const supabase = adminClient();
   if (!supabase) return unavailable();
+
+  // O mesmo email entregue duas vezes é uma submissão, não duas. Vem antes de
+  // criar seja o que for e depois da assinatura e do balde, para que uma
+  // repetição não custe uma linha nem uma leitura automática — e para que
+  // quem repete um corpo capturado receba exatamente o que recebeu da
+  // primeira vez.
+  if (email.messageId) {
+    const repetida = await findEmailSubmissionByMessageId(supabase, email.messageId);
+    if (repetida) return Response.json({ status: 'duplicate', id: repetida });
+  }
 
   const text = plainTextOf(email);
   const triage = triageAttachments(email.attachments);
@@ -88,8 +96,11 @@ export async function POST(request: Request): Promise<Response> {
     subject: email.subject,
     text,
     headers: notes(email.to, email.messageId, triage, []),
-    ipHash: hashIp(request),
-    userAgent: request.headers.get('user-agent')?.slice(0, USER_AGENT_MAX_LENGTH) ?? null,
+    // Neste canal o pedido vem do fornecedor de webhooks, não de quem escreveu
+    // o email: o endereço e o agente eram os dele, guardados 24 meses como se
+    // fossem de alguém. Não se guarda o que não diz respeito a ninguém.
+    ipHash: null,
+    userAgent: null,
   });
   if (!submissionId) return unavailable();
 

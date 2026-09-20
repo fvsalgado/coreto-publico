@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import 'server-only';
 import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
 import { reportarErro } from '../registo';
@@ -512,7 +513,7 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
   else if (filter.falta === 'preco') query = query.eq('is_free', false).is('price_min', null);
   else if (filter.falta === 'mapa') query = query.is('latitude', null);
 
-  if (futuros) query = query.gte('date_end', new Date().toISOString().slice(0, 10));
+  if (futuros) query = query.gte('date_end', todayInLisbon());
 
   const [curData = '', curId = ''] = (filter.antes ?? '').split('|');
   if (curId && curData) {

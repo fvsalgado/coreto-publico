@@ -47,7 +47,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { semComentarios } from './sem-comentarios.mjs';
 import http from 'node:http';
 import https from 'node:https';
@@ -618,13 +618,52 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
 });
 
 {
-  // A lista fechada do anfitrião sem região: quatro endereços e mais nenhum.
+  // A lista fechada do anfitrião sem região: cinco endereços e mais nenhum.
+  // A /fontes entrou a 19 de setembro de 2026: é o destino do endereço que a
+  // recolha traz em cada pedido, e não mostra a agenda de ninguém.
   const fonte = ler('apps/web/middleware.ts');
   const bloco = fonte.split('const CAMINHOS_DA_MONTRA')[1]?.split(']);')[0] ?? '';
   const servidos = [...bloco.matchAll(/\['([^']+)',/g)].map((m) => m[1]).sort();
-  const esperados = ['/', '/.well-known/security.txt', '/seguranca', '/sitemap.xml'].sort();
+  const esperados = [
+    '/',
+    '/.well-known/security.txt',
+    '/fontes',
+    '/seguranca',
+    '/sitemap.xml',
+  ].sort();
+  /*
+   * Uma página nova na montra que ninguém se lembre de auditar.
+   *
+   * Foi o que aconteceu à `/fontes` e à `/seguranca`: existiam, eram públicas,
+   * e o `check:a11y` nunca lhes tinha tocado — o trabalho de auditoria arranca
+   * o sítio com `REGIAO_DE_OMISSAO`, e com ela nenhum anfitrião desconhecido
+   * chega à montra. Descobriu-se a 19 de setembro de 2026, ao acrescentar
+   * (e depois retirar) uma página de preços. As páginas passaram todas à primeira, o que é a melhor e a pior
+   * notícia: estavam bem, e ninguém sabia.
+   *
+   * Esta asserção prende as duas listas uma à outra. Os endereços que não
+   * servem HTML ficam de fora — não há nada para o axe auditar num
+   * `security.txt` nem num `sitemap.xml`.
+   */
+  const SEM_HTML = ['/.well-known/security.txt', '/sitemap.xml'];
+  const listaAuditada = ler('scripts/check-a11y.mjs').split('const ROTAS_DA_MONTRA')[1] ?? '';
+  const auditadas = [...(listaAuditada.split(']')[0] ?? '').matchAll(/'([^']+)'/g)]
+    .map((m) => m[1])
+    .sort();
+  const paraAuditar = servidos.filter((caminho) => !SEM_HTML.includes(caminho));
+
   afirmar({
-    afirmacao: 'o anfitrião sem região tem uma lista fechada de quatro endereços',
+    afirmacao: 'todas as páginas HTML da montra estão na lista que o check:a11y audita',
+    porque:
+      'a /fontes e a /seguranca existiram meses sem nunca terem sido auditadas — o trabalho serve a montra num anfitrião que o axe não alcançava, e o silêncio era indistinguível de um verde',
+    onde: origem('scripts/check-a11y.mjs', /const ROTAS_DA_MONTRA/),
+    ok: JSON.stringify(auditadas) === JSON.stringify(paraAuditar),
+    esperava: paraAuditar.join(', '),
+    encontrei: auditadas.join(', ') || 'não consegui ler ROTAS_DA_MONTRA',
+  });
+
+  afirmar({
+    afirmacao: 'o anfitrião sem região tem uma lista fechada de cinco endereços',
     porque:
       'é a lista que impede um domínio apontado para cá antes de a região existir de ver a agenda de outra CIM',
     onde: origem('apps/web/middleware.ts', /const CAMINHOS_DA_MONTRA/),
@@ -1089,8 +1128,14 @@ presente(
  * pelos dois lados; esta asserção é o que impede alguém de voltar a escrever
  * o texto à mão na página.
  */
-{
-  const pagina = ler('apps/web/app/[regiao]/fontes/page.tsx');
+for (const ficheiro of [
+  'apps/web/app/[regiao]/fontes/page.tsx',
+  // A /fontes do produto é o destino do endereço que o agente traz desde 19
+  // de setembro de 2026; a da região continua a mostrar a linha, porque é a
+  // que lista as fontes dessa agenda. As duas leem do mesmo sítio.
+  'apps/web/app/pagina-do-produto/fontes/page.tsx',
+]) {
+  const pagina = ler(ficheiro);
   const semProsa = semComentarios(pagina);
 
   const leDoCore = /import\s*\{[^}]*\bUSER_AGENT\b[^}]*\}\s*from\s*'@coreto\/core'/.test(semProsa);
@@ -1100,10 +1145,10 @@ presente(
   const copiada = /['"`]Coreto\/[0-9]/.test(semProsa);
 
   afirmar({
-    afirmacao: 'a /fontes mostra a linha do agente lendo-a do código, e não recontada à mão',
+    afirmacao: `${ficheiro.includes('pagina-do-produto') ? 'a /fontes do produto' : 'a /fontes da região'} mostra a linha do agente lendo-a do código, e não recontada à mão`,
     porque:
       'a página é o endereço que o próprio agente traz dentro de si, e quem lá chega vem de um registo de acessos para confrontar a linha — uma cópia que envelheça um dia desmente a página toda a quem a foi verificar',
-    onde: 'apps/web/app/[regiao]/fontes/page.tsx e packages/core/src/recolha.ts',
+    onde: `${ficheiro} e packages/core/src/recolha.ts`,
     ok: leDoCore && mostra && !copiada,
     esperava: "importar USER_AGENT de '@coreto/core' e render{USER_AGENT}, sem literal",
     encontrei:
@@ -1569,6 +1614,136 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
     esperava:
       'o pg_dump sem --no-privileges, o pg_restore também, o índice do dump sem as entradas DEFAULT ACL, o ensaio a exigir concessões a anon e a nomear a causa quando faltam, a configuração do storage reposta, a ligação como anon, e os dois manuais a explicá-lo',
     encontrei: `cópia com privilégios: ${copiaLevaPrivilegios ? 'sim' : 'não'} · ensaio restaura-os: ${ensaioRepoePrivilegios ? 'sim' : 'não'} · filtra a mobília: ${ensaioFiltraMobilia ? 'sim' : 'não'} · exige concessões: ${ensaioExigeConcessoes ? 'sim' : 'não'} · repõe o storage: ${ensaioRepoeStorage ? 'sim' : 'não'} · prova como anon: ${ensaioProva ? 'sim' : 'não'} · manuais: ${manualRegista ? 'registam' : 'não registam'}`,
+  });
+}
+
+/*
+ * A janela do ensaio de restauro acompanha a cadência da cópia.
+ *
+ * A 17 de setembro de 2026 a cópia passou de diária a semanal, e o ensaio
+ * mensal continuou a exigir uma cópia com dois dias no máximo. Nada reprovou
+ * nesse dia — o ensaio só corre ao dia 2 — e o de 2 de outubro ia reprovar
+ * com «a cópia diária parou de correr», que não descrevia o problema. Um
+ * alarme que toca por uma razão que não é a sua é o alarme que se aprende a
+ * ignorar, e este repositório já escreveu isso sobre o CodeQL.
+ *
+ * Lê-se o `cron` da cópia e a janela do ensaio, e exige-se que caibam uma na
+ * outra: uma cópia diária admite dois dias; uma semanal, oito. Quem mudar a
+ * cadência muda os dois, ou reprova aqui, em vez de no dia 2 do mês seguinte.
+ */
+{
+  const copia = semComentarios(ler('.github/workflows/backup.yml'));
+  const ensaio = semComentarios(ler('.github/workflows/restauro.yml'));
+  const guiao = ler('scripts/ensaiar-restauro.sh');
+
+  const cron = /cron:\s*'([^']+)'/.exec(copia)?.[1] ?? '';
+  const campos = cron.trim().split(/\s+/);
+  const diaria = campos.length === 5 && campos[2] === '*' && campos[4] === '*';
+  const semanal = campos.length === 5 && campos[2] === '*' && /^[0-6]$/.test(campos[4] ?? '');
+  const cadenciaDias = diaria ? 1 : semanal ? 7 : null;
+
+  const janela = Number(/COPIA_MAX_DIAS:\s*'?(\d+)'?/.exec(ensaio)?.[1] ?? NaN);
+  const omissao = Number(/max_dias="\$\{COPIA_MAX_DIAS:-(\d+)\}"/.exec(guiao)?.[1] ?? NaN);
+  const prefixoNovo = /semanais\//.test(copia);
+
+  afirmar({
+    afirmacao: 'a janela do ensaio de restauro cabe na cadência da cópia',
+    porque:
+      'a cópia passou a semanal e o ensaio continuou a exigir dois dias; ia reprovar no dia 2 do mês seguinte a acusar uma cópia que estava a correr como devia',
+    onde: '.github/workflows/backup.yml (cron), .github/workflows/restauro.yml (COPIA_MAX_DIAS) e scripts/ensaiar-restauro.sh',
+    ok:
+      cadenciaDias !== null &&
+      Number.isFinite(janela) &&
+      janela >= cadenciaDias + 1 &&
+      janela <= cadenciaDias + 2 &&
+      omissao === janela &&
+      (!semanal || prefixoNovo),
+    esperava:
+      'cadência diária → janela de 2 ou 3 dias; semanal → 8 ou 9; a omissão do guião igual à do workflow; e o prefixo semanais/ quando a cópia é semanal',
+    encontrei: `cron «${cron || '?'}» (${diaria ? 'diária' : semanal ? 'semanal' : 'não reconhecida'}) · COPIA_MAX_DIAS no workflow: ${Number.isFinite(janela) ? janela : 'ausente'} · omissão do guião: ${Number.isFinite(omissao) ? omissao : 'ausente'} · prefixo: ${prefixoNovo ? 'semanais/' : 'diarias/'}`,
+  });
+}
+
+/*
+ * O que os documentos dizem da segurança tem de ser o que o código faz.
+ *
+ * A 19 de setembro de 2026 duas afirmações estavam erradas em documentos que
+ * um encarregado de proteção de dados copia para um parecer: o RGPD.md e a
+ * ARQUITETURA.md diziam que a CSP não tinha `unsafe-inline` para scripts (tem,
+ * e o SECURITY.md explicava porquê), e o SECURITY.md e a /seguranca prometiam
+ * análise estática com CodeQL num repositório privado onde o CodeQL nunca
+ * correu. Nenhuma das quatro frases era mentira quando foi escrita; passaram
+ * a sê-lo quando o código mudou e ninguém as releu. É isso que isto guarda.
+ */
+{
+  const csp = semComentarios(ler('apps/web/next.config.ts'));
+  const cspTemInline = /script-src[^\]]*'unsafe-inline'/.test(csp);
+  const negam = ['docs/RGPD.md', 'docs/ARQUITETURA.md', 'SECURITY.md'].filter((f) =>
+    /sem\s+`unsafe-inline`|não tem `unsafe-inline`/.test(ler(f)),
+  );
+  afirmar({
+    afirmacao: 'nenhum documento nega o unsafe-inline que a CSP tem',
+    porque:
+      'a CSP leva unsafe-inline nos scripts por decisão escrita; um documento que diga o contrário é copiado para um parecer e desmentido pelo primeiro curl -I',
+    onde: 'apps/web/next.config.ts, docs/RGPD.md, docs/ARQUITETURA.md e SECURITY.md',
+    ok: !cspTemInline || negam.length === 0,
+    esperava: cspTemInline
+      ? 'nenhum documento a dizer «sem unsafe-inline»'
+      : 'qualquer coisa — a CSP não o tem',
+    encontrei: negam.length === 0 ? 'nenhum nega' : `negam: ${negam.join(', ')}`,
+  });
+
+  const codeql = semComentarios(ler('.github/workflows/codeql.yml'));
+  const soEmPublico = /visibility\s*==\s*'public'/.test(codeql);
+  const manual = ler('SECURITY.md');
+  const pagina = semComentarios(ler('apps/web/app/pagina-do-produto/seguranca/page.tsx'));
+  const manualDiz = /quando o repositório for público/.test(manual);
+  const paginaDiz = /quando o repositório for público/.test(pagina);
+  afirmar({
+    afirmacao: 'a política de segurança não promete um CodeQL que só corre em repositório público',
+    porque:
+      'o codeql.yml salta a análise enquanto o repositório for privado, e o repositório é privado; prometer «análise estática» sem a condição é prometer o que não acontece',
+    onde: '.github/workflows/codeql.yml, SECURITY.md e apps/web/app/pagina-do-produto/seguranca/page.tsx',
+    ok: !soEmPublico || (manualDiz && paginaDiz),
+    esperava: soEmPublico
+      ? 'os dois textos com a condição «quando o repositório for público»'
+      : 'qualquer coisa — o CodeQL corre sempre',
+    encontrei: `SECURITY.md: ${manualDiz ? 'com condição' : 'sem condição'} · /seguranca: ${paginaDiz ? 'com condição' : 'sem condição'}`,
+  });
+}
+
+/*
+ * As ações do GitHub estão fixadas por commit, não por etiqueta.
+ *
+ * `actions/checkout@v7` é o que quem for dono dessa etiqueta quiser que seja
+ * amanhã; um commit é o que é. Onze workflows correm com os segredos desta
+ * casa — a chave de serviço da base, a frase da cópia de segurança, a cadeia
+ * de produção —, e uma etiqueta movida é a forma mais barata de os levar.
+ * Desde 19 de setembro de 2026 cada `uses:` traz o SHA e a versão em
+ * comentário, e o Dependabot mantém os dois. Isto reprova o dia em que
+ * alguém colar uma etiqueta outra vez.
+ */
+{
+  const soltas = [];
+  for (const nome of readdirSync(join(RAIZ, '.github/workflows')).filter((n) =>
+    n.endsWith('.yml'),
+  )) {
+    const texto = ler(`.github/workflows/${nome}`);
+    for (const [linha, i] of texto.split('\n').map((l, i) => [l, i + 1])) {
+      const m = /uses:\s*([^\s#]+)/.exec(linha);
+      if (!m || m[1].startsWith('./') || m[1].startsWith('docker://')) continue;
+      const ref = m[1].split('@')[1] ?? '';
+      if (!/^[0-9a-f]{40}$/.test(ref)) soltas.push(`${nome}:${i} ${m[1]}`);
+    }
+  }
+  afirmar({
+    afirmacao: 'todas as ações do GitHub estão fixadas por SHA de commit',
+    porque:
+      'uma etiqueta é o que o seu dono quiser amanhã, e estes workflows correm com os segredos da casa; um SHA é o que é',
+    onde: '.github/workflows/*.yml',
+    ok: soltas.length === 0,
+    esperava: 'cada uses: com @<40 hexadecimais> e a versão em comentário',
+    encontrei: soltas.length === 0 ? 'todas fixadas' : soltas.join(' · '),
   });
 }
 
@@ -2134,6 +2309,319 @@ if (!BASE) {
   }
 }
 
+// ---- Quem fornece o serviço, e o que a lei manda dizer sobre ele ----
+
+{
+  const MODULO = 'apps/web/src/lib/fornecedor.ts';
+  const TESTE = 'apps/web/src/lib/fornecedor.test.ts';
+  const MONTRA = 'apps/web/app/pagina-do-produto/page.tsx';
+  const modulo = ler(MODULO);
+  const nif = /nif: '(\d{9})'/.exec(modulo)?.[1] ?? null;
+
+  /*
+   * O NIF num sítio só.
+   *
+   * Um número de identificação fiscal copiado para a segunda página é um
+   * número que um dia fica com um dígito trocado numa delas, e é sempre a
+   * outra que alguém leu. A prosa pode citá-lo — o plano cita a resposta do
+   * dono, e é para citar; o código não, e é isso que esta asserção prende.
+   */
+  let ondeAparece = [];
+  try {
+    ondeAparece = execFileSync('git', ['grep', '-l', '--fixed-strings', '--', nif ?? 'sem-nif'], {
+      cwd: RAIZ,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    ondeAparece = [];
+  }
+  const aMais = ondeAparece.filter((f) => !f.endsWith('.md') && f !== MODULO && f !== TESTE);
+
+  afirmar({
+    afirmacao: 'o NIF do fornecedor está no seu módulo e em mais nenhum ficheiro de código',
+    porque:
+      'um NIF copiado para a segunda página é um NIF que um dia diverge, e é a cópia errada que alguém lê e usa',
+    onde: origem(MODULO, /nif:/),
+    ok: nif !== null && aMais.length === 0,
+    esperava: `só ${MODULO} e o seu teste`,
+    encontrei: nif === null ? 'nenhum NIF no módulo' : aMais.join(', ') || 'só o módulo e o teste',
+  });
+
+  presente(MONTRA, /identidadeNumaLinha\(\)/, {
+    afirmacao: 'o rodapé da montra lê a identidade do fornecedor do módulo, e não a escreve à mão',
+    porque:
+      'a identidade do artigo 10.º do DL 7/2004 sai igual no rodapé, nos termos e nos seis documentos do dossiê — ou sai de um sítio só, ou diverge à sexta',
+  });
+
+  /*
+   * A morada, que a lei pede e que ainda não existe.
+   *
+   * Registada e não a falhar, de propósito: quem a tem de dar é o dono, e uma
+   * bateria vermelha à espera de uma decisão de outra pessoa é uma bateria que
+   * se aprende a ignorar. No dia em que a morada for escrita, este ramo troca
+   * — passa a exigir que ela apareça na página — e a pendência desaparece do
+   * relato sem ninguém se lembrar de a apagar.
+   */
+  const morada = /morada: '([^']+)'/.exec(modulo)?.[1] ?? null;
+  const CODIGO_POSTAL = /\d{4}-\d{3}/;
+
+  if (morada === null) {
+    registar({
+      afirmacao: 'o sítio do produto publica a morada geográfica de quem fornece o serviço',
+      onde: `${origem(MODULO, /morada:/)} — está a null`,
+      porque:
+        'o artigo 10.º, n.º 1, alínea b) do DL 7/2004 pede uma morada geográfica em acesso fácil, direto e permanente, e não há nenhuma escrita',
+    });
+  } else if (!CODIGO_POSTAL.test(morada)) {
+    /*
+     * Há morada e ela não chega — que é diferente de não haver.
+     *
+     * «Lisboa, Portugal» é o que o dono decidiu publicar a 19 de setembro de
+     * 2026, depois de a objeção lhe ser posta por escrito. Uma cidade e um país
+     * não são o endereço geográfico da alínea b): por eles não se notifica
+     * ninguém, e é na habilitação — quando o jurista da entidade adjudicante
+     * confere quem vai contratar — que a falta se paga.
+     *
+     * O código postal é o que em Portugal faz de um sítio um endereço, e por
+     * isso é ele que este ramo procura. No dia em que houver um, a asserção
+     * abaixo passa a valer e esta pendência desaparece do relato sem ninguém se
+     * lembrar de a apagar.
+     */
+    registar({
+      afirmacao: 'a morada publicada é um endereço geográfico, e não uma cidade',
+      onde: `${origem(MODULO, /morada:/)} — «${morada}», sem código postal`,
+      porque:
+        'decisão do dono a 19 de setembro de 2026, com a objeção posta por escrito antes: o artigo 10.º, n.º 1, alínea b) do DL 7/2004 pede um endereço geográfico e «Lisboa, Portugal» não notifica ninguém. Escreve-se um código postal no módulo e esta linha passa a verde sozinha',
+    });
+  }
+
+  if (morada !== null) {
+    afirmar({
+      afirmacao: 'a morada escrita no módulo chega mesmo à página do produto',
+      porque:
+        'o artigo 10.º, n.º 1, alínea b) do DL 7/2004 pede a morada em acesso fácil, direto e permanente — guardá-la num módulo sem a servir não cumpre nada',
+      onde: origem(MODULO, /morada:/),
+      ok: /identidadeNumaLinha\(\)/.test(ler(MONTRA)),
+      esperava: `«${morada}» servida pelo rodapé da montra`,
+      encontrei: 'o rodapé não chama identidadeNumaLinha()',
+    });
+  }
+}
+
+// ---- O dossiê contratual, que é o que uma CIM arquiva ----
+
+{
+  const PASTA = 'docs/contrato';
+  const DPA = `${PASTA}/DADOS-PESSOAIS.md`;
+  const RGPD = 'docs/RGPD.md';
+
+  const ficheiros = readdirSync(join(RAIZ, PASTA))
+    .filter((f) => f.endsWith('.md'))
+    .sort();
+
+  /*
+   * Um documento na pasta que não entra no PDF.
+   *
+   * O `gerar-dossie.mjs` tem a ordem por que os documentos se leem escrita à
+   * mão, e é a ordem certa — não é alfabética, é a de um jurista. O preço
+   * dessa escolha é que um ficheiro novo na pasta fica de fora do PDF sem nada
+   * dizer, e um dossiê a que falta um documento é pior do que um dossiê que
+   * não existe: parece completo.
+   */
+  const noGerador = [
+    ...(ler('scripts/gerar-dossie.mjs').split('const DOCUMENTOS = [')[1] ?? '')
+      .split('];')[0]
+      .matchAll(/'([^']+)'/g),
+  ]
+    .map((m) => m[1])
+    .sort();
+
+  afirmar({
+    afirmacao: 'todos os documentos de docs/contrato/ entram no PDF do dossiê',
+    porque:
+      'a ordem do gerador é escrita à mão, e um ficheiro novo na pasta fica de fora sem nada dizer — um dossiê a que falta um documento parece completo',
+    onde: origem('scripts/gerar-dossie.mjs', /const DOCUMENTOS/),
+    ok: JSON.stringify(ficheiros) === JSON.stringify(noGerador),
+    esperava: ficheiros.join(', '),
+    encontrei: noGerador.join(', ') || 'não consegui ler DOCUMENTOS',
+  });
+
+  /*
+   * Cada subcontratante do registo tem de constar do DPA.
+   *
+   * O `RGPD.md` §7 é onde um subcontratante novo é inscrito quando se liga um
+   * serviço. O `DADOS-PESSOAIS.md` é o que vai no dossiê, para as mãos de quem
+   * contrata. Ligar um serviço, inscrevê-lo no registo e esquecer o dossiê é
+   * entregar a uma entidade adjudicante uma lista de subcontratantes
+   * incompleta — e a lista de subcontratantes é a primeira coisa que o
+   * encarregado de proteção de dados dela vai conferir.
+   */
+  const dpa = ler(DPA);
+  const seccaoSete = ler(RGPD).split('## 7. Subcontratantes')[1]?.split('\n## ')[0] ?? '';
+  /*
+   * Só a **primeira coluna** da tabela, que é a do subcontratante.
+   *
+   * Procurar parênteses na secção inteira trazia «Paris» da coluna «onde
+   * trata» e dava-o por subcontratante. A asserção passava — a palavra também
+   * está no DPA — e teria continuado a passar no dia em que um subcontratante
+   * a sério faltasse: um falso positivo que confirma é pior do que um que
+   * reprova.
+   */
+  const nomes = seccaoSete
+    .split('\n')
+    .filter((l) => l.startsWith('| ') && !/^\|[\s:|-]+\|$/.test(l))
+    .map((l) => l.split('|')[1]?.trim() ?? '')
+    .map(
+      (celula) =>
+        celula
+          .match(/\(([^)]+)\)/)?.[1]
+          ?.split(',')[0]
+          .trim() ?? null,
+    )
+    .filter((n) => n && /^[A-Z]/.test(n));
+
+  for (const nome of [...new Set(nomes)]) {
+    afirmar({
+      afirmacao: `o DPA do dossiê nomeia o subcontratante «${nome}»`,
+      porque:
+        'um subcontratante inscrito no registo e ausente do dossiê é uma lista incompleta entregue a quem a vai conferir',
+      onde: origem(RGPD, new RegExp(nome)),
+      ok: dpa.includes(nome),
+      esperava: `«${nome}» em ${DPA}`,
+      encontrei: `${DPA} não o nomeia`,
+    });
+  }
+
+  /*
+   * O RPO escrito e a cadência que o produz.
+   *
+   * «Até sete dias» não é uma medição: é uma consequência de a cópia correr
+   * uma vez por semana. No dia em que a cadência mudar — e já mudou uma vez, de
+   * diária para semanal a 17 de setembro de 2026 —, o número escrito no
+   * `BACKUPS.md`, no nível de serviço e na continuidade passa a mentir nos três
+   * sítios ao mesmo tempo. Foi uma mudança de cadência que partiu o ensaio de
+   * restauro, e isso já custou uma vez.
+   */
+  {
+    const cron = ler('.github/workflows/backup.yml').match(/cron: '([^']+)'/)?.[1] ?? '';
+    const campos = cron.split(/\s+/);
+    const semanal = campos.length === 5 && campos[2] === '*' && campos[4] !== '*';
+    const ondeDizSete = ['docs/BACKUPS.md', `${PASTA}/CONDICOES.md`, `${PASTA}/CONTINUIDADE.md`];
+
+    for (const ficheiro of ondeDizSete) {
+      afirmar({
+        afirmacao: `${ficheiro} diz «até sete dias» de ponto de recuperação, e a cópia é semanal`,
+        porque:
+          'o RPO é uma consequência da cadência da cópia, não uma medição; mudar o cron sem mudar os três documentos põe três a mentir ao mesmo tempo',
+        onde: origem('.github/workflows/backup.yml', /cron:/),
+        ok:
+          semanal === /at[ée] sete dias|de at[ée] \*\*sete dias\*\*|sete dias/i.test(ler(ficheiro)),
+        esperava: semanal
+          ? '«sete dias» escrito, porque o cron é semanal'
+          : 'o cron deixou de ser semanal',
+        encontrei: `cron «${cron}»`,
+      });
+    }
+  }
+
+  /*
+   * O anexo do dossiê, que é o único sítio onde o documento fala de números
+   * que mudam todas as noites.
+   *
+   * Duas verificações diferentes, e a diferença é de propósito. A **coerência**
+   * confere-se aqui e agora, sem base de dados: os concelhos têm de somar os
+   * totais, os estados têm de somar as fontes, os adaptadores também. Foi esta
+   * conta que apanhou o erro que originou o ficheiro — os 319 eventos e 119
+   * espaços do documento 1 incluíam a região de demonstração, com eventos
+   * inventados, e um número que quem confere não encontra destrói a confiança
+   * no resto.
+   *
+   * A **frescura** não se confere: depende de alguém correr o
+   * `atualizar-panorama.mjs` contra produção, e uma bateria que reprovasse por
+   * isso reprovava por uma coisa que não está neste commit. Fica registada.
+   */
+  {
+    const PANORAMA = `${PASTA}/panorama.json`;
+    let p = null;
+    try {
+      p = JSON.parse(ler(PANORAMA));
+    } catch {
+      /* o afirmar abaixo trata disso */
+    }
+
+    const soma = (campo) => (p?.concelhos ?? []).reduce((a, c) => a + (c[campo] ?? 0), 0);
+    const t = p?.totais ?? {};
+    const divergencias = !p
+      ? ['não consegui ler o ficheiro']
+      : [
+          p.concelhos.length === t.concelhos ? null : 'o número de concelhos',
+          soma('espacos') === t.espacos ? null : `espaços (${soma('espacos')} vs ${t.espacos})`,
+          soma('eventos') === t.eventos ? null : `eventos (${soma('eventos')} vs ${t.eventos})`,
+          soma('futuros') === t.eventosFuturos
+            ? null
+            : `eventos futuros (${soma('futuros')} vs ${t.eventosFuturos})`,
+          t.fontesALer + t.fontesPausadas + t.fontesDesligadas === t.fontes
+            ? null
+            : 'os estados das fontes não somam o total',
+          p.adaptadores.reduce((a, x) => a + x.fontes, 0) === t.fontes
+            ? null
+            : 'os adaptadores não somam as fontes',
+          p.adaptadores.length === t.adaptadoresEmUso ? null : 'os adaptadores em uso',
+        ].filter(Boolean);
+
+    afirmar({
+      afirmacao: 'o anexo do dossiê soma consigo próprio',
+      porque:
+        'os números por concelho e os totais são a mesma coisa contada de duas maneiras; se divergirem, o anexo mostra um quadro que não fecha a quem o for conferir na agenda pública',
+      onde: PANORAMA,
+      ok: divergencias.length === 0,
+      esperava: 'os concelhos a somar os totais, e os estados a somar as fontes',
+      encontrei: divergencias.join('; '),
+    });
+
+    const DIAS = 45;
+    const medido = p?.medidoEm ? Date.parse(`${p.medidoEm}T00:00:00Z`) : null;
+    const idade = medido ? Math.floor((Date.now() - medido) / 86_400_000) : null;
+    if (idade !== null && idade > DIAS) {
+      registar({
+        afirmacao: `o anexo do dossiê foi medido há menos de ${DIAS} dias`,
+        onde: `${PANORAMA} — medido em ${p.medidoEm}, há ${idade} dias`,
+        porque:
+          'refazer o instantâneo precisa da base de produção, que não existe numa corrida do repositório: corre `DATABASE_URL=… node scripts/atualizar-panorama.mjs` antes de entregar o dossiê a alguém',
+      });
+    }
+  }
+
+  /*
+   * Nenhum destes documentos pode perder a marca de rascunho sem alguém decidir
+   * que a perde. Enquanto o advogado não os rever, sai em cada página do PDF e
+   * no topo de cada ficheiro.
+   */
+  for (const ficheiro of ficheiros) {
+    const caminho = `${PASTA}/${ficheiro}`;
+    const texto = ler(caminho);
+    afirmar({
+      afirmacao: `${ficheiro} diz que é rascunho para revisão jurídica`,
+      porque:
+        'são documentos com efeito jurídico que ninguém reviu; um deles sem a marca é um documento que alguém assume revisto',
+      onde: caminho,
+      ok: /Rascunho para revisão jurídica/.test(texto),
+      esperava: 'a marca de rascunho no topo',
+      encontrei: 'sem marca',
+    });
+    afirmar({
+      afirmacao: `${ficheiro} começa por um título numerado`,
+      porque: 'o índice do PDF é feito dos títulos, e um documento sem título não aparece nele',
+      onde: caminho,
+      ok: /^# \d+\. .+/m.test(texto),
+      esperava: '«# N. Título» na primeira linha de nível 1',
+      encontrei: texto.match(/^# .*/m)?.[0] ?? 'sem título de nível 1',
+    });
+  }
+}
+
 // ------------------------------------------------------------------- fecho --
 
 for (const pendente of PENDENTES) {
@@ -2155,6 +2643,30 @@ console.log(
     `${plural(saltadas, 'por medir', 'por medir')}, ` +
     `${plural(falhas, 'a falhar', 'a falhar')}.`,
 );
+
+/*
+ * O relato fica escrito, para outro guião o poder ler.
+ *
+ * O documento 1 do dossiê contratual cita o número de asserções como prova de
+ * que o que ele afirma se confere. Esse número é o **da execução** e não o das
+ * chamadas no código — algumas correm em ciclo, uma por ficheiro ou por
+ * subcontratante —, e contá-las a olho deu 69 contra as 95 reais. Quem precisa
+ * do número lê-o daqui, como o `verificar-numeros.mjs` já lê os casos de teste
+ * do relatório do Vitest.
+ *
+ * Vai para `estado/`, que é a pasta dos artefactos e não entra no repositório:
+ * é um número que muda a cada asserção nova, e versioná-lo era ruído.
+ */
+try {
+  mkdirSync(join(RAIZ, 'estado'), { recursive: true });
+  writeFileSync(
+    join(RAIZ, 'estado', 'afirmacoes.json'),
+    `${JSON.stringify({ confirmadas: passadas, registadas, saltadas, falhas }, null, 2)}\n`,
+  );
+} catch {
+  // Não conseguir escrever o relato não é razão para reprovar uma bateria que
+  // passou: quem o lê salta com aviso quando ele falta.
+}
 
 if (falhas > 0) {
   console.error(

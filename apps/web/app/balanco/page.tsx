@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
 import { notFound, unauthorized } from 'next/navigation';
 import { listRegionLicenses, monthlyReport, listRegionsAdmin } from '@/src/lib/admin/queries';
@@ -62,7 +63,7 @@ export default async function Balanco({ searchParams }: Props) {
   // quer o mês fechado, não o que começou anteontem. Um `mes` que não tenha a
   // forma `AAAA-MM` é ignorado em vez de rejeitado — a página serve o mês por
   // omissão, e não um erro sobre um parâmetro que alguém truncou no email.
-  const mes = lerMes(params.mes) ?? mesAnterior(new Date().toISOString().slice(0, 10));
+  const mes = lerMes(params.mes) ?? mesAnterior(todayInLisbon());
   const [relatorio, licencas, regioes] = await Promise.all([
     monthlyReport(regiao, mes),
     listRegionLicenses(),
@@ -72,7 +73,7 @@ export default async function Balanco({ searchParams }: Props) {
   const nome = regioes.find((r) => r.id === regiao)?.name ?? regiao;
   // A licença em vigor: a que já começou e ainda não acabou. Sem prazo conta
   // como em vigor — é a montra e os pilotos abertos, que a 0112 deixa sem fim.
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = todayInLisbon();
   const licenca = licencas.find(
     (l) =>
       l.region_id === regiao && l.starts_on <= hoje && (l.ends_on === null || l.ends_on >= hoje),

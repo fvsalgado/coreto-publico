@@ -38,6 +38,36 @@ export interface EmailSubmissionInput {
  * um campo por preencher, e não um email perdido. Uma coletividade que manda
  * a programação do mês não a manda outra vez.
  */
+/**
+ * Já recebemos este email?
+ *
+ * O webhook assina o corpo, e um corpo assinado continua assinado para
+ * sempre: quem o capturar pode voltar a entregá-lo, e cada entrega abria uma
+ * submissão nova, gastava uma leitura automática e uma linha da quota do
+ * remetente. O `messageId` do email é a identidade que o próprio remetente
+ * lhe deu; um segundo pedido com o mesmo devolve a primeira submissão em vez
+ * de fazer outra. A leitura falha para «não existe», e nunca para «existe»:
+ * numa dúvida, aceita-se o email — perder um evento custa mais do que uma
+ * repetição que a moderação vê.
+ */
+export async function findEmailSubmissionByMessageId(
+  supabase: SupabaseClient,
+  messageId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('id')
+    .eq('channel', 'email')
+    .eq('raw_headers->>messageId', messageId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    reportarErro('findEmailSubmissionByMessageId', error);
+    return null;
+  }
+  return (data as { id: string } | null)?.id ?? null;
+}
+
 export async function createEmailSubmission(
   supabase: SupabaseClient,
   input: EmailSubmissionInput,

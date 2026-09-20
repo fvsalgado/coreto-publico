@@ -1,3 +1,4 @@
+import { todayInLisbon } from '@coreto/core/dates';
 import { notFound } from 'next/navigation';
 import { InterruptoresDeSeccoes } from '@/src/components/InterruptoresDeSeccoes';
 import { PageHeader } from '@/src/components/PageHeader';
@@ -130,7 +131,7 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
 
   // Já vêm por ordem decrescente de início — a mais recente manda no estado.
   const licencas = todasAsLicencas.filter((linha) => linha.region_id === id);
-  const licenca = estadoDaLicenca(licencas, new Date().toISOString().slice(0, 10));
+  const licenca = estadoDaLicenca(licencas, todayInLisbon());
   // No máximo um por região: a 0151 revoga o anterior ao criar o seguinte.
   const segredoDaRegiao = segredos.find((linha) => linha.region_id === id);
   // Se há senha de barreira guardada — e desde quando. O hash nunca chega cá.

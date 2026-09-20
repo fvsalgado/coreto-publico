@@ -33,3 +33,8 @@ docs/INVENTARIO.md
 # o relatório aparece antes da verificação de formatação e reprovava-a. É saída
 # de uma ferramenta, com a forma que ela lhe dá.
 results.sarif
+
+# O processador do MapLibre, copiado do pacote instalado (não é nosso)
+apps/web/public/maplibre/
+
+.bateria.json

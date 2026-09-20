@@ -35,7 +35,7 @@ export const URL_DA_POLITICA = `${ORIGEM_DA_MONTRA}${CAMINHO_DA_POLITICA}`;
  * Muda com o `SECURITY.md`, que é a outra cópia: as duas mudam ao mesmo tempo
  * ou passam a dizer coisas diferentes.
  */
-export const REVISAO_DA_POLITICA = '2026-09-07';
+export const REVISAO_DA_POLITICA = '2026-09-19';
 
 /**
  * A validade do `security.txt`, ancorada no primeiro dia de um mês seis meses

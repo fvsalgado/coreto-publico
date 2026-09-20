@@ -1,4 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/*
+ * O domínio de correio deste deployment é o do `SITE_URL`, e o `SITE_URL`
+ * resolve-se quando o `env` carrega — antes de qualquer `import` daqui. Até
+ * 19 de setembro de 2026 estes testes viviam do último degrau da resolução,
+ * que era `coreto.mediotejo.pt`; esse degrau passou a ser o domínio do
+ * produto, e um teste que dependa de um valor por omissão está a testar a
+ * omissão, não o middleware. Diz-se o domínio de propósito.
+ */
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_SITE_URL = 'https://coreto.mediotejo.pt';
+});
+
 import { NextRequest } from 'next/server';
 import { ADMIN_PATH_HEADER } from '@/src/lib/admin/guarda';
 import { ADMIN_COOKIE_NAME, createSessionToken } from '@/src/lib/admin/session';
@@ -211,6 +224,10 @@ describe('o que é do produto não tem região', () => {
     // darem 404 numa pré-visualização, com os ficheiros em `public/` à espera:
     // o que não está aqui é tratado como caminho de página.
     '/produto/agenda.webp',
+    // O processador do MapLibre 6, servido por nós. Sem esta linha o
+    // `setWorkerUrl` do `MapaVivo` apontava para um 404 e o mapa arrancava sem
+    // Worker — um canvas cinzento sem uma linha na consola.
+    '/maplibre/6.10.0/maplibre-gl-worker.mjs',
     '/.well-known/carta-qualquer.txt',
   ])('%s é um ficheiro: sai tal como está, mesmo num anfitrião desconhecido', async (caminho) => {
     const resposta = await middleware(pedido(`https://agenda.exemplo-qualquer.pt${caminho}`));

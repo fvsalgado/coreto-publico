@@ -481,8 +481,11 @@ hoje mede-se amanhã, e a página entretanto reserva a vitrine à antiga.
   sessão assinado com HMAC. O middleware é a primeira barreira, mas **cada ação
   volta a exigir a sessão do seu lado** — uma verificação só à porta é uma
   verificação que um dia alguém contorna com um pedido direto.
-- A CSP não tem `unsafe-inline` para scripts. `frame-ancestors 'none'` em todo o
-  lado exceto no widget, que existe para viver dentro de um `iframe` alheio.
+- A CSP é restritiva com uma exceção: `script-src` leva `'unsafe-inline'`,
+  porque a hidratação do App Router arranca com scripts inline e um _nonce_
+  por pedido obrigava a renderização dinâmica (o porquê inteiro está em
+  `apps/web/next.config.ts`). `frame-ancestors 'none'` em todo o lado exceto
+  no widget, que existe para viver dentro de um `iframe` alheio.
 
 ## Acessibilidade e privacidade como requisitos de arquitetura
 

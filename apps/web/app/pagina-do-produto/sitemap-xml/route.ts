@@ -25,7 +25,7 @@ import { URL_DA_POLITICA } from '../politica-de-seguranca';
 export const revalidate = 3600;
 
 export async function GET(): Promise<Response> {
-  const enderecos = [`${ORIGEM_DA_MONTRA}/`, URL_DA_POLITICA];
+  const enderecos = [`${ORIGEM_DA_MONTRA}/`, URL_DA_POLITICA, `${ORIGEM_DA_MONTRA}/fontes`];
 
   const xml =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +

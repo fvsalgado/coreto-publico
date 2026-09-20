@@ -91,7 +91,11 @@ Para não gastares tempo a confirmar o que já se sabe:
   tudo por omissão — o único `dangerouslySetInnerHTML` é o JSON-LD, gerado por
   nós. O raciocínio completo está em `apps/web/next.config.ts`.
 - **Varrimento de segredos** em cada alteração (gitleaks, no CI, sem exceções
-  silenciosas) e análise estática com CodeQL, incluindo os próprios workflows.
+  silenciosas). A análise estática com CodeQL, incluindo a dos próprios
+  workflows, está configurada e **só corre quando o repositório for público**
+  — em repositório privado o GitHub não tem onde receber os resultados, e o
+  trabalho é saltado em vez de ficar vermelho para sempre. O repositório é
+  privado hoje; enquanto for, esta linha não pode dizer que o CodeQL corre.
 
 ## Divulgação
 

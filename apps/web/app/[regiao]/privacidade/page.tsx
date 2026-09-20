@@ -393,8 +393,11 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
         <p>
           O que chega é processado automaticamente para dele se extraírem os campos do evento e é
           sempre revisto por uma pessoa antes de ser publicado. Nenhuma decisão com efeitos sobre
-          quem submete é tomada sem intervenção humana. Quando a extração falha, a mensagem original
-          fica guardada tal como chegou para que alguém a possa tratar à mão.
+          quem submete é tomada sem intervenção humana. Quando a leitura automática está ligada, o
+          que sai para o serviço que a faz é o assunto e o texto da mensagem — sem o endereço de
+          quem a enviou, e com as mensagens citadas e a assinatura cortadas antes de sair; o
+          fornecedor está nomeado abaixo, em «Quem tem acesso». Quando a extração falha, a mensagem
+          original fica guardada tal como chegou para que alguém a possa tratar à mão.
         </p>
 
         <h2 className="pt-2 font-semibold">Durante quanto tempo</h2>

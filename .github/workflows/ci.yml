@@ -70,7 +70,7 @@ jobs:
       # commit posterior continua no repositório de quem o clonar, e é esse que
       # interessa apanhar. A história inteira deste repositório são três
       # megabytes.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -93,7 +93,7 @@ jobs:
       # de uma conta pessoal. No dia em que passar para uma organização, o passo
       # falha a dizer isso — que é melhor do que passar a verde sem varrer nada.
       - name: Varrimento de segredos
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           # Sem comentários no PR: o passo a falhar já é o sinal, e um bot a
@@ -103,9 +103,9 @@ jobs:
 
       # A versão do pnpm vem do campo «packageManager» do package.json, para
       # não haver duas fontes de verdade a divergir em silêncio.
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -188,7 +188,7 @@ jobs:
       #     dia o `pnpm install` começar a demorar mais do que os três segundos
       #     de hoje, é aqui que se olha primeiro.
       - name: Caches do prettier, do tsc, do eslint e da compilação
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             apps/web/.next/cache
@@ -231,8 +231,21 @@ jobs:
       - name: Análise estática
         run: pnpm lint
 
+      # As dependências de produção com vulnerabilidade conhecida de gravidade
+      # alta ou crítica reprovam aqui, e não num PR do Dependabot que fica
+      # aberto uma semana: a 19 de setembro de 2026 o maplibre-gl 5.24 esteve
+      # cinco dias com um CVE crítico (XSS no sanitizador da atribuição) e o
+      # PR que o corrigia à espera de alguém. Só produção, porque uma
+      # ferramenta de compilação com um aviso não serve nada a um visitante;
+      # só alto e crítico, porque um alarme que toca por tudo é o alarme que
+      # se aprende a ignorar.
+      - name: Vulnerabilidades conhecidas nas dependências de produção
+        run: pnpm audit --prod --audit-level=high
+
+      # O JSON fica para o passo dos números: é de lá que o `check:numeros`
+      # lê quantos casos correram, para o PROJETO.md não poder envelhecer.
       - name: Testes
-        run: pnpm test
+        run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=.bateria.json
 
       # Confere os números do `PROJETO.md` contra o repositório. Não precisa de
       # segredos — é o que lhe permite estar aqui, ao lado das outras.
@@ -255,6 +268,9 @@ jobs:
       # durante semanas para ficheiros que não existem — e um documento de
       # proveniência errado faz pior do que não existir, porque dá confiança a
       # quem o lê.
+      - name: O avisar.sh faz o que promete
+        run: ./scripts/avisar.test.sh
+
       - name: Proveniência
         run: pnpm check:proveniencia
 
@@ -327,7 +343,7 @@ jobs:
           --health-retries=10
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # O `psql` já vem na imagem do runner do Ubuntu. Este passo instalava-o
       # à mesma, e um `apt-get update` inteiro custa quinze segundos a cada
@@ -502,11 +518,11 @@ jobs:
     # pesado dos três — o arranque da pilha são dois minutos e meio dos quatro
     # que custa — e corre em paralelo com o das auditorias.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -659,11 +675,11 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'bateria')))
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -737,6 +753,37 @@ jobs:
           curl --silent --fail --output /dev/null "${BASE_URL}/" \
             || { echo "O sítio não arrancou em dois minutos." >&2; exit 1; }
 
+      # O mesmo sítio, uma segunda vez, **sem** a escotilha — e é a única forma
+      # de as páginas do produto existirem neste executor.
+      #
+      # Com `REGIAO_DE_OMISSAO` posta, todos os anfitriões desconhecidos são
+      # servidos com a agenda dessa região: a montra deixa de existir no
+      # processo, e as suas quatro páginas públicas — a ficha, a política de
+      # segurança, o cartão de visita da recolha e os preços — nunca foram
+      # auditadas por nada. A `/precos` promete, por escrito, «acessibilidade
+      # verificada a cada alteração»; sem este arranque, essa frase era falsa.
+      #
+      # `coreto.localhost` e não `127.0.0.1` porque o que decide a região é o
+      # anfitrião do pedido: o Chromium resolve qualquer `*.localhost` para a
+      # interface local sem DNS (RFC 6761), e um `Host` posto à mão é um
+      # cabeçalho que o Chromium recusa. A porta é outra para não haver dois
+      # servidores a disputar a 3000.
+      - name: Levantar o sítio outra vez, sem escotilha, para a montra
+        id: montra
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          pnpm --filter @coreto/web start --port 3001 &
+          for _ in $(seq 1 60); do
+            if curl --silent --fail --output /dev/null "http://127.0.0.1:3001/"; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail --output /dev/null "http://127.0.0.1:3001/" \
+            || { echo "O segundo servidor não arrancou em dois minutos." >&2; exit 1; }
+
       # Este passo é o que sustenta a declaração de acessibilidade publicada em
       # `/acessibilidade`. Uma declaração que ninguém verifica é uma promessa;
       # isto torna-a um teste. Não leva `continue-on-error`: se falhar, a
@@ -744,7 +791,31 @@ jobs:
       - name: Auditar a acessibilidade
         env:
           BASE_URL: http://127.0.0.1:3000
+          BASE_URL_MONTRA: http://coreto.localhost:3001
         run: pnpm check:a11y
+
+      # O mapa desenha? Nenhuma outra verificação o perguntava: o axe passa com
+      # um canvas cinzento e um `fetch` vê um 200. A subida do MapLibre para a
+      # 6, a 19 de setembro de 2026, compilava, respondia 200, passava tudo e
+      # nunca pedia um mosaico. Corre aqui porque é aqui que há uma agenda com
+      # eventos — a região de prova é «o dia zero» e não tem nenhum, por
+      # decisão escrita no seed. Sem credenciais de leitura o guião salta
+      # sozinho, e di-lo.
+      - name: O mapa desenha
+        if: always() && steps.servidor.outcome == 'success'
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: node scripts/check-mapa.mjs
+
+      # As listas do Selo de Usabilidade e Acessibilidade, na parte que uma
+      # máquina consegue provar (docs/SELO.md §1). Correu à mão desde 15 de
+      # setembro de 2026 e nunca aqui: uma verificação que só corre quando
+      # alguém se lembra é uma que envelhece a verde.
+      - name: Verificar os requisitos do Selo
+        if: always() && steps.servidor.outcome == 'success'
+        env:
+          BASE_URL: http://127.0.0.1:3000
+        run: pnpm check:selo
 
       # O README abre a dizer que o sítio é rápido, e nada o media. Aqui
       # verificam-se as promessas que são função da compilação e não do humor do
