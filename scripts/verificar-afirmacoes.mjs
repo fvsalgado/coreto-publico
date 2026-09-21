@@ -669,6 +669,57 @@ for (const prazo of ['72 horas', '30 dias']) {
   });
 }
 
+{
+  /*
+   * O `.env.example` é documentação servida, e nunca ninguém o confrontou com
+   * o código.
+   *
+   * Vale a pena dizer porque é que isto merece duas asserções. É o primeiro
+   * ficheiro que alguém abre para instalar o Coreto, e o único que descreve o
+   * que acontece **quando uma variável falta** — a parte que não se vê a
+   * correr e que, por isso, ninguém nota quando deixa de ser verdade. A 21 de
+   * setembro de 2026, ao preparar o espelho público, apanharam-se lá duas
+   * frases falsas, as duas de correções feitas a 19 de setembro que o ficheiro
+   * não acompanhou. Uma delas fazia o produto parecer **pior** do que é.
+   *
+   * As duas asserções não comparam texto com texto: leem o valor ao código e
+   * exigem que o ficheiro diga o mesmo. Mudar o código sem mexer aqui reprova.
+   */
+  const exemplo = ler('.env.example');
+
+  // (a) o que acontece sem IP_HASH_SALT. O `ip.ts` devolve `null`; o ficheiro
+  // dizia «usa-se um valor por omissão conhecido», que era o comportamento de
+  // antes do achado S4 e o contrário do que o código faz desde então.
+  const devolveNulo = /if \(!env\.IP_HASH_SALT\) return null;/.test(ler('apps/web/src/lib/ip.ts'));
+  const exemploPromete = /NÃO SE GUARDA NADA/.test(exemplo);
+  const exemploAindaMente = /valor por omissão conhecido/.test(exemplo);
+  afirmar({
+    afirmacao: 'o .env.example diz a verdade sobre o que acontece sem IP_HASH_SALT',
+    porque:
+      'é o ficheiro que alguém lê para instalar isto, e descrevia um sal literal que já não existe — uma frase que faz o produto parecer mais fraco do que é, publicada no primeiro sítio onde se olha',
+    onde: '.env.example e apps/web/src/lib/ip.ts',
+    ok: devolveNulo && exemploPromete && !exemploAindaMente,
+    esperava: 'o código a devolver null e o exemplo a dizer que não se guarda nada',
+    encontrei: `ip.ts devolve null: ${devolveNulo ? 'sim' : 'não'} · exemplo diz que não guarda: ${exemploPromete ? 'sim' : 'não'}${exemploAindaMente ? ' · e ainda fala do «valor por omissão conhecido»' : ''}`,
+  });
+
+  // (b) o terceiro degrau do SITE_URL. Lê-se o literal ao `env.ts` em vez de o
+  // escrever aqui: quem o mudar outra vez muda os dois, ou reprova.
+  const degrau = ler('apps/web/src/lib/env.ts').match(/return '(https:\/\/[^']+)';\s*\n\}/)?.[1];
+  const exemploTemODegrau = Boolean(degrau) && exemplo.includes(degrau);
+  afirmar({
+    afirmacao: 'o .env.example nomeia o mesmo endereço de omissão que o código usa',
+    porque:
+      'o degrau de omissão foi o domínio de um cliente até 19 de setembro de 2026, e uma segunda CIM a instalar isto fora do Vercel anunciaria o domínio da primeira como canónico de todas as suas páginas — o código corrigiu-o e o exemplo continuou a ensinar o erro',
+    onde: '.env.example e apps/web/src/lib/env.ts',
+    ok: exemploTemODegrau,
+    esperava: `«${degrau ?? '(não encontrei o degrau no env.ts)'}» escrito no .env.example`,
+    encontrei: degrau
+      ? `o env.ts devolve ${degrau} e o .env.example ${exemploTemODegrau ? 'diz o mesmo' : 'não o nomeia'}`
+      : 'não consegui ler o degrau de omissão do env.ts',
+  });
+}
+
 presente('apps/web/app/[regiao]/robots.txt/route.ts', /text\/plain; charset=utf-8/, {
   afirmacao: 'o robots.txt declara o charset',
   porque:
