@@ -8,7 +8,7 @@ usar: página, RSS, calendário, JSON e um widget para embeber.
 
 A primeira região é o **Médio Tejo** (os onze concelhos da sua Comunidade
 Intermunicipal); uma região nova entra por configuração, sem um único commit
-— o processo está em [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md) e o CI prova-o em
+— e o CI prova-o em
 todas as corridas, fazendo nascer uma região fictícia e verificando que nem
 uma letra se mistura entre as duas.
 
@@ -80,24 +80,19 @@ corrigida para o número errado por quem só olhe para ela.
 | Medição             | contadores agregados em Postgres; PostHog na UE, sem cookies, facultativo |
 | Integração contínua | GitHub Actions                                                            |
 
-| Documento                                                            | Para quê                                                                                       |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)                         | As decisões e os invariantes, com a razão de cada um                                           |
-| [`docs/OPERACAO.md`](docs/OPERACAO.md)                               | O que fazer quando alguma coisa corre mal                                                      |
-| [`docs/BACKUPS.md`](docs/BACKUPS.md)                                 | Cópias de segurança e como testar um restauro                                                  |
-| [`docs/RGPD.md`](docs/RGPD.md)                                       | Registo de tratamento de dados pessoais                                                        |
-| [`docs/INDICADORES.md`](docs/INDICADORES.md)                         | O que cada número do relatório mensal conta, e o que não conta                                 |
-| [`docs/O-QUE-FALTA-AO-DONO.md`](docs/O-QUE-FALTA-AO-DONO.md)         | O que não se resolve com código: avarias do lado de lá e decisões                              |
-| [`docs/LICENCIAR.md`](docs/LICENCIAR.md)                             | O que falta para isto poder ser contratado, e o que disso é do dono                            |
-| [`docs/AUDITORIA-LICENCIAMENTO.md`](docs/AUDITORIA-LICENCIAMENTO.md) | A auditoria de 19/09/2026: o que trava, o que falta, e o plano de fecho por semanas            |
-| [`docs/PLANO-DE-IMPLEMENTACAO.md`](docs/PLANO-DE-IMPLEMENTACAO.md)   | O plano que sai da auditoria: fases, ficheiros, verificações, e as decisões do dono            |
-| [`docs/CONFIGURACAO-DO-DONO.md`](docs/CONFIGURACAO-DO-DONO.md)       | As caixas que só quem tem as contas liga: Deploy Hook, ntfy, Better Stack, PostHog, o balde    |
-| [`docs/BENCHMARK.md`](docs/BENCHMARK.md)                             | O Coreto entre pares: 23 agendas fotografadas, 15 critérios comparados, 11 melhorias por ordem |
-| [`docs/SELO.md`](docs/SELO.md)                                       | O Selo de Usabilidade e Acessibilidade: o que a máquina já prova e o que não                   |
-| [`docs/EMAIL.md`](docs/EMAIL.md)                                     | O canal de entrada por email                                                                   |
-| [`docs/DNS.md`](docs/DNS.md)                                         | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)                      |
-| [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                               | Como nasce uma região nova — sem um commit                                                     |
-| [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/)               | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário)                   |
+| Documento                                    | Para quê                                             |
+| -------------------------------------------- | ---------------------------------------------------- |
+| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) | As decisões e os invariantes, com a razão de cada um |
+| [`docs/RGPD.md`](docs/RGPD.md)               | Registo de tratamento de dados pessoais              |
+| [`docs/TERCEIROS.md`](docs/TERCEIROS.md)     | O que está aqui dentro e não é nosso                 |
+
+**O que não está aqui.** A 21 de setembro de 2026 este repositório passou a
+público, e com ele foi só o que explica o software. O manual de operação, as
+cópias de segurança, a narrativa, a auditoria de licenciamento, as minutas do
+contrato, os levantamentos do Médio Tejo e a lista do que falta ao dono vivem
+num dossiê fechado: é material de negócio, de cliente e de infraestrutura, e
+publicá-lo não servia quem lê o código — servia quem quisesse negociar contra
+quem o escreveu.
 
 Porque é que a impressão digital tem de ser idêntica dos dois lados, porque é
 que quase-duplicados não se fundem sozinhos, o que impede uma recolha vazia de
@@ -277,7 +272,7 @@ Aqui esteve escrito que ele «é o titular dos direitos», sem reserva nenhuma, 
 esta secção era uma segunda fonte de verdade sobre um assunto que não pode ter
 duas. Passou a haver uma só, e mais honesta: **[`AUTORIA.md`](AUTORIA.md)** diz
 o que é reclamado e o que não é; **[`docs/TERCEIROS.md`](docs/TERCEIROS.md)**
-inventaria o que está aqui dentro e é de outros; e
-**[`docs/TITULARIDADE.md`](docs/TITULARIDADE.md)** mostra como esta obra foi
-produzida — com assistência de IA, com os números medidos e as fontes citadas —
-e o que fica por confirmar com um advogado.
+inventaria o que está aqui dentro e é de outros. Como esta obra foi produzida
+— com assistência de IA, com os números medidos e as fontes citadas — e o que
+fica por confirmar com um advogado está no dossiê de titularidade, que não é
+público.

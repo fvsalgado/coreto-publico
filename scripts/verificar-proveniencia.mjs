@@ -51,13 +51,16 @@ function ler(caminho) {
 
 // --- Os documentos que têm de existir --------------------------------------
 
-const CANONICOS = [
-  'AUTORIA.md',
-  'REUSE.toml',
-  'docs/TITULARIDADE.md',
-  'docs/TERCEIROS.md',
-  'docs/AUTORIZACOES.md',
-];
+/*
+ * O que tem de existir aqui, e o que passou a viver no dossiê privado.
+ *
+ * A 21 de setembro de 2026 o `docs/TITULARIDADE.md` e o `docs/AUTORIZACOES.md`
+ * saíram para o dossiê fechado: o primeiro traz as dez perguntas ao advogado, o
+ * segundo as autorizações declaradas — os dois são posição negocial, e este
+ * repositório é público. O que fica é o inventário do que está cá dentro e não
+ * é nosso, que é a parte que interessa a quem lê o código.
+ */
+const CANONICOS = ['AUTORIA.md', 'REUSE.toml', 'docs/TERCEIROS.md'];
 for (const doc of CANONICOS) {
   afirmar(existsSync(join(RAIZ, doc)), `${doc} existe`);
 }
@@ -132,8 +135,8 @@ for (const pasta of ['packages/ingest/src/__fixtures__', 'instantaneos']) {
 // Quem quiser saber o que falta a cada uma lê o registo, que o diz linha a
 // linha.
 
-const autorizacoes = ler('docs/AUTORIZACOES.md');
 if (existsSync(join(RAIZ, 'instantaneos'))) {
+  const autorizacoes = ler('docs/AUTORIZACOES.md');
   const pastas = readdirSync(join(RAIZ, 'instantaneos'), { withFileTypes: true })
     .filter((entrada) => entrada.isDirectory())
     .map((entrada) => entrada.name);

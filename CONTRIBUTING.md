@@ -80,7 +80,7 @@ Portugal**. Não é uma preferência: é o que mantém o código legível para q
 vem de fora e o produto legível para quem o usa.
 
 Texto visível — no sítio, num email a uma câmara, num dossiê — sai de
-[`docs/NARRATIVA.md`](docs/NARRATIVA.md): a frase de posicionamento, o tom, o
+a bíblia da língua, que vive no dossiê privado: a frase de posicionamento, o tom, o
 tratamento, as palavras proibidas e os dois glossários. O glossário interno é o
 que mais importa aqui: «montra», «gaveta», «toldo» e «lambrequim» são nomes
 desta casa e já escorregaram para páginas públicas, uma delas um documento
@@ -203,4 +203,4 @@ Se alguma destas três te incomodar, abre um issue antes de escrever código —
 melhor discutir isso do que descobri-lo depois de teres trabalho feito.
 
 A redação definitiva desta cláusula está por confirmar com advogado; a pergunta
-está escrita em [`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), §5.5.
+está escrita no dossiê de titularidade, §5.5 — fora deste repositório.

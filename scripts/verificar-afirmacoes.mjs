@@ -108,6 +108,23 @@ function ler(relativo) {
 }
 
 /**
+ * Um documento que só existe no dossiê privado.
+ *
+ * A 21 de setembro de 2026 a narrativa, o manual de operação, as cópias, a
+ * lista do que falta ao dono e as minutas do contrato saíram deste repositório
+ * para outro, fechado: são material de negócio e de operação, e este
+ * repositório é público.
+ *
+ * **As asserções que os comparam com a realidade não foram apagadas.** Ficam
+ * escritas, e no dossiê — onde os documentos vivem — correm todas. Aqui
+ * saltam, e dizem porquê. Apagá-las era perder a verificação nos dois sítios
+ * para resolver um problema que só existe num.
+ */
+function haDocumento(relativo) {
+  return existsSync(join(RAIZ, relativo));
+}
+
+/**
  * As linhas (a contar de 1) em que o padrão acerta.
  *
  * Linha a linha e não sobre o texto inteiro, porque o que interessa devolver é
@@ -1281,7 +1298,12 @@ for (const ficheiro of [
  * cumprimento. O resto do documento fala de `robots.txt` à vontade, incluindo
  * para citar esta mesma frase enquanto erro, e assim deve ser.
  */
-{
+if (!haDocumento('docs/O-QUE-FALTA-AO-DONO.md')) {
+  saltar(
+    'a carta à CIM não afirma que a recolha cumpre o robots.txt',
+    'docs/O-QUE-FALTA-AO-DONO.md vive no dossiê privado',
+  );
+} else {
   const doc = 'docs/O-QUE-FALTA-AO-DONO.md';
   const texto = ler(doc);
 
@@ -1556,6 +1578,10 @@ if (/import .*analytics\/posthog/.test(ler('apps/web/src/components/AnalyticsPro
 }
 
 for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
+  if (!haDocumento(manual)) {
+    saltar(`${manual} não afirma que a cópia de segurança nunca correu`, 'vive no dossiê privado');
+    continue;
+  }
   ausente(manual, /cópia \*\*nunca correu\*\*/, {
     afirmacao: `${manual} não afirma, a negrito, que a cópia de segurança nunca correu`,
     porque:
@@ -1639,9 +1665,16 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio) &&
     /\[ "\$fila_como_anon" = '0' \]/.test(ensaio);
+  /*
+   * Os dois manuais vivem no dossiê privado. Onde eles estão, esta asserção
+   * exige que registem o modelo de permissões; aqui verifica-se só a metade
+   * que é código — que é a metade que se pode partir sem ninguém dar por isso.
+   */
   const manualRegista =
-    /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
-    /modelo de permissões/.test(ler('docs/OPERACAO.md'));
+    haDocumento('docs/BACKUPS.md') && haDocumento('docs/OPERACAO.md')
+      ? /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
+        /modelo de permissões/.test(ler('docs/OPERACAO.md'))
+      : true;
   afirmar({
     afirmacao:
       'a cópia leva o modelo de permissões dentro, e o ensaio restaura-o, filtra a mobília do Supabase e prova que a base restaurada serve',
@@ -1805,7 +1838,12 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   } catch {
     saltar('PROJETO.md e o histórico concordam sobre a geração automática', 'sem git aqui');
   }
-  if (mencoes !== null) {
+  if (mencoes !== null && !haDocumento('PROJETO.md')) {
+    saltar(
+      'PROJETO.md e o histórico concordam sobre a geração automática',
+      'PROJETO.md vive no dossiê privado',
+    );
+  } else if (mencoes !== null) {
     const seccao =
       ler('PROJETO.md')
         .split('Nenhuma referência a geração automática')[1]
@@ -1822,7 +1860,12 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   }
 }
 
-{
+if (!haDocumento('docs/NARRATIVA.md')) {
+  saltar(
+    'o CONTRIBUTING.md remete para a bíblia da língua na secção «Língua»',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   const lingua = ler('CONTRIBUTING.md').split('### Língua')[1]?.split('### ')[0] ?? '';
   afirmar({
     afirmacao: 'o CONTRIBUTING.md remete para a bíblia da língua na secção «Língua»',
@@ -1835,7 +1878,9 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   });
 }
 
-{
+if (!haDocumento('docs/NARRATIVA.md')) {
+  saltar('docs/NARRATIVA.md continua a caber em quatro páginas', 'vive no dossiê privado');
+} else {
   const palavras = ler('docs/NARRATIVA.md').trim().split(/\s+/).length;
   afirmar({
     afirmacao: 'docs/NARRATIVA.md continua a caber em quatro páginas',
@@ -1894,7 +1939,12 @@ varrerDicionario(PALAVRAS_PROIBIDAS, {
   });
 }
 
-{
+if (!haDocumento('docs/NARRATIVA.md')) {
+  saltar(
+    'a frase de posicionamento publicada é a de docs/NARRATIVA.md §2',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   // A frase de posicionamento publicada tem de ser, letra a letra, a de §2 —
   // e hoje ainda não é. Regista-se em vez de falhar: a substituição é a
   // medida 4 da vaga 7, e uma falha por trabalho que ainda não tem vaga é uma
@@ -1927,7 +1977,12 @@ varrerDicionario(PALAVRAS_PROIBIDAS, {
   }
 }
 
-{
+if (!haDocumento('docs/NARRATIVA.md')) {
+  saltar(
+    'os cinco princípios da ficha são os de docs/NARRATIVA.md §5',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   // Os cinco princípios de §5 e a secção «as regras da casa» da ficha, que
   // ainda não existe.
   const principios = (
@@ -2457,7 +2512,12 @@ if (!BASE) {
 
 // ---- O dossiê contratual, que é o que uma CIM arquiva ----
 
-{
+if (!haDocumento('docs/contrato')) {
+  saltar(
+    'o dossiê contratual é coerente com o que o produto faz',
+    'docs/contrato/ vive no dossiê privado',
+  );
+} else {
   const PASTA = 'docs/contrato';
   const DPA = `${PASTA}/DADOS-PESSOAIS.md`;
   const RGPD = 'docs/RGPD.md';
@@ -2556,6 +2616,10 @@ if (!BASE) {
     const ondeDizSete = ['docs/BACKUPS.md', `${PASTA}/CONDICOES.md`, `${PASTA}/CONTINUIDADE.md`];
 
     for (const ficheiro of ondeDizSete) {
+      if (!haDocumento(ficheiro)) {
+        saltar(`${ficheiro} diz «até sete dias» de ponto de recuperação`, 'vive no dossiê privado');
+        continue;
+      }
       afirmar({
         afirmacao: `${ficheiro} diz «até sete dias» de ponto de recuperação, e a cópia é semanal`,
         porque:
