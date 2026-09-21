@@ -19,9 +19,15 @@
  * As duas larguras, e porque são duas.
  *
  * A fila da agenda desenha o cartaz a 84 píxeis no telemóvel; a ficha desenha-o
- * a toda a largura da vitrine. Servir o mesmo ficheiro aos dois é a diferença
- * entre 20 KB e 110 KB **vinte vezes por página** — numa lista de vinte
- * cartões, 400 KB contra 2,2 MB.
+ * a toda a largura da vitrine. Servir o mesmo ficheiro aos dois custa a
+ * diferença entre os dois **vinte vezes por página**.
+ *
+ * Os números são medidos e não estimados, contra os primeiros 38 cartazes
+ * municipais copiados a sério: **43 KB de média o grande, 14 KB a miniatura**.
+ * Numa lista de vinte cartões são 280 KB em vez de 860 KB — e os originais de
+ * onde vieram pesavam várias vezes isso. (A primeira versão deste comentário
+ * dizia 110 KB e 20 KB, escritos antes de haver o que medir. O WebP a 78
+ * comprime melhor do que eu supus.)
  *
  * Os mil e duzentos cobrem a vitrine da ficha num ecrã de retina sem ficar a
  * pedir uma imagem maior do que qualquer cartaz municipal costuma ter: dos que
