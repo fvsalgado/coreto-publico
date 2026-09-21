@@ -17,6 +17,16 @@ export const metadata: Metadata = { title: 'Auditoria' };
 
 const PER_PAGE = 50;
 
+/**
+ * Os três recortes de «o que mostrar», e o valor por omissão.
+ *
+ * Vem da barra de endereços, por isso valida-se contra a lista em vez de se
+ * confiar: o que não for um destes é tratado como o primeiro, e não como um
+ * filtro que a consulta não sabe o que fazer com ele.
+ */
+type Mostrar = NonNullable<RecorteDaAuditoria['mostrar']>;
+const MOSTRAR: readonly Mostrar[] = ['accoes', 'leituras', 'tudo'];
+
 /** As ligações da paginação, como as da agenda pública (`Pagination.tsx`): alvo de 44 px. */
 const LIGACAO =
   'inline-flex min-h-11 items-center rounded border border-border px-4 text-sm underline-offset-4 hover:underline';
@@ -28,6 +38,7 @@ interface Props {
     accao?: string;
     tipo?: string;
     mes?: string;
+    mostrar?: string;
   }>;
 }
 
@@ -38,6 +49,7 @@ function comRecorte(recorte: RecorteDaAuditoria, page: number): string {
   if (recorte.action) params.set('accao', recorte.action);
   if (recorte.entityType) params.set('tipo', recorte.entityType);
   if (recorte.mes) params.set('mes', recorte.mes);
+  if (recorte.mostrar && recorte.mostrar !== 'accoes') params.set('mostrar', recorte.mostrar);
   if (page > 1) params.set('page', String(page));
   const query = params.toString();
   return query ? `/admin/auditoria?${query}` : '/admin/auditoria';
@@ -92,6 +104,15 @@ function Recortes({ opcoes, recorte }: { opcoes: OpcoesDaAuditoria; recorte: Rec
       </label>
 
       <label className="flex flex-col gap-1 text-sm">
+        <span className="font-medium">O que mostrar</span>
+        <select name="mostrar" defaultValue={recorte.mostrar ?? 'accoes'} className={campo}>
+          <option value="accoes">Decisões</option>
+          <option value="leituras">Acessos</option>
+          <option value="tudo">Tudo</option>
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium">Mês</span>
         <input
           type="month"
@@ -108,7 +129,11 @@ function Recortes({ opcoes, recorte }: { opcoes: OpcoesDaAuditoria; recorte: Rec
       >
         Filtrar
       </button>
-      {recorte.actor || recorte.action || recorte.entityType || recorte.mes ? (
+      {recorte.actor ||
+      recorte.action ||
+      recorte.entityType ||
+      recorte.mes ||
+      recorte.mostrar !== 'accoes' ? (
         <Link href="/admin/auditoria" className="min-h-11 text-sm underline underline-offset-4">
           Limpar
         </Link>
@@ -178,6 +203,7 @@ export default async function Auditoria({ searchParams }: Props) {
     action: params.accao || undefined,
     entityType: params.tipo || undefined,
     mes: params.mes || undefined,
+    mostrar: MOSTRAR.includes(params.mostrar as Mostrar) ? (params.mostrar as Mostrar) : 'accoes',
   };
   const [actions, opcoes] = await Promise.all([
     listAdminActions(page, PER_PAGE, recorte),
@@ -188,7 +214,7 @@ export default async function Auditoria({ searchParams }: Props) {
     <>
       <PageHeader
         title="Auditoria"
-        lead="Todas as ações de moderação passam pelas funções da base de dados, e todas deixam rasto aqui."
+        lead="Todas as ações de moderação passam pelas funções da base de dados, e todas deixam rasto aqui. As leituras da fila também — em «acessos», que é onde fica quem viu o quê."
       />
 
       <Recortes opcoes={opcoes} recorte={recorte} />
@@ -258,8 +284,12 @@ export default async function Auditoria({ searchParams }: Props) {
 
       {actions.length === 0 ? (
         <p className="mt-4 text-muted">
-          {recorte.actor || recorte.action || recorte.entityType || recorte.mes
-            ? 'Nenhuma ação com estes recortes. Não quer dizer que não tenha acontecido nada — quer dizer que não aconteceu isto.'
+          {recorte.actor ||
+          recorte.action ||
+          recorte.entityType ||
+          recorte.mes ||
+          recorte.mostrar !== 'accoes'
+            ? 'Nenhuma linha com estes recortes. Não quer dizer que não tenha acontecido nada — quer dizer que não aconteceu isto.'
             : 'Sem registos nesta página.'}
         </p>
       ) : null}

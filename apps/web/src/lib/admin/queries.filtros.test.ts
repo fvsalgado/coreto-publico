@@ -36,6 +36,7 @@ function clienteQueGrava(resposta: unknown, chamadas: Chamada[]) {
     'gte',
     'lte',
     'ilike',
+    'like',
     'order',
     'range',
     'limit',
@@ -73,7 +74,7 @@ function chamadasDe(metodo: string): unknown[][] {
   return estado.chamadas.filter((c) => c.metodo === metodo).map((c) => c.argumentos);
 }
 
-const { listEvents, ESTADOS_DO_CATALOGO } = await import('./queries');
+const { listAdminActions, listEvents, ESTADOS_DO_CATALOGO } = await import('./queries');
 
 describe('o estado «no catálogo»', () => {
   it('recorta pelos dois estados que a vista de qualidade agrega, e não por mais', async () => {
@@ -155,5 +156,40 @@ describe('o recorte por fonte', () => {
   it('vazio não filtra — é «todas», não uma fonte chamada vazio', async () => {
     await listEvents({ fonte: '' });
     expect(chamadasDe('eq').some(([coluna]) => coluna === 'source_id')).toBe(false);
+  });
+});
+
+/**
+ * A auditoria guarda duas coisas desde que as leituras da fila deixam rasto:
+ * decisões e acessos. Este recorte é o que as separa — e a lista abre nas
+ * decisões, porque «quem aprovou isto?» é a pergunta que a leva a ser aberta.
+ */
+describe('decisões e acessos, na auditoria', () => {
+  const PADRAO = 'leitura.%';
+
+  it('por omissão, deixa os acessos de fora', async () => {
+    await listAdminActions(1);
+    expect(chamadasDe('not')).toContainEqual(['action', 'like', PADRAO]);
+    expect(chamadasDe('like').some(([coluna]) => coluna === 'action')).toBe(false);
+  });
+
+  it('«acessos» mostra só os acessos', async () => {
+    await listAdminActions(1, 50, { mostrar: 'leituras' });
+    expect(chamadasDe('like')).toContainEqual(['action', PADRAO]);
+    expect(chamadasDe('not').some(([coluna]) => coluna === 'action')).toBe(false);
+  });
+
+  it('«tudo» não recorta nem para um lado nem para o outro', async () => {
+    await listAdminActions(1, 50, { mostrar: 'tudo' });
+    expect(chamadasDe('like').some(([coluna]) => coluna === 'action')).toBe(false);
+    expect(chamadasDe('not').some(([coluna]) => coluna === 'action')).toBe(false);
+  });
+
+  it('uma ação escolhida à mão ganha ao recorte, e é a única forma de a ver', async () => {
+    // Sem isto, escolher `leitura.fila` na caixa «o quê» devolvia uma lista
+    // vazia — a página a contrariar o que a pessoa acabou de escolher.
+    await listAdminActions(1, 50, { action: 'leitura.fila' });
+    expect(chamadasDe('eq')).toContainEqual(['action', 'leitura.fila']);
+    expect(chamadasDe('not').some(([coluna]) => coluna === 'action')).toBe(false);
   });
 });

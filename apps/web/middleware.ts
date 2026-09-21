@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { ADMIN_LOGIN_PATH, ADMIN_PATH_HEADER, adminLoginPath } from '@/src/lib/admin/guarda';
-import { ADMIN_COOKIE_NAME, readSessionToken } from '@/src/lib/admin/session';
+import { ADMIN_COOKIE_NAME, chaveDaSessao, readSessionToken } from '@/src/lib/admin/session';
 import { SITE_URL } from '@/src/lib/env';
 import {
   REGIAO_PRINCIPAL,
@@ -401,14 +401,23 @@ function deixarPassar(request: NextRequest): NextResponse {
  * reconhece-a e mostra «Administração por configurar», sem abrir nada. A
  * instalação por configurar continua a ter uma resposta com sentido; o que
  * deixa de ter é acesso.
+ *
+ * **O hash da palavra-passe entra na chave**, e por isso é lido aqui também —
+ * ver `chaveDaSessao`. Sem ele não há chave nenhuma para verificar um token,
+ * e a regra é a mesma da linha de cima: fecha. Não é perda nenhuma — sem
+ * `ADMIN_PASSWORD_HASH` não há palavra-passe que abra a entrada, logo não há
+ * sessão legítima que esta porta esteja a recusar.
  */
 async function guardAdmin(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
   if (pathname === ADMIN_LOGIN_PATH) return deixarPassar(request);
 
   const secret = process.env.ADMIN_SESSION_SECRET;
+  const hash = process.env.ADMIN_PASSWORD_HASH;
   const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
-  if (secret && (await readSessionToken(token, secret))) return deixarPassar(request);
+  if (secret && hash && (await readSessionToken(token, chaveDaSessao(secret, hash)))) {
+    return deixarPassar(request);
+  }
 
   return NextResponse.redirect(new URL(adminLoginPath(pathname), request.url));
 }

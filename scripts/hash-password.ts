@@ -19,6 +19,13 @@
  * pronta a colar na variável de ambiente. Cada execução dá um valor
  * diferente para a mesma palavra-passe — o sal é novo de cada vez, e é isso
  * que se pretende.
+ *
+ * **Pôr este valor no ambiente fecha as sessões que estiverem abertas.** O
+ * token da área interna é assinado com o segredo e com este hash
+ * (`admin/session.ts`, `chaveDaSessao`), e um hash novo faz as assinaturas
+ * antigas deixarem de conferir. Quem troca a palavra-passe porque desconfia
+ * de alguma coisa expulsa quem lá estiver, que é o que se espera de trocar
+ * uma palavra-passe — e até aqui não era o que acontecia.
  */
 
 import { randomBytes, scryptSync } from 'node:crypto';
@@ -107,7 +114,10 @@ async function main(): Promise<void> {
   process.stderr.write(
     '\nFalta ainda ADMIN_SESSION_SECRET, com pelo menos 32 caracteres aleatorios:\n' +
       "  node -e \"console.log(require('node:crypto').randomBytes(48).toString('base64url'))\"\n" +
-      '\nTrocar a palavra-passe invalida as sessoes abertas.\n',
+      '\nTrocar a palavra-passe invalida as sessoes abertas: o token e assinado\n' +
+      'com o segredo e com este hash, e um hash novo faz cair as assinaturas\n' +
+      'antigas. Ate repor a MESMA palavra-passe expulsa toda a gente, porque o\n' +
+      'sal e novo de cada vez.\n',
   );
 }
 

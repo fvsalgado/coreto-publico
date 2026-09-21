@@ -14,7 +14,7 @@ vi.hoisted(() => {
 
 import { NextRequest } from 'next/server';
 import { ADMIN_PATH_HEADER } from '@/src/lib/admin/guarda';
-import { ADMIN_COOKIE_NAME, createSessionToken } from '@/src/lib/admin/session';
+import { ADMIN_COOKIE_NAME, chaveDaSessao, createSessionToken } from '@/src/lib/admin/session';
 import { PORTAO_COOKIE_NAME, criarBilhete } from '@/src/lib/portao';
 import { esquecerMapaDeDominios } from '@/src/lib/regiao-host';
 import { middleware } from './middleware';
@@ -263,6 +263,15 @@ describe('o que é do produto não tem região', () => {
 
 describe('a área interna é uma só, guardada à porta', () => {
   const SEGREDO = 'um-segredo-só-para-os-testes';
+  /*
+   * O token é assinado com o segredo **e** com o hash da palavra-passe em
+   * vigor (`chaveDaSessao`), e por isso a porta precisa dos dois. Os hashes
+   * daqui são de mentira e chegam: o que se verifica é que a chave muda
+   * quando eles mudam, não o scrypt que os produz.
+   */
+  const HASH = 'scrypt$32768$8$1$c2FsdG8$aGFzaA';
+  const HASH_NOVO = 'scrypt$32768$8$1$b3V0cm8$b3V0cm8';
+  const CHAVE = chaveDaSessao(SEGREDO, HASH);
 
   it('a página de entrada passa, com o caminho num cabeçalho de pedido', async () => {
     const resposta = await middleware(pedido('https://coreto.mediotejo.pt/admin/entrar'));
@@ -274,6 +283,7 @@ describe('a área interna é uma só, guardada à porta', () => {
 
   it('sem sessão, manda para a entrada e guarda o destino', async () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
     const resposta = await middleware(pedido('https://coreto.mediotejo.pt/admin/fila'));
     expect(resposta.status).toBe(307);
     const destino = new URL(resposta.headers.get('location') ?? '');
@@ -282,9 +292,10 @@ describe('a área interna é uma só, guardada à porta', () => {
     expect(resposta.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
   });
 
-  it('com uma sessão assinada pelo segredo, passa', async () => {
+  it('com uma sessão assinada pela chave desta instalação, passa', async () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
-    const token = await createSessionToken('ana', SEGREDO);
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
+    const token = await createSessionToken('ana', CHAVE);
     const resposta = await middleware(
       pedido('https://coreto.mediotejo.pt/admin/fila', { cookie: `${ADMIN_COOKIE_NAME}=${token}` }),
     );
@@ -294,20 +305,49 @@ describe('a área interna é uma só, guardada à porta', () => {
 
   it('uma sessão assinada por outro segredo não passa', async () => {
     vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
-    const token = await createSessionToken('ana', 'outro-segredo');
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
+    const token = await createSessionToken('ana', chaveDaSessao('outro-segredo', HASH));
     const resposta = await middleware(
       pedido('https://coreto.mediotejo.pt/admin/fila', { cookie: `${ADMIN_COOKIE_NAME}=${token}` }),
     );
     expect(resposta.status).toBe(307);
   });
 
-  it('sem segredo configurado, fecha: nem uma sessão válida entra', async () => {
-    const token = await createSessionToken('ana', SEGREDO);
+  it('trocar a palavra-passe fecha a porta a quem já estava dentro', async () => {
+    // A razão de tudo isto: até 21 de setembro de 2026, esta sessão passava.
+    // Quem trocava a palavra-passe porque desconfiava de alguma coisa não
+    // expulsava ninguém — só mudava o que era preciso para entrar de novo.
+    vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
+    const token = await createSessionToken('ana', CHAVE);
+
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH_NOVO);
     const resposta = await middleware(
       pedido('https://coreto.mediotejo.pt/admin/fila', { cookie: `${ADMIN_COOKIE_NAME}=${token}` }),
     );
     expect(resposta.status).toBe(307);
     expect(new URL(resposta.headers.get('location') ?? '').pathname).toBe('/admin/entrar');
+  });
+
+  it('sem segredo configurado, fecha: nem uma sessão válida entra', async () => {
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH);
+    const token = await createSessionToken('ana', CHAVE);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/admin/fila', { cookie: `${ADMIN_COOKIE_NAME}=${token}` }),
+    );
+    expect(resposta.status).toBe(307);
+    expect(new URL(resposta.headers.get('location') ?? '').pathname).toBe('/admin/entrar');
+  });
+
+  it('sem palavra-passe configurada, fecha pela mesma razão', async () => {
+    // Sem `ADMIN_PASSWORD_HASH` não há palavra-passe que abra a entrada, logo
+    // não há sessão legítima nenhuma a ser recusada aqui.
+    vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
+    const token = await createSessionToken('ana', CHAVE);
+    const resposta = await middleware(
+      pedido('https://coreto.mediotejo.pt/admin/fila', { cookie: `${ADMIN_COOKIE_NAME}=${token}` }),
+    );
+    expect(resposta.status).toBe(307);
   });
 
   it('um visitante não consegue forjar o cabeçalho do caminho: o middleware sobrepõe-o', async () => {
@@ -492,9 +532,12 @@ describe('a barreira de uma região', () => {
     { id: 'vale-do-coreto', domain: 'coreto.org', barreira: false },
   ];
 
+  const HASH_DO_PAINEL = 'scrypt$32768$8$1$c2FsdG8$aGFzaA';
+
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchDoMapa(COM_BARREIRA));
     vi.stubEnv('ADMIN_SESSION_SECRET', SEGREDO);
+    vi.stubEnv('ADMIN_PASSWORD_HASH', HASH_DO_PAINEL);
   });
 
   it('sem bilhete, a página é a da senha — e o endereço público não muda', async () => {
@@ -581,7 +624,7 @@ describe('a barreira de uma região', () => {
   it('o painel não fica atrás da barreira da região que administra', async () => {
     // O `/admin` decide-se antes, e ainda bem: com a barreira ligada na região
     // principal, quem a ligou ficava do lado de fora do sítio onde a desliga.
-    const token = await createSessionToken('ana', SEGREDO);
+    const token = await createSessionToken('ana', chaveDaSessao(SEGREDO, HASH_DO_PAINEL));
     const resposta = await middleware(
       pedido('https://coreto.mediotejo.pt/admin/regioes', {
         cookie: `${ADMIN_COOKIE_NAME}=${token}`,

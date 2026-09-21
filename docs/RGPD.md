@@ -129,18 +129,30 @@ Trocá-lo torna irreversível qualquer correspondência com hashes anteriores.
 
 ### 2.4 Moderação e auditoria
 
-| Elemento                | Conteúdo                                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Finalidade**          | Saber quem publicou, alterou, fundiu ou rejeitou o quê — sem isto não há responsabilização nem forma de desfazer um erro    |
-| **Titulares**           | Quem modera (uma ou poucas pessoas)                                                                                         |
-| **Categorias de dados** | Identificação de quem age; ação; estado antes e depois (que pode incluir o email de quem submeteu); hash do IP; data e hora |
-| **Base legal**          | Artigo 6.º, n.º 1, alínea f), em articulação com o princípio da responsabilidade do artigo 5.º, n.º 2                       |
-| **Onde está**           | `public.admin_actions`                                                                                                      |
-| **Conservação**         | 24 meses (ver a secção 5 — prazo a implementar)                                                                             |
+| Elemento                | Conteúdo                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Finalidade**          | Saber quem publicou, alterou, fundiu ou rejeitou o quê — e quem **leu** a fila; sem isto não há responsabilização nem forma de desfazer um erro |
+| **Titulares**           | Quem modera (uma ou poucas pessoas)                                                                                                             |
+| **Categorias de dados** | Identificação de quem age; ação; estado antes e depois (que pode incluir o email de quem submeteu); hash do IP; data e hora                     |
+| **Base legal**          | Artigo 6.º, n.º 1, alínea f), em articulação com o princípio da responsabilidade do artigo 5.º, n.º 2                                           |
+| **Onde está**           | `public.admin_actions`                                                                                                                          |
+| **Conservação**         | 24 meses (ver a secção 5 — prazo a implementar)                                                                                                 |
+
+**Desde 21 de setembro de 2026, o registo também guarda acessos, e não só
+decisões.** Abrir a fila de moderação ou uma submissão escreve uma linha com a
+ação prefixada por `leitura.`, quem a fez e o que pediu — o recorte da fila, ou
+o identificador da submissão. Não se guarda o conteúdo lido: seria copiar
+dados pessoais para uma segunda tabela, com um prazo de conservação mais longo
+do que o deles. Serve para uma pergunta que antes não tinha resposta possível —
+com uma sessão comprometida, **o que é que foi visto?** — e a página
+`/admin/auditoria` separa as duas coisas, para o registo de decisões continuar
+legível.
 
 A área interna não tem contas: tem uma palavra-passe, guardada em hash scrypt
 com sal, e um cookie de sessão assinado. Não há dados de autenticação de
-pessoas identificadas.
+pessoas identificadas. O cookie é assinado com o segredo **e** com o hash da
+palavra-passe em vigor: trocar a palavra-passe fecha, no mesmo instante, todas
+as sessões abertas.
 
 ### 2.5 Estatísticas de utilização do sítio
 
@@ -468,9 +480,15 @@ devem ser conservados junto deste registo.
   que passa por cima do RLS, vive apenas em processos que nunca são expostos.
 - **Controlo de acessos:** a área de moderação está atrás de palavra-passe em
   hash scrypt com sal, com cookie de sessão assinado (`httpOnly`,
-  `sameSite=strict`) e limitação de tentativas por IP.
+  `sameSite=strict`) e limitação de tentativas por IP. O cookie é assinado com
+  o segredo e com o hash da palavra-passe, e por isso **trocar a palavra-passe
+  revoga as sessões abertas** — o que, até 21 de setembro de 2026, o utilitário
+  prometia e não acontecia.
 - **Rasto de auditoria:** todas as escritas de moderação passam por funções SQL
-  que registam o antes e o depois. Não há caminho de escrita sem rasto.
+  que registam o antes e o depois. Não há caminho de escrita sem rasto — e,
+  desde 21 de setembro de 2026, também não há caminho de **leitura** da fila
+  sem rasto: as duas consultas que trazem dados pessoais registam o acesso
+  antes de ler, e recusam ler se não conseguirem registá-lo.
 - **Anexos em balde privado**, com o tipo real apurado pela assinatura do
   ficheiro e não pelo que o remetente declara, e tecto de 10 MB por anexo.
 - **Verificação de origem** no canal de email, por assinatura HMAC. Sem segredo
