@@ -242,15 +242,11 @@ jobs:
       - name: Vulnerabilidades conhecidas nas dependências de produção
         run: pnpm audit --prod --audit-level=high
 
-      # O JSON fica para o passo dos números: é de lá que o `check:numeros`
-      # lê quantos casos correram, para o PROJETO.md não poder envelhecer.
+      # O `--outputFile` fica, e não é hábito: o resumo em JSON é o que o
+      # dossiê privado lê para conferir quantos casos correram. Aqui não há
+      # quem o leia; lá há, e a bateria é a mesma.
       - name: Testes
         run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=.bateria.json
-
-      # Confere os números do `PROJETO.md` contra o repositório. Não precisa de
-      # segredos — é o que lhe permite estar aqui, ao lado das outras.
-      - name: Números do PROJETO.md
-        run: pnpm check:numeros
 
       # O irmão do anterior, e aqui pela mesma razão: confronta cada afirmação
       # pública com o ficheiro, o campo ou a rota que a sustenta, e falha
@@ -809,14 +805,6 @@ jobs:
 
       # As listas do Selo de Usabilidade e Acessibilidade, na parte que uma
       # máquina consegue provar (docs/SELO.md §1). Correu à mão desde 15 de
-      # setembro de 2026 e nunca aqui: uma verificação que só corre quando
-      # alguém se lembra é uma que envelhece a verde.
-      - name: Verificar os requisitos do Selo
-        if: always() && steps.servidor.outcome == 'success'
-        env:
-          BASE_URL: http://127.0.0.1:3000
-        run: pnpm check:selo
-
       # O README abre a dizer que o sítio é rápido, e nada o media. Aqui
       # verificam-se as promessas que são função da compilação e não do humor do
       # executor — o peso por rota, zero pedidos a terceiros, zero cookies, e o

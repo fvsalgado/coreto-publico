@@ -20,7 +20,7 @@ lista curta:
 | o quê                                                   | onde                                                       |
 | ------------------------------------------------------- | ---------------------------------------------------------- |
 | Marcas da CIM do Médio Tejo e do cofinanciamento        | `apps/web/public/logos/medio-tejo/`                        |
-| HTML capturado de sítios de câmaras, juntas e teatros   | `packages/ingest/src/__fixtures__/`, `instantaneos/`       |
+| HTML capturado de sítios de câmaras, juntas e teatros   | `packages/ingest/src/__fixtures__/`                        |
 | Contornos dos concelhos, do OpenStreetMap, sob ODbL 1.0 | migrações 0035, 0060, 0105                                 |
 | Fotografias do Wikimedia Commons                        | por endereço, com crédito e licença ao lado, nas migrações |
 | `pnpm-lock.yaml` e o que for gerado                     | —                                                          |
@@ -49,7 +49,7 @@ nasce da criação e da lei, não de um documento no repositório. O que aqui es
 
 O apuramento que a sustenta — como a obra foi produzida, com que números, sob
 que termos e ao abrigo de que enquadramento legal — está em
-[`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), com as perguntas que ficam por
+o dossiê de titularidade, fora deste repositório, com as perguntas que ficam por
 responder e que são para um advogado, não para um ficheiro.
 
 A declaração legível por máquina está em [`REUSE.toml`](REUSE.toml).

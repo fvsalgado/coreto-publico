@@ -83,3 +83,6 @@ apps/web/public/maplibre/
 # anexou a um processo seria a errada. Gera-se com `pnpm dossie`, e o CI
 # publica-o como artefacto descarregável em cada alteração.
 estado/
+
+# As permissões locais do Claude Code são de quem trabalha aqui, não do projeto.
+.claude/settings.local.json

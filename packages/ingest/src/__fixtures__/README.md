@@ -9,12 +9,13 @@ seletores de lista e nenhum deles a casar com o que estes sites servem.
 
 ## O que está aqui, e o que não está
 
-Não são as páginas: são os **blocos de evento** — **com duas exceções, e vale
-a pena sabê-las antes de confiar nesta frase.** O `jf-minde-agenda.html` e o
-`jf-minde-evento.html` são páginas inteiras, cerca de 61 KB cada, com o
-JavaScript e o CSS do sítio e o rodapé de reserva de direitos lá dentro.
-Entraram antes de esta regra existir e ficaram. E quatro ficheiros não têm o
-cabeçalho de proveniência que se descreve abaixo.
+Não são as páginas: são os **blocos de evento**, e desde 21 de setembro de 2026
+a frase é verdadeira sem excepções. O `jf-minde-agenda.html` e o
+`jf-minde-evento.html` eram páginas inteiras, cerca de 61 KB cada, com o
+JavaScript e o CSS do sítio e o rodapé de reserva de direitos lá dentro:
+entraram antes de esta regra existir e ficaram, com a excepção declarada aqui
+por honestidade. Foram reduzidas aos blocos no dia em que o repositório passou
+a público, e os 29 testes do adaptador provaram que o recorte ficou fiel.
 
 Num dossiê de titularidade, um documento que descreve mal o que guarda faz pior
 do que não existir — ver [`docs/TERCEIROS.md`](../../../../docs/TERCEIROS.md).
