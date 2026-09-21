@@ -1,0 +1,7 @@
+scripts/atualizar-panorama.mjs
+scripts/benchmark/gerar-galeria.mjs
+scripts/benchmark/gerar-markdown.mjs
+scripts/benchmark/prints.mjs
+scripts/benchmark/redimensionar.mjs
+scripts/check-selo.mjs
+scripts/gerar-inventario.mjs

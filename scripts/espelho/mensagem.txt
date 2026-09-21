@@ -1,0 +1,31 @@
+O repositório fica apresentável para ser público
+
+Este é o espelho público do Coreto. O que serve o sítio é outro, privado, e
+é lá que estão os segredos, o dossiê comercial e o conhecimento da região.
+
+Sai daqui, da história inteira e não só da última versão: o dossiê de
+licenciamento e os contratos, os manuais de operação e de infraestrutura, o
+levantamento das fontes do Médio Tejo, as capturas de sítios de terceiros, e
+os guiões que liam esses documentos.
+
+Saem também as workflows que correm sozinhas — a recolha, a cópia, o ensaio
+de restauro, a vigilância, os prazos, o resumo diário, a agenda semanal e o
+deploy. Todas precisam de segredos que aqui não existem: agendadas neste
+repositório, falhariam todas as noites e ensinariam alguém a ignorar um
+alarme. Correm onde têm de correr. Fica o `ci.yml`, que prova que o código
+está de pé, e o `codeql.yml`, que num repositório público passa finalmente
+a correr. Sai o `dependabot.yml`, para as propostas de atualização não
+virem em duplicado nos dois repositórios.
+
+O README explica isto a quem chega, e assume a consequência em vez de a
+esconder: há comentários no código e nas migrações que remetem para
+documentos que não estão aqui. Ficam como estão — apagá-los tornaria o
+código menos honesto, não mais. Os guiões de verificação fazem o mesmo:
+leem o `.espelho-publico` e dizem «não se mediu» nas afirmações que precisam
+do que vive no privado, em vez de as dar por boas.
+
+Os dois cartazes de exemplo da Minde ficam reduzidos ao que os testes
+precisam de ler.
+
+Reconstruído por scripts/espelho/sincronizar.sh, que só empurra depois de a
+bateria e a auditoria passarem.

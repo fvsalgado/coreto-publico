@@ -56,6 +56,17 @@ import { fileURLToPath } from 'node:url';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * O ficheiro com que o espelho público se identifica.
+ *
+ * Escreve-o o `scripts/espelho/sincronizar.sh`, e é o único sinal de que um
+ * repositório é a cópia publicada em vez do dossiê completo. Um sinal
+ * explícito, e não uma dedução a partir do que falta: deduzir «isto é o
+ * espelho porque não tem o documento X» faria qualquer apagamento por engano
+ * passar por publicação deliberada.
+ */
+const MARCA_DO_ESPELHO = '.espelho-publico';
+
 // ---------------------------------------------------------------- o relato --
 
 let passadas = 0;
@@ -105,6 +116,39 @@ function saltar(afirmacao, motivo) {
 
 function ler(relativo) {
   return readFileSync(join(RAIZ, relativo), 'utf8');
+}
+
+/**
+ * Um documento que só existe no dossiê privado.
+ *
+ * A 21 de setembro de 2026 a narrativa, o manual de operação, as cópias, a
+ * lista do que falta ao dono e as minutas do contrato saíram deste repositório
+ * para outro, fechado: são material de negócio e de operação, e este
+ * repositório é público.
+ *
+ * **As asserções que os comparam com a realidade não foram apagadas.** Ficam
+ * escritas, e no dossiê — onde os documentos vivem — correm todas. Aqui
+ * saltam, e dizem porquê. Apagá-las era perder a verificação nos dois sítios
+ * para resolver um problema que só existe num.
+ */
+function ehEspelho() {
+  return existsSync(join(RAIZ, MARCA_DO_ESPELHO));
+}
+
+/**
+ * `true` quando esta afirmação não se pode medir aqui — e **só** no espelho.
+ *
+ * A primeira versão disto perguntava apenas «o ficheiro existe?», e tinha um
+ * buraco que não se vê à primeira: num repositório completo, um documento
+ * apagado por engano deixava de reprovar e passava a ser saltado em silêncio.
+ * A afirmação existe exatamente para apanhar esse dia.
+ *
+ * Por isso a pergunta passou a ser duas, e a ordem importa: **é o espelho** e
+ * o documento não está cá. No dossiê não há marca nenhuma, a guarda nunca
+ * abre, e um documento em falta dá erro como sempre deu.
+ */
+function noDossiePrivado(relativo) {
+  return ehEspelho() && !existsSync(join(RAIZ, relativo));
 }
 
 /**
@@ -1108,22 +1152,32 @@ presente(
       ),
     ),
   ].sort();
-  const noturno = ler('.github/workflows/scrape.yml');
+  // O trabalho noturno vive no repositório privado — é lá que ele corre, com
+  // os segredos. Sem o ficheiro, estas duas afirmações não se podem medir, e
+  // uma afirmação que reprova por falta do ficheiro é ruído, não sinal.
+  const HA_NOTURNO = !noDossiePrivado('.github/workflows/scrape.yml');
+  const noturno = HA_NOTURNO ? ler('.github/workflows/scrape.yml') : '';
   const porChamar = escritas.filter((nome) => !noturno.includes(nome));
 
-  afirmar({
-    afirmacao: 'todas as funções de expurgo escritas são chamadas todas as noites',
-    porque:
-      'uma função de expurgo que ninguém agenda não apaga nada, e a tabela de prazos do RGPD.md passa a dizer que apaga',
-    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
-    ok: escritas.length > 0 && porChamar.length === 0,
-    esperava: escritas.length
-      ? `${escritas.join(', ')} no trabalho noturno`
-      : 'pelo menos uma função de expurgo',
-    encontrei: porChamar.length
-      ? `sem quem as chame: ${porChamar.join(', ')}`
-      : 'nenhuma função de expurgo escrita',
-  });
+  if (!HA_NOTURNO) {
+    saltar(
+      'todas as funções de expurgo escritas são chamadas todas as noites',
+      'o trabalho noturno vive no dossiê privado',
+    );
+  } else
+    afirmar({
+      afirmacao: 'todas as funções de expurgo escritas são chamadas todas as noites',
+      porque:
+        'uma função de expurgo que ninguém agenda não apaga nada, e a tabela de prazos do RGPD.md passa a dizer que apaga',
+      onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+      ok: escritas.length > 0 && porChamar.length === 0,
+      esperava: escritas.length
+        ? `${escritas.join(', ')} no trabalho noturno`
+        : 'pelo menos uma função de expurgo',
+      encontrei: porChamar.length
+        ? `sem quem as chame: ${porChamar.join(', ')}`
+        : 'nenhuma função de expurgo escrita',
+    });
 
   // (c) o mesmo para as fotografias, e pela mesma razão
   //
@@ -1145,19 +1199,25 @@ presente(
   ].sort();
   const fotosPorTirar = fotografias.filter((nome) => !noturno.includes(nome));
 
-  afirmar({
-    afirmacao: 'todas as fotografias escritas são tiradas todas as noites',
-    porque:
-      'uma fotografia que ninguém agenda deixa um buraco no histórico que só se descobre meses depois, ao abrir o relatório de um mês que não tem qualidade nenhuma para mostrar',
-    onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
-    ok: fotografias.length > 0 && fotosPorTirar.length === 0,
-    esperava: fotografias.length
-      ? `${fotografias.join(', ')} no trabalho noturno`
-      : 'pelo menos uma fotografia',
-    encontrei: fotosPorTirar.length
-      ? `sem quem as tire: ${fotosPorTirar.join(', ')}`
-      : 'nenhuma fotografia escrita',
-  });
+  if (!HA_NOTURNO) {
+    saltar(
+      'todas as fotografias escritas são tiradas todas as noites',
+      'o trabalho noturno vive no dossiê privado',
+    );
+  } else
+    afirmar({
+      afirmacao: 'todas as fotografias escritas são tiradas todas as noites',
+      porque:
+        'uma fotografia que ninguém agenda deixa um buraco no histórico que só se descobre meses depois, ao abrir o relatório de um mês que não tem qualidade nenhuma para mostrar',
+      onde: `${PASTA}/*.sql e .github/workflows/scrape.yml`,
+      ok: fotografias.length > 0 && fotosPorTirar.length === 0,
+      esperava: fotografias.length
+        ? `${fotografias.join(', ')} no trabalho noturno`
+        : 'pelo menos uma fotografia',
+      encontrei: fotosPorTirar.length
+        ? `sem quem as tire: ${fotosPorTirar.join(', ')}`
+        : 'nenhuma fotografia escrita',
+    });
 
   // (d) e o resumo diário, que é a terceira forma do mesmo defeito
   //
@@ -1174,22 +1234,33 @@ presente(
     /create (?:or replace )?function public\.daily_digest\(/.test(sqlPorFicheiro.get(f)),
   );
 
-  afirmar({
-    afirmacao: 'o resumo diário tem quem o leia, quem o formate e quem o agende',
-    porque:
-      'as três peças existem em ficheiros diferentes e nenhuma falha sem as outras: a função devolve, o guião formata, e se ninguém agendar, quem o escreveu fica convencido de que o mandou',
-    onde: 'supabase/migrations/*.sql, scripts/resumo-diario.sh e .github/workflows/',
-    ok: escreveOResumo && guiao.includes('daily_digest') && workflows.includes('resumo-diario.sh'),
-    esperava: 'daily_digest na base, no guião, e o guião num workflow agendado',
-    encontrei:
-      [
-        escreveOResumo ? '' : 'nenhuma migração define daily_digest',
-        guiao.includes('daily_digest') ? '' : 'o guião não chama daily_digest',
-        workflows.includes('resumo-diario.sh') ? '' : 'nenhum workflow corre resumo-diario.sh',
-      ]
-        .filter(Boolean)
-        .join(' · ') || 'as três',
-  });
+  if (noDossiePrivado('.github/workflows/resumo-diario.yml')) {
+    // As duas primeiras peças estão aqui — a função na base e o guião que a
+    // formata. A terceira, o agendamento, vive onde o resumo corre, que é o
+    // repositório com os segredos. Medir duas de três e chamar-lhe verde era
+    // pior do que não medir.
+    saltar(
+      'o resumo diário tem quem o leia, quem o formate e quem o agende',
+      'quem o agenda vive no dossiê privado',
+    );
+  } else
+    afirmar({
+      afirmacao: 'o resumo diário tem quem o leia, quem o formate e quem o agende',
+      porque:
+        'as três peças existem em ficheiros diferentes e nenhuma falha sem as outras: a função devolve, o guião formata, e se ninguém agendar, quem o escreveu fica convencido de que o mandou',
+      onde: 'supabase/migrations/*.sql, scripts/resumo-diario.sh e .github/workflows/',
+      ok:
+        escreveOResumo && guiao.includes('daily_digest') && workflows.includes('resumo-diario.sh'),
+      esperava: 'daily_digest na base, no guião, e o guião num workflow agendado',
+      encontrei:
+        [
+          escreveOResumo ? '' : 'nenhuma migração define daily_digest',
+          guiao.includes('daily_digest') ? '' : 'o guião não chama daily_digest',
+          workflows.includes('resumo-diario.sh') ? '' : 'nenhum workflow corre resumo-diario.sh',
+        ]
+          .filter(Boolean)
+          .join(' · ') || 'as três',
+    });
 }
 
 /*
@@ -1396,7 +1467,12 @@ for (const ficheiro of [
  * cumprimento. O resto do documento fala de `robots.txt` à vontade, incluindo
  * para citar esta mesma frase enquanto erro, e assim deve ser.
  */
-{
+if (noDossiePrivado('docs/O-QUE-FALTA-AO-DONO.md')) {
+  saltar(
+    'a carta à CIM não afirma que a recolha cumpre o robots.txt',
+    'docs/O-QUE-FALTA-AO-DONO.md vive no dossiê privado',
+  );
+} else {
   const doc = 'docs/O-QUE-FALTA-AO-DONO.md';
   const texto = ler(doc);
 
@@ -1451,7 +1527,12 @@ for (const ficheiro of [
  * verdadeiro no `schedule` e no `workflow_dispatch` de campo vazio, que são as
  * duas formas de correr as quarenta; é falso quando alguém pediu uma fonte.
  */
-{
+if (noDossiePrivado('.github/workflows/scrape.yml')) {
+  saltar(
+    'os três passos do alarme da recolha só correm quando correram as quarenta fontes',
+    'o trabalho noturno vive no dossiê privado',
+  );
+} else {
   const ficheiro = '.github/workflows/scrape.yml';
   const yml = ler(ficheiro);
 
@@ -1652,7 +1733,12 @@ if (/import .*analytics\/posthog/.test(ler('apps/web/src/components/AnalyticsPro
   });
 }
 
-{
+if (noDossiePrivado('.github/workflows/scrape.yml')) {
+  saltar(
+    'o aviso «A recolha noturna falhou» está aberto se e só se a última recolha falhou',
+    'o trabalho noturno vive no dossiê privado',
+  );
+} else {
   const scrape = ler('.github/workflows/scrape.yml');
   afirmar({
     afirmacao: 'o aviso «A recolha noturna falhou» está aberto se e só se a última recolha falhou',
@@ -1671,13 +1757,22 @@ if (/import .*analytics\/posthog/.test(ler('apps/web/src/components/AnalyticsPro
 }
 
 for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
+  if (noDossiePrivado(manual)) {
+    saltar(`${manual} não afirma que a cópia de segurança nunca correu`, 'vive no dossiê privado');
+    continue;
+  }
   ausente(manual, /cópia \*\*nunca correu\*\*/, {
     afirmacao: `${manual} não afirma, a negrito, que a cópia de segurança nunca correu`,
     porque:
       'ficou escrito três dias depois de a cópia correr, no documento que se lê às pressas no pior dia — a segunda pessoa não procura o que o manual diz não existir',
   });
 }
-{
+if (noDossiePrivado('.github/workflows/backup.yml')) {
+  saltar(
+    'a cópia leva o modelo de permissões dentro, e o ensaio restaura-o, filtra a mobília do Supabase e prova que a base restaurada serve',
+    'a cópia de segurança vive no dossiê privado',
+  );
+} else {
   /*
    * A cópia leva o modelo de permissões, e o ensaio exige que ele venha.
    *
@@ -1754,9 +1849,16 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
     /set local role anon;\s*\n?\s*select count\(\*\) from public\.events/.test(ensaio) &&
     /set local role anon; select count\(\*\) from public\.submissions/.test(ensaio) &&
     /\[ "\$fila_como_anon" = '0' \]/.test(ensaio);
+  /*
+   * Os dois manuais vivem no dossiê privado. Onde eles estão, esta asserção
+   * exige que registem o modelo de permissões; aqui verifica-se só a metade
+   * que é código — que é a metade que se pode partir sem ninguém dar por isso.
+   */
   const manualRegista =
-    /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
-    /modelo de permissões/.test(ler('docs/OPERACAO.md'));
+    !noDossiePrivado('docs/BACKUPS.md') && !noDossiePrivado('docs/OPERACAO.md')
+      ? /DEFAULT ACL/.test(ler('docs/BACKUPS.md')) &&
+        /modelo de permissões/.test(ler('docs/OPERACAO.md'))
+      : true;
   afirmar({
     afirmacao:
       'a cópia leva o modelo de permissões dentro, e o ensaio restaura-o, filtra a mobília do Supabase e prova que a base restaurada serve',
@@ -1791,7 +1893,12 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
  * outra: uma cópia diária admite dois dias; uma semanal, oito. Quem mudar a
  * cadência muda os dois, ou reprova aqui, em vez de no dia 2 do mês seguinte.
  */
-{
+if (noDossiePrivado('.github/workflows/backup.yml')) {
+  saltar(
+    'a cadência da cópia e a janela que o ensaio admite cabem uma na outra',
+    'a cópia e o ensaio de restauro vivem no dossiê privado',
+  );
+} else {
   const copia = semComentarios(ler('.github/workflows/backup.yml'));
   const ensaio = semComentarios(ler('.github/workflows/restauro.yml'));
   const guiao = ler('scripts/ensaiar-restauro.sh');
@@ -1920,7 +2027,12 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   } catch {
     saltar('PROJETO.md e o histórico concordam sobre a geração automática', 'sem git aqui');
   }
-  if (mencoes !== null) {
+  if (mencoes !== null && noDossiePrivado('PROJETO.md')) {
+    saltar(
+      'PROJETO.md e o histórico concordam sobre a geração automática',
+      'PROJETO.md vive no dossiê privado',
+    );
+  } else if (mencoes !== null) {
     const seccao =
       ler('PROJETO.md')
         .split('Nenhuma referência a geração automática')[1]
@@ -1937,7 +2049,12 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   }
 }
 
-{
+if (noDossiePrivado('docs/NARRATIVA.md')) {
+  saltar(
+    'o CONTRIBUTING.md remete para a bíblia da língua na secção «Língua»',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   const lingua = ler('CONTRIBUTING.md').split('### Língua')[1]?.split('### ')[0] ?? '';
   afirmar({
     afirmacao: 'o CONTRIBUTING.md remete para a bíblia da língua na secção «Língua»',
@@ -1950,7 +2067,9 @@ for (const manual of ['docs/OPERACAO.md', 'docs/BACKUPS.md']) {
   });
 }
 
-{
+if (noDossiePrivado('docs/NARRATIVA.md')) {
+  saltar('docs/NARRATIVA.md continua a caber em quatro páginas', 'vive no dossiê privado');
+} else {
   const palavras = ler('docs/NARRATIVA.md').trim().split(/\s+/).length;
   afirmar({
     afirmacao: 'docs/NARRATIVA.md continua a caber em quatro páginas',
@@ -2009,7 +2128,12 @@ varrerDicionario(PALAVRAS_PROIBIDAS, {
   });
 }
 
-{
+if (noDossiePrivado('docs/NARRATIVA.md')) {
+  saltar(
+    'a frase de posicionamento publicada é a de docs/NARRATIVA.md §2',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   // A frase de posicionamento publicada tem de ser, letra a letra, a de §2 —
   // e hoje ainda não é. Regista-se em vez de falhar: a substituição é a
   // medida 4 da vaga 7, e uma falha por trabalho que ainda não tem vaga é uma
@@ -2042,7 +2166,12 @@ varrerDicionario(PALAVRAS_PROIBIDAS, {
   }
 }
 
-{
+if (noDossiePrivado('docs/NARRATIVA.md')) {
+  saltar(
+    'os cinco princípios da ficha são os de docs/NARRATIVA.md §5',
+    'docs/NARRATIVA.md vive no dossiê privado',
+  );
+} else {
   // Os cinco princípios de §5 e a secção «as regras da casa» da ficha, que
   // ainda não existe.
   const principios = (
@@ -2572,7 +2701,12 @@ if (!BASE) {
 
 // ---- O dossiê contratual, que é o que uma CIM arquiva ----
 
-{
+if (noDossiePrivado('docs/contrato')) {
+  saltar(
+    'o dossiê contratual é coerente com o que o produto faz',
+    'docs/contrato/ vive no dossiê privado',
+  );
+} else {
   const PASTA = 'docs/contrato';
   const DPA = `${PASTA}/DADOS-PESSOAIS.md`;
   const RGPD = 'docs/RGPD.md';
@@ -2664,13 +2798,22 @@ if (!BASE) {
    * sítios ao mesmo tempo. Foi uma mudança de cadência que partiu o ensaio de
    * restauro, e isso já custou uma vez.
    */
-  {
+  if (noDossiePrivado('.github/workflows/backup.yml')) {
+    saltar(
+      'o RPO escrito é o que a cadência da cópia produz',
+      'a cópia de segurança vive no dossiê privado',
+    );
+  } else {
     const cron = ler('.github/workflows/backup.yml').match(/cron: '([^']+)'/)?.[1] ?? '';
     const campos = cron.split(/\s+/);
     const semanal = campos.length === 5 && campos[2] === '*' && campos[4] !== '*';
     const ondeDizSete = ['docs/BACKUPS.md', `${PASTA}/CONDICOES.md`, `${PASTA}/CONTINUIDADE.md`];
 
     for (const ficheiro of ondeDizSete) {
+      if (noDossiePrivado(ficheiro)) {
+        saltar(`${ficheiro} diz «até sete dias» de ponto de recuperação`, 'vive no dossiê privado');
+        continue;
+      }
       afirmar({
         afirmacao: `${ficheiro} diz «até sete dias» de ponto de recuperação, e a cópia é semanal`,
         porque:
