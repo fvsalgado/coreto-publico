@@ -3,6 +3,7 @@ import 'server-only';
 import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
 import { reportarErro } from '../registo';
 import { requireAdminClient } from '../supabase/server';
+import { PREFIXO_DE_LEITURA, recorteDaFila, registarLeitura } from './leituras';
 
 /**
  * Leituras do backoffice.
@@ -84,11 +85,25 @@ const SUMMARY_FIELDS =
 
 const DETAIL_FIELDS = `${SUMMARY_FIELDS}, raw_text, sender_name, venue_id, source_id, fingerprint, extraction_error, extraction_model, extraction_attempts, review_notes, resulting_event_id, duplicate_of_event_id`;
 
+/**
+ * A fila de moderação, e o registo de quem a foi ver.
+ *
+ * As duas leituras que trazem dados pessoais — esta e a `getSubmission` — são
+ * as únicas dois deste ficheiro que deixam rasto, e o rasto escreve-se
+ * **antes** da leitura. A razão está em `leituras.ts`; a versão curta é que
+ * um registo de acessos guarda o pedido, não o resultado, e por isso continua
+ * a haver linha mesmo quando a leitura falha a seguir.
+ *
+ * Está aqui dentro, e não na página, de propósito: a página é um caminho, e a
+ * consulta é **o** caminho. Uma segunda página que um dia leia a fila passa
+ * por aqui e fica registada sem ninguém se lembrar disso.
+ */
 export async function listSubmissions(options: {
   status?: string;
   channel?: string;
   limit?: number;
 }): Promise<SubmissionSummary[]> {
+  await registarLeitura('fila', 'submission_queue', recorteDaFila(options.status, options.channel));
   const supabase = requireAdminClient();
   let query = supabase.from('submissions').select(SUMMARY_FIELDS);
   if (options.status) query = query.eq('status', options.status);
@@ -101,6 +116,10 @@ export async function listSubmissions(options: {
 }
 
 export async function getSubmission(id: string): Promise<SubmissionDetail | null> {
+  // O endereço de quem submeteu, o texto em bruto do email e o hash do IP
+  // estão todos nesta linha: abri-la é o acesso a dados pessoais que a
+  // auditoria tem de conseguir mostrar depois. Ver `leituras.ts`.
+  await registarLeitura('submissao', 'submission', id);
   const supabase = requireAdminClient();
   const { data, error } = await supabase
     .from('submissions')
@@ -325,6 +344,17 @@ export interface RecorteDaAuditoria {
   action?: string;
   entityType?: string;
   mes?: string;
+  /**
+   * Decisões, acessos, ou os dois juntos. Por omissão, decisões.
+   *
+   * Desde que as leituras da fila deixam rasto (`leituras.ts`), esta tabela
+   * guarda duas coisas diferentes: o que alguém **decidiu** e o que alguém
+   * **viu**. Misturá-las numa lista só afogava a primeira — uma fila aberta
+   * vinte vezes por dia são vinte linhas por cada aprovação —, e a auditoria
+   * existe sobretudo para responder a «quem aprovou isto?». Por isso a lista
+   * abre nas decisões, e os acessos estão a um clique.
+   */
+  mostrar?: 'accoes' | 'leituras' | 'tudo';
 }
 
 /** As opções que os recortes oferecem, lidas do que existe mesmo na base. */
@@ -358,6 +388,17 @@ export async function listAdminActions(
   if (recorte.actor) query = query.eq('actor', recorte.actor);
   if (recorte.action) query = query.eq('action', recorte.action);
   if (recorte.entityType) query = query.eq('entity_type', recorte.entityType);
+  /*
+   * Uma ação escolhida à mão ganha ao recorte de cima: quem escolhe
+   * `leitura.fila` na caixa «o quê» está a pedir as leituras, e devolver uma
+   * lista vazia porque o outro recorte diz «decisões» seria a página a
+   * contrariar o que a pessoa acabou de escolher.
+   */
+  if (!recorte.action) {
+    const padrao = `${PREFIXO_DE_LEITURA}%`;
+    if (recorte.mostrar === 'leituras') query = query.like('action', padrao);
+    else if (recorte.mostrar !== 'tudo') query = query.not('action', 'like', padrao);
+  }
   if (recorte.mes && MES.test(recorte.mes)) {
     query = query.gte('created_at', `${recorte.mes}-01`).lt('created_at', mesSeguinte(recorte.mes));
   }

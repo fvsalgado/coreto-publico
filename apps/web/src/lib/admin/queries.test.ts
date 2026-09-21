@@ -73,6 +73,17 @@ vi.mock('../supabase/server', () => ({
   requireAdminClient: () => estado.cliente,
 }));
 
+/*
+ * Duas destas leituras registam o acesso antes de ler (`leituras.ts`), e esse
+ * registo pede a sessão — `cookies()`, que fora de um pedido não existe. Aqui
+ * cala-se, porque a pergunta deste ficheiro é outra: o que a leitura faz
+ * quando a base está em baixo. O registo tem o `leituras.test.ts` dele.
+ */
+vi.mock('./leituras', async (original) => ({
+  ...(await original<typeof import('./leituras')>()),
+  registarLeitura: async () => {},
+}));
+
 beforeEach(() => {
   estado.cliente = clienteQue(AVARIA);
   vi.spyOn(console, 'error').mockImplementation(() => {});

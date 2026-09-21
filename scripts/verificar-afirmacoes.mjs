@@ -605,6 +605,70 @@ for (const prazo of ['72 horas', '30 dias']) {
   });
 }
 
+{
+  /*
+   * «Trocar a palavra-passe invalida as sessões abertas.»
+   *
+   * O `hash-password.ts` dizia-o a quem gerava o hash, e era falso: o token
+   * era assinado só com o `ADMIN_SESSION_SECRET`, que não sabe nada da
+   * palavra-passe. Quem trocava a palavra-passe porque desconfiava de alguma
+   * coisa não expulsava ninguém. Passou a ser verdade a 21 de setembro de
+   * 2026, e passa a ser verdade enquanto **as duas portas** assinarem com o
+   * hash — a do servidor (`admin/auth.ts`) e a de edge (`middleware.ts`).
+   * Uma delas a voltar ao segredo em bruto repõe o problema em silêncio.
+   */
+  const sessao = ler('apps/web/src/lib/admin/session.ts');
+  const auth = ler('apps/web/src/lib/admin/auth.ts');
+  const porta = ler('apps/web/middleware.ts');
+  const promete = /invalida as sessoes abertas/.test(ler('scripts/hash-password.ts'));
+
+  const daChave = /export function chaveDaSessao/.test(sessao);
+  const noServidor = /chaveDaSessao\(/.test(auth);
+  const naPorta = /chaveDaSessao\(secret, hash\)/.test(porta) && /ADMIN_PASSWORD_HASH/.test(porta);
+
+  afirmar({
+    afirmacao: 'trocar a palavra-passe fecha mesmo as sessões abertas',
+    porque:
+      'o utilitário promete-o a quem gera o hash, e até 21 de setembro de 2026 não acontecia: a assinatura não dependia da palavra-passe, e uma sessão de oito horas sobrevivia à troca',
+    onde: 'scripts/hash-password.ts, apps/web/src/lib/admin/{session,auth}.ts e middleware.ts',
+    ok: promete && daChave && noServidor && naPorta,
+    esperava: 'a promessa escrita e a `chaveDaSessao` a assinar nas duas portas',
+    encontrei: `promessa: ${promete ? 'sim' : 'não'} · chave: ${daChave ? 'sim' : 'não'} · servidor: ${noServidor ? 'sim' : 'não'} · edge: ${naPorta ? 'sim' : 'não'}`,
+  });
+}
+
+{
+  /*
+   * Quem lê a fila também deixa rasto.
+   *
+   * A 0006 escreveu a regra das escritas — «não há caminho para publicar que
+   * não deixe rasto» — e das leituras não dizia nada. A fila é onde estão os
+   * dados pessoais desta casa, e abrir uma submissão não deixava vestígio
+   * nenhum. As duas leituras que os tocam têm de registar antes de ler; uma
+   * delas a perder a linha volta a deixar a pergunta «o que é que foi visto?»
+   * sem resposta possível.
+   */
+  const fonte = ler('apps/web/src/lib/admin/queries.ts');
+  // Até à declaração seguinte, e não até à primeira chaveta em coluna zero: a
+  // `listSubmissions` recebe um objeto escrito à frente, e a chaveta que o
+  // fecha vinha antes do corpo — o teste dizia que ela não registava nada.
+  const corpo = (nome) =>
+    fonte.split(`export async function ${nome}`)[1]?.split('\nexport ')[0] ?? '';
+  const registam = ['listSubmissions', 'getSubmission'].filter((nome) =>
+    /registarLeitura\(/.test(corpo(nome)),
+  );
+
+  afirmar({
+    afirmacao: 'ler a fila de moderação deixa rasto na auditoria',
+    porque:
+      'é onde estão o endereço de quem enviou, o texto em bruto do email e o hash do IP — e uma sessão roubada não deixava forma de saber o que foi visto',
+    onde: 'apps/web/src/lib/admin/queries.ts',
+    ok: registam.length === 2,
+    esperava: 'listSubmissions e getSubmission a chamar registarLeitura',
+    encontrei: registam.length === 0 ? 'nenhuma das duas regista' : `só ${registam.join(' e ')}`,
+  });
+}
+
 presente('apps/web/app/[regiao]/robots.txt/route.ts', /text\/plain; charset=utf-8/, {
   afirmacao: 'o robots.txt declara o charset',
   porque:

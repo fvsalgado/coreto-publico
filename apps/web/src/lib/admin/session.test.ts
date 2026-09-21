@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { createSessionToken, readSessionToken } from './session';
+import { chaveDaSessao, createSessionToken, readSessionToken } from './session';
 
 /**
  * Gerado a cada execução, e não escrito no ficheiro: uma cadeia com ar de
@@ -63,5 +63,40 @@ describe('sessão da área interna', () => {
       createSessionToken('gestor', SECRET),
     ]);
     expect(first).not.toBe(second);
+  });
+});
+
+/**
+ * O que a `chaveDaSessao` promete, e que era falso até 21 de setembro de 2026:
+ * trocar a palavra-passe fecha as sessões abertas.
+ *
+ * Os hashes são de mentira e chegam — estes testes são do mecanismo da chave,
+ * não do scrypt, que tem o `password.test.ts` dele. O que importa é que sejam
+ * dois valores diferentes, como são dois valores diferentes os que o
+ * `hash-password.ts` produz a cada execução.
+ */
+const HASH = 'scrypt$32768$8$1$c2FsdG9tZWx1$aGFzaG9tZWx1';
+const HASH_NOVO = 'scrypt$32768$8$1$b3V0cm9zYWw$b3V0cm9oYXNo';
+
+describe('trocar a palavra-passe fecha as sessões abertas', () => {
+  it('um token continua bom enquanto o hash não muda', async () => {
+    const token = await createSessionToken('gestor', chaveDaSessao(SECRET, HASH));
+    expect((await readSessionToken(token, chaveDaSessao(SECRET, HASH)))?.actor).toBe('gestor');
+  });
+
+  it('e deixa de conferir assim que o hash muda, com o mesmo segredo', async () => {
+    const token = await createSessionToken('gestor', chaveDaSessao(SECRET, HASH));
+    expect(await readSessionToken(token, chaveDaSessao(SECRET, HASH_NOVO))).toBe(null);
+  });
+
+  it('o segredo sozinho já não abre nada — era a chave antiga', async () => {
+    const token = await createSessionToken('gestor', chaveDaSessao(SECRET, HASH));
+    expect(await readSessionToken(token, SECRET)).toBe(null);
+  });
+
+  it('o separador não deixa duas configurações diferentes darem a mesma chave', () => {
+    // Sem o `\n`, `('ab', 'cd')` e `('a', 'bcd')` assinavam com a mesma cadeia
+    // — e uma troca de palavra-passe podia, por azar, não revogar nada.
+    expect(chaveDaSessao('ab', 'cd')).not.toBe(chaveDaSessao('a', 'bcd'));
   });
 });

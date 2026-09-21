@@ -4,6 +4,7 @@ import { env } from '../env';
 import {
   ADMIN_COOKIE_NAME,
   ADMIN_SESSION_TTL_SECONDS,
+  chaveDaSessao,
   createSessionToken,
   readSessionToken,
 } from './session';
@@ -24,15 +25,26 @@ export function isAdminConfigured(): boolean {
   return Boolean(env.ADMIN_PASSWORD_HASH && env.ADMIN_SESSION_SECRET);
 }
 
+/**
+ * A chave de assinatura desta instalação, ou `null` sem configuração.
+ *
+ * Leva o hash da palavra-passe de propósito — ver `chaveDaSessao`. As duas
+ * variáveis andam juntas e o `isAdminConfigured` já exige as duas; isto é a
+ * mesma exigência escrita de forma a que o TypeScript a veja, em vez de três
+ * `as string` espalhados.
+ */
+function chave(): string | null {
+  const { ADMIN_SESSION_SECRET: segredo, ADMIN_PASSWORD_HASH: hash } = env;
+  return segredo && hash ? chaveDaSessao(segredo, hash) : null;
+}
+
 /** O estado de autenticação do pedido em curso. */
 
 export async function currentAdmin(): Promise<AdminGate> {
-  if (!isAdminConfigured()) return { ok: false, reason: 'unconfigured' };
+  const assinatura = chave();
+  if (!assinatura) return { ok: false, reason: 'unconfigured' };
   const store = await cookies();
-  const payload = await readSessionToken(
-    store.get(ADMIN_COOKIE_NAME)?.value,
-    env.ADMIN_SESSION_SECRET as string,
-  );
+  const payload = await readSessionToken(store.get(ADMIN_COOKIE_NAME)?.value, assinatura);
   return payload ? { ok: true, actor: payload.actor } : { ok: false, reason: 'anonymous' };
 }
 
@@ -49,18 +61,16 @@ export async function requireAdmin(): Promise<string> {
 }
 
 export async function startSession(actor: string): Promise<void> {
+  const assinatura = chave();
+  if (!assinatura) throw new Error('área de administração por configurar');
   const store = await cookies();
-  store.set(
-    ADMIN_COOKIE_NAME,
-    await createSessionToken(actor, env.ADMIN_SESSION_SECRET as string),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/admin',
-      maxAge: ADMIN_SESSION_TTL_SECONDS,
-    },
-  );
+  store.set(ADMIN_COOKIE_NAME, await createSessionToken(actor, assinatura), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/admin',
+    maxAge: ADMIN_SESSION_TTL_SECONDS,
+  });
 }
 
 export async function endSession(): Promise<void> {
