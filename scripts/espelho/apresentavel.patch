@@ -1,0 +1,445 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 25d96cb..54b7c06 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -242,16 +242,12 @@ jobs:
+       - name: Vulnerabilidades conhecidas nas dependências de produção
+         run: pnpm audit --prod --audit-level=high
+ 
+-      # O JSON fica para o passo dos números: é de lá que o `check:numeros`
+-      # lê quantos casos correram, para o PROJETO.md não poder envelhecer.
++      # O `--outputFile` fica, e não é hábito: o resumo em JSON é o que o
++      # dossiê privado lê para conferir quantos casos correram. Aqui não há
++      # quem o leia; lá há, e a bateria é a mesma.
+       - name: Testes
+         run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=.bateria.json
+ 
+-      # Confere os números do `PROJETO.md` contra o repositório. Não precisa de
+-      # segredos — é o que lhe permite estar aqui, ao lado das outras.
+-      - name: Números do PROJETO.md
+-        run: pnpm check:numeros
+-
+       # O irmão do anterior, e aqui pela mesma razão: confronta cada afirmação
+       # pública com o ficheiro, o campo ou a rota que a sustenta, e falha
+       # nomeando ficheiro e linha. A família que precisa de um pedido a
+@@ -809,14 +805,6 @@ jobs:
+ 
+       # As listas do Selo de Usabilidade e Acessibilidade, na parte que uma
+       # máquina consegue provar (docs/SELO.md §1). Correu à mão desde 15 de
+-      # setembro de 2026 e nunca aqui: uma verificação que só corre quando
+-      # alguém se lembra é uma que envelhece a verde.
+-      - name: Verificar os requisitos do Selo
+-        if: always() && steps.servidor.outcome == 'success'
+-        env:
+-          BASE_URL: http://127.0.0.1:3000
+-        run: pnpm check:selo
+-
+       # O README abre a dizer que o sítio é rápido, e nada o media. Aqui
+       # verificam-se as promessas que são função da compilação e não do humor do
+       # executor — o peso por rota, zero pedidos a terceiros, zero cookies, e o
+diff --git a/.gitignore b/.gitignore
+index a42c0c1..432b35a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -83,3 +83,6 @@ apps/web/public/maplibre/
+ # anexou a um processo seria a errada. Gera-se com `pnpm dossie`, e o CI
+ # publica-o como artefacto descarregável em cada alteração.
+ estado/
++
++# As permissões locais do Claude Code são de quem trabalha aqui, não do projeto.
++.claude/settings.local.json
+diff --git a/AUTORIA.md b/AUTORIA.md
+index 9231e9e..3fe2d70 100644
+--- a/AUTORIA.md
++++ b/AUTORIA.md
+@@ -20,7 +20,7 @@ lista curta:
+ | o quê                                                   | onde                                                       |
+ | ------------------------------------------------------- | ---------------------------------------------------------- |
+ | Marcas da CIM do Médio Tejo e do cofinanciamento        | `apps/web/public/logos/medio-tejo/`                        |
+-| HTML capturado de sítios de câmaras, juntas e teatros   | `packages/ingest/src/__fixtures__/`, `instantaneos/`       |
++| HTML capturado de sítios de câmaras, juntas e teatros   | `packages/ingest/src/__fixtures__/`                        |
+ | Contornos dos concelhos, do OpenStreetMap, sob ODbL 1.0 | migrações 0035, 0060, 0105                                 |
+ | Fotografias do Wikimedia Commons                        | por endereço, com crédito e licença ao lado, nas migrações |
+ | `pnpm-lock.yaml` e o que for gerado                     | —                                                          |
+@@ -49,7 +49,7 @@ nasce da criação e da lei, não de um documento no repositório. O que aqui es
+ 
+ O apuramento que a sustenta — como a obra foi produzida, com que números, sob
+ que termos e ao abrigo de que enquadramento legal — está em
+-[`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), com as perguntas que ficam por
++o dossiê de titularidade, fora deste repositório, com as perguntas que ficam por
+ responder e que são para um advogado, não para um ficheiro.
+ 
+ A declaração legível por máquina está em [`REUSE.toml`](REUSE.toml).
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index dbb6612..ee63c33 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -80,7 +80,7 @@ Portugal**. Não é uma preferência: é o que mantém o código legível para q
+ vem de fora e o produto legível para quem o usa.
+ 
+ Texto visível — no sítio, num email a uma câmara, num dossiê — sai de
+-[`docs/NARRATIVA.md`](docs/NARRATIVA.md): a frase de posicionamento, o tom, o
++a bíblia da língua, que vive no dossiê privado: a frase de posicionamento, o tom, o
+ tratamento, as palavras proibidas e os dois glossários. O glossário interno é o
+ que mais importa aqui: «montra», «gaveta», «toldo» e «lambrequim» são nomes
+ desta casa e já escorregaram para páginas públicas, uma delas um documento
+@@ -203,4 +203,4 @@ Se alguma destas três te incomodar, abre um issue antes de escrever código —
+ melhor discutir isso do que descobri-lo depois de teres trabalho feito.
+ 
+ A redação definitiva desta cláusula está por confirmar com advogado; a pergunta
+-está escrita em [`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), §5.5.
++está escrita no dossiê de titularidade, §5.5 — fora deste repositório.
+diff --git a/README.md b/README.md
+index 2929d01..e1cece9 100644
+--- a/README.md
++++ b/README.md
+@@ -8,10 +8,38 @@ usar: página, RSS, calendário, JSON e um widget para embeber.
+ 
+ A primeira região é o **Médio Tejo** (os onze concelhos da sua Comunidade
+ Intermunicipal); uma região nova entra por configuração, sem um único commit
+-— o processo está em [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md) e o CI prova-o em
++— e o CI prova-o em
+ todas as corridas, fazendo nascer uma região fictícia e verificando que nem
+ uma letra se mistura entre as duas.
+ 
++## Este é o espelho público
++
++O Coreto desenvolve-se num repositório privado, que é o que serve o sítio e o
++que tem os segredos. Este é o espelho: **o código todo, as migrações todas, os
++testes todos** — e, de fora, o que não é código.
++
++Ficam de fora quatro famílias de documentos, e vale a pena dizer quais para
++ninguém ficar à procura: o dossiê comercial e de licenciamento (preços,
++minutas, o levantamento do que falta), os manuais de operação e de
++infraestrutura (onde está alojado o quê, e com que contas), o levantamento das
++fontes de uma região concreta, e capturas de sítios de terceiros guardadas
++para os testes de recolha. Ficam de fora também as automações que correm
++sozinhas — a recolha, as cópias de segurança, o ensaio de restauro, a
++vigilância —, porque todas precisam de segredos que aqui não existem e, aqui
++agendadas, não fariam senão falhar todas as noites.
++
++**Daí uma consequência que se assume em vez de se esconder:** há comentários
++no código e nas migrações que remetem para documentos que não estão aqui —
++`docs/VERCEL.md`, `docs/OPERACAO.md`, `docs/INFRAESTRUTURA.md` e outros. Não
++são ligações partidas por descuido: é a parte da casa que não se publica, e o
++comentário fica como está porque apagá-lo tornaria o código menos honesto, não
++mais. O mesmo vale para o guião de verificação: `pnpm check:afirmacoes` diz
++«não se mediu» nas afirmações que precisam do que vive no privado, em vez de
++as dar por boas.
++
++O que aqui está passa a bateria inteira sem um único segredo configurado, e é
++isso que o CI deste repositório prova a cada empurrão.
++
+ ## O que é e para quem
+ 
+ Três públicos, por esta ordem:
+@@ -80,24 +108,19 @@ corrigida para o número errado por quem só olhe para ela.
+ | Medição             | contadores agregados em Postgres; PostHog na UE, sem cookies, facultativo |
+ | Integração contínua | GitHub Actions                                                            |
+ 
+-| Documento                                                            | Para quê                                                                                       |
+-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+-| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)                         | As decisões e os invariantes, com a razão de cada um                                           |
+-| [`docs/OPERACAO.md`](docs/OPERACAO.md)                               | O que fazer quando alguma coisa corre mal                                                      |
+-| [`docs/BACKUPS.md`](docs/BACKUPS.md)                                 | Cópias de segurança e como testar um restauro                                                  |
+-| [`docs/RGPD.md`](docs/RGPD.md)                                       | Registo de tratamento de dados pessoais                                                        |
+-| [`docs/INDICADORES.md`](docs/INDICADORES.md)                         | O que cada número do relatório mensal conta, e o que não conta                                 |
+-| [`docs/O-QUE-FALTA-AO-DONO.md`](docs/O-QUE-FALTA-AO-DONO.md)         | O que não se resolve com código: avarias do lado de lá e decisões                              |
+-| [`docs/LICENCIAR.md`](docs/LICENCIAR.md)                             | O que falta para isto poder ser contratado, e o que disso é do dono                            |
+-| [`docs/AUDITORIA-LICENCIAMENTO.md`](docs/AUDITORIA-LICENCIAMENTO.md) | A auditoria de 19/09/2026: o que trava, o que falta, e o plano de fecho por semanas            |
+-| [`docs/PLANO-DE-IMPLEMENTACAO.md`](docs/PLANO-DE-IMPLEMENTACAO.md)   | O plano que sai da auditoria: fases, ficheiros, verificações, e as decisões do dono            |
+-| [`docs/CONFIGURACAO-DO-DONO.md`](docs/CONFIGURACAO-DO-DONO.md)       | As caixas que só quem tem as contas liga: Deploy Hook, ntfy, Better Stack, PostHog, o balde    |
+-| [`docs/BENCHMARK.md`](docs/BENCHMARK.md)                             | O Coreto entre pares: 23 agendas fotografadas, 15 critérios comparados, 11 melhorias por ordem |
+-| [`docs/SELO.md`](docs/SELO.md)                                       | O Selo de Usabilidade e Acessibilidade: o que a máquina já prova e o que não                   |
+-| [`docs/EMAIL.md`](docs/EMAIL.md)                                     | O canal de entrada por email                                                                   |
+-| [`docs/DNS.md`](docs/DNS.md)                                         | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)                      |
+-| [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                               | Como nasce uma região nova — sem um commit                                                     |
+-| [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/)               | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário)                   |
++| Documento                                    | Para quê                                             |
++| -------------------------------------------- | ---------------------------------------------------- |
++| [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) | As decisões e os invariantes, com a razão de cada um |
++| [`docs/RGPD.md`](docs/RGPD.md)               | Registo de tratamento de dados pessoais              |
++| [`docs/TERCEIROS.md`](docs/TERCEIROS.md)     | O que está aqui dentro e não é nosso                 |
++
++**O que não está aqui.** A 21 de setembro de 2026 este repositório passou a
++público, e com ele foi só o que explica o software. O manual de operação, as
++cópias de segurança, a narrativa, a auditoria de licenciamento, as minutas do
++contrato, os levantamentos do Médio Tejo e a lista do que falta ao dono vivem
++num dossiê fechado: é material de negócio, de cliente e de infraestrutura, e
++publicá-lo não servia quem lê o código — servia quem quisesse negociar contra
++quem o escreveu.
+ 
+ Porque é que a impressão digital tem de ser idêntica dos dois lados, porque é
+ que quase-duplicados não se fundem sozinhos, o que impede uma recolha vazia de
+@@ -277,7 +300,7 @@ Aqui esteve escrito que ele «é o titular dos direitos», sem reserva nenhuma,
+ esta secção era uma segunda fonte de verdade sobre um assunto que não pode ter
+ duas. Passou a haver uma só, e mais honesta: **[`AUTORIA.md`](AUTORIA.md)** diz
+ o que é reclamado e o que não é; **[`docs/TERCEIROS.md`](docs/TERCEIROS.md)**
+-inventaria o que está aqui dentro e é de outros; e
+-**[`docs/TITULARIDADE.md`](docs/TITULARIDADE.md)** mostra como esta obra foi
+-produzida — com assistência de IA, com os números medidos e as fontes citadas —
+-e o que fica por confirmar com um advogado.
++inventaria o que está aqui dentro e é de outros. Como esta obra foi produzida
++— com assistência de IA, com os números medidos e as fontes citadas — e o que
++fica por confirmar com um advogado está no dossiê de titularidade, que não é
++público.
+diff --git a/REUSE.toml b/REUSE.toml
+index 6a6bd66..7ae11c1 100644
+--- a/REUSE.toml
++++ b/REUSE.toml
+@@ -40,7 +40,6 @@ SPDX-License-Identifier = "LicenseRef-marca-de-terceiro"
+ [[annotations]]
+ path = [
+   "packages/ingest/src/__fixtures__/**",
+-  "instantaneos/**",
+ ]
+ precedence = "override"
+ SPDX-FileCopyrightText = "os respetivos sítios de origem — ver docs/TERCEIROS.md"
+diff --git a/docs/TERCEIROS.md b/docs/TERCEIROS.md
+index 5a5f301..95b7276 100644
+--- a/docs/TERCEIROS.md
++++ b/docs/TERCEIROS.md
+@@ -9,41 +9,32 @@ bater certo.
+ 
+ ---
+ 
+-## O que está errado hoje, e é para tratar com as mãos
+-
+-Isto não se resolve com um ficheiro. Está aqui em primeiro lugar de propósito.
+-
+-### `instantaneos/cm-torresnovas-2026-08-29/`
+-
+-Três páginas **completas** do sítio da Câmara Municipal de Torres Novas —
+-`agenda.html` (107 439 B), `agenda-start-10.html` (107 806 B),
+-`agenda-start-20.html` (94 970 B), ao todo 309 215 bytes de HTML — gravadas do
+-browser porque a agenda da câmara responde 503 a quem a recolhe
+-automaticamente. Sem cabeçalho de proveniência dentro dos ficheiros, e com o
+-aviso no rodapé:
+-
+-```html
+-<span class="sp-copyright">© 2026 Município de Torres Novas</span>
+-```
+-
+-**E, pior, o que saiu daqui para o público.** O `plano.json` da mesma pasta tem
+-**22 descrições de eventos copiadas literalmente** da câmara, e a migração 0061
+-escreveu-as para a base de dados **servida ao público**. Não é material de
+-calibração guardado num canto: é texto alheio republicado pelo produto.
+-
+-**O que resolve:** retirar, substituir por texto próprio, ou autorização da
+-câmara — de preferência através da CIM. As três coisas servem; não fazer
+-nenhuma, não.
+-
+-**A 15 de setembro de 2026 o titular declarou ter essa autorização.** A
+-declaração está registada, com data, em
+-[`AUTORIZACOES.md`](AUTORIZACOES.md) — e é só isso que está: a forma do
+-documento, quem o assinou, em que data e o que cobre continuam por registar, e
+-o registo diz quais são as quatro linhas que faltam. Uma autorização que
+-ninguém consegue mostrar não deixa de existir por isso; deixa é de servir de
+-prova, que é para o que este documento existe.
+-
+----
++## O que estava errado, e como se resolveu
++
++Este documento abria, desde o primeiro dia, com uma secção intitulada «o que
++está errado hoje, e é para tratar com as mãos». Fechou a 21 de setembro de
++2026, no dia em que o repositório passou a público — porque o que lá estava
++não podia ser publicado.
++
++**`instantaneos/cm-torresnovas-2026-08-29/` saiu.** Eram três páginas
++completas do sítio da Câmara Municipal de Torres Novas, 309 215 bytes de HTML
++com o `© 2026 Município de Torres Novas` no rodapé, mais um `plano.json` com
++22 descrições de eventos copiadas à letra. Saiu da árvore **e da história**:
++a reescrita de 21/09/2026 passou os 107 commits e não deixou cópia nenhuma.
++
++**Os dois _fixtures_ que eram páginas inteiras foram reduzidos.** O
++`jf-minde-agenda.html` e o `jf-minde-evento.html` tinham ~61 KB cada, com o
++JavaScript, o CSS e o rodapé de reserva de direitos do sítio lá dentro. Passam
++a 5 KB e 1 KB — os blocos de evento e as duas ligações por que o adaptador
++confirma que a página é a agenda, que é o que a regra da pasta sempre disse.
++Os 29 testes do adaptador continuam a passar; foram eles que provaram que o
++recorte ficou fiel.
++
++**O que fica por decidir não é isto.** As descrições de Torres Novas que a
++migração 0061 escreveu para a base servida ao público continuam lá, ao abrigo
++da autorização que o titular declarou a 15 de setembro de 2026. Essa
++declaração, e a pergunta ao advogado sobre o que ela cobre, vivem no dossiê
++privado.
+ 
+ ## Marcas de terceiros
+ 
+@@ -59,18 +50,17 @@ Não são nossas e não vão na licença do resto do repositório.
+ 
+ ## HTML capturado de sítios de terceiros
+ 
+-`packages/ingest/src/__fixtures__/` — 32 ficheiros, 306 833 bytes, dos quais
+-**29 capturados** de sítios de câmaras, juntas e teatros. Servem para calibrar
++`packages/ingest/src/__fixtures__/` — 33 ficheiros, 190 720 bytes, dos quais
++**30 capturados** de sítios de câmaras, juntas e teatros. Servem para calibrar
+ adaptadores contra páginas verdadeiras em vez de HTML imaginado.
+ 
+ Três são **nossos** e não de terceiros: `agenda-inventada.ics`,
+ `tribe-events.json` e `events-calendar.html`.
+ 
+-Dois **não são recortes, são páginas inteiras**: `jf-minde-agenda.html` e
+-`jf-minde-evento.html`, ~61 KB cada, com ~9 KB de JavaScript e ~15 KB de CSS
+-próprios do sítio e o rodapé de reserva de direitos lá dentro. O README da
+-pasta prometia blocos de evento; estes dois desmentem-no, e o README passou a
+-dizê-lo.
++**Já não há excepções.** O `jf-minde-agenda.html` e o `jf-minde-evento.html`
++eram páginas inteiras, ~61 KB cada; a 21 de setembro de 2026 foram reduzidos
++aos blocos de evento, como o README da pasta sempre prometeu. Todos os
++ficheiros capturados são agora recortes.
+ 
+ Quatro ficheiros não têm o cabeçalho de proveniência que a pasta exige.
+ 
+diff --git a/package.json b/package.json
+index 3435756..7e8a67b 100644
+--- a/package.json
++++ b/package.json
+@@ -20,12 +20,8 @@
+     "format:check": "prettier --check --cache --cache-strategy content .",
+     "ingest": "pnpm --filter @coreto/ingest start",
+     "check:a11y": "node scripts/check-a11y.mjs",
+-    "check:selo": "node scripts/check-selo.mjs",
+-    "dossie": "node scripts/gerar-dossie.mjs",
+-    "benchmark": "node scripts/benchmark/prints.mjs && node scripts/benchmark/redimensionar.mjs && node scripts/benchmark/gerar-galeria.mjs && node scripts/benchmark/gerar-markdown.mjs",
+     "check:a11y:admin": "node scripts/check-a11y-admin.mjs",
+     "check:migrations": "./scripts/verify-migrations.sh",
+-    "check:numeros": "node scripts/verificar-numeros.mjs",
+     "check:afirmacoes": "node scripts/verificar-afirmacoes.mjs",
+     "check:proveniencia": "node scripts/verificar-proveniencia.mjs",
+     "check:desempenho": "node scripts/check-desempenho.mjs"
+diff --git a/packages/ingest/src/__fixtures__/README.md b/packages/ingest/src/__fixtures__/README.md
+index cd58080..eb2654f 100644
+--- a/packages/ingest/src/__fixtures__/README.md
++++ b/packages/ingest/src/__fixtures__/README.md
+@@ -9,12 +9,13 @@ seletores de lista e nenhum deles a casar com o que estes sites servem.
+ 
+ ## O que está aqui, e o que não está
+ 
+-Não são as páginas: são os **blocos de evento** — **com duas exceções, e vale
+-a pena sabê-las antes de confiar nesta frase.** O `jf-minde-agenda.html` e o
+-`jf-minde-evento.html` são páginas inteiras, cerca de 61 KB cada, com o
+-JavaScript e o CSS do sítio e o rodapé de reserva de direitos lá dentro.
+-Entraram antes de esta regra existir e ficaram. E quatro ficheiros não têm o
+-cabeçalho de proveniência que se descreve abaixo.
++Não são as páginas: são os **blocos de evento**, e desde 21 de setembro de 2026
++a frase é verdadeira sem excepções. O `jf-minde-agenda.html` e o
++`jf-minde-evento.html` eram páginas inteiras, cerca de 61 KB cada, com o
++JavaScript e o CSS do sítio e o rodapé de reserva de direitos lá dentro:
++entraram antes de esta regra existir e ficaram, com a excepção declarada aqui
++por honestidade. Foram reduzidas aos blocos no dia em que o repositório passou
++a público, e os 29 testes do adaptador provaram que o recorte ficou fiel.
+ 
+ Num dossiê de titularidade, um documento que descreve mal o que guarda faz pior
+ do que não existir — ver [`docs/TERCEIROS.md`](../../../../docs/TERCEIROS.md).
+diff --git a/packages/ingest/src/__fixtures__/jf-minde-agenda.html b/packages/ingest/src/__fixtures__/jf-minde-agenda.html
+new file mode 100644
+index 0000000..0ffc77f
+--- /dev/null
++++ b/packages/ingest/src/__fixtures__/jf-minde-agenda.html
+@@ -0,0 +1,81 @@
++<!--
++  Fixture capturada de https://www.jf-minde.pt/freguesia/agenda
++  em 2026-08-29, reduzida a 2026-09-21.
++
++  Guardada para calibrar e testar um adaptador de recolha, ao abrigo
++  do uso para interoperabilidade. Reduzida ao mínimo necessário: não
++  é a página, são os blocos de evento. Nenhuma imagem foi guardada.
++
++  Esta era uma das duas excepções que o README desta pasta denunciava:
++  entrou como página inteira, com o JavaScript, o CSS e o rodapé de
++  reserva de direitos do sítio lá dentro. Deixou de ser, e a regra
++  passou a valer para todos.
++
++  Se o site mudar, isto deixa de descrever a realidade — e é esse o
++  ponto: o teste falha, e alguém vai ver o que mudou.
++-->
++
++<!-- As duas ligações por que o adaptador confirma que isto é a agenda. -->
++<div class="col-sm-2">
++            <div class="input-group-btn">
++                <a href="https://www.jf-minde.pt/freguesia/agenda/concluidos" class="pull-right btn btn-default btn-block ">Eventos Concluídos</a>
++            </div>
++        </div>
++<div class="col-sm-2">
++            <div class="input-group-btn">
++                <a href="https://www.jf-minde.pt/freguesia/agenda/todos" class="pull-right btn btn-default btn-block ">Todos</a>
++            </div>
++        </div>
++
++<div class="portfolio-wrapper">
++  <div class="portfoliomasonry portfoliobox">
++<article class="col-lg-3 col-md-4 col-sm-6 col-xs-12 p-item pf-icons agenda-item">
++                    <div class="image-box scale-image-animation overlay-animation-5"> 
++                        <a href="https://www.jf-minde.pt/freguesia/agenda/29-08-2026/74-ii_prova_de_resistencia_terrantez_trail_team">
++                                                            <img src="https://www.jf-minde.pt/images/freguesia/eventos/74/imagem_74.jpg" alt="II Prova de Resist&ecirc;ncia Terrant&ecirc;z Trail Team">
++                                                        <div class="overlay-box"></div>
++                            <div class="content-box">
++                                <h4 class="portfolio-item-title">II Prova de Resist&ecirc;ncia Terrant&ecirc;z Trail Team</h4> 
++                                <span class="portfolio-item-category">
++                                                                        29-AGO-2026
++                                                                                <br>
++                                        09:00h - 10:00h
++                                                                                                                &nbsp;<span class="pull-right">Ler mais ...</span>
++                            </div>
++                        </a>
++                    </div>
++                </article>
++<article class="col-lg-3 col-md-4 col-sm-6 col-xs-12 p-item pf-icons agenda-item">
++                    <div class="image-box scale-image-animation overlay-animation-5"> 
++                        <a href="https://www.jf-minde.pt/freguesia/agenda/12-09-2026/76-torneio_de_tiro_ao_alvo_nucleo_do_scp_de_minde">
++                                                            <img src="https://www.jf-minde.pt/images/freguesia/eventos/76/imagem_76.jpg" alt="Torneio de tiro ao alvo - N&uacute;cleo do SCP de Minde">
++                                                        <div class="overlay-box"></div>
++                            <div class="content-box">
++                                <h4 class="portfolio-item-title">Torneio de tiro ao alvo - N&uacute;cleo do SCP de Minde</h4> 
++                                <span class="portfolio-item-category">
++                                                                        12-SET-2026
++                                                                                <br>
++                                        14:00h - 15:00h
++                                                                                                                &nbsp;<span class="pull-right">Ler mais ...</span>
++                            </div>
++                        </a>
++                    </div>
++                </article>
++<article class="col-lg-3 col-md-4 col-sm-6 col-xs-12 p-item pf-icons agenda-item">
++                    <div class="image-box scale-image-animation overlay-animation-5"> 
++                        <a href="https://www.jf-minde.pt/freguesia/agenda/19-09-2026/75-comemoracao_30o_aniversario_charales_chorus_caorg_minde">
++                                                            <img src="https://www.jf-minde.pt/images/freguesia/eventos/75/1787303825imagem_75.jpg" alt="Comemora&ccedil;&atilde;o 30&ordm; Anivers&aacute;rio Charales Chorus - Caorg, Minde">
++                                                        <div class="overlay-box"></div>
++                            <div class="content-box">
++                                <h4 class="portfolio-item-title">Comemora&ccedil;&atilde;o 30&ordm; Anivers&aacute;rio Charales Chorus - Caorg, Minde</h4> 
++                                <span class="portfolio-item-category">
++                                                                        19-SET-2026
++                                                                                <br>
++                                        21:30h - 22:30h
++                                                                                                                &nbsp;<span class="pull-right">Ler mais ...</span>
++                            </div>
++                        </a>
++                    </div>
++                </article>
++  </div>
++</div>
+diff --git a/packages/ingest/src/__fixtures__/jf-minde-evento.html b/packages/ingest/src/__fixtures__/jf-minde-evento.html
+new file mode 100644
+index 0000000..a41eb3c
+--- /dev/null
++++ b/packages/ingest/src/__fixtures__/jf-minde-evento.html
+@@ -0,0 +1,17 @@
++<!--
++  Fixture capturada de https://www.jf-minde.pt/freguesia/agenda (ficha de evento)
++  em 2026-08-29, reduzida a 2026-09-21.
++
++  Guardada para calibrar e testar um adaptador de recolha, ao abrigo
++  do uso para interoperabilidade. Reduzida ao mínimo necessário: não
++  é a página, são os blocos de evento. Nenhuma imagem foi guardada.
++
++  Esta era uma das duas excepções que o README desta pasta denunciava:
++  entrou como página inteira, com o JavaScript, o CSS e o rodapé de
++  reserva de direitos do sítio lá dentro. Deixou de ser, e a regra
++  passou a valer para todos.
++
++  Se o site mudar, isto deixa de descrever a realidade — e é esse o
++  ponto: o teste falha, e alguém vai ver o que mudou.
++-->
++<div class="text-justify"><p>II Prova de Resistência Terrantêz Trail Team</p></div>

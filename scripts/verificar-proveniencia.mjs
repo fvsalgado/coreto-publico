@@ -29,6 +29,24 @@ const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 let falhas = 0;
 let passou = 0;
+let saltadas = 0;
+
+/**
+ * O ficheiro com que o espelho público se identifica — ver
+ * `scripts/espelho/sincronizar.sh`, que o escreve. É a mesma marca que o
+ * `verificar-afirmacoes.mjs` lê, e pela mesma razão: um sinal explícito, e não
+ * uma dedução a partir do que falta.
+ */
+const MARCA_DO_ESPELHO = '.espelho-publico';
+
+function ehEspelho() {
+  return existsSync(join(RAIZ, MARCA_DO_ESPELHO));
+}
+
+function saltar(afirmacao, motivo) {
+  saltadas += 1;
+  console.log(`· ${afirmacao} — ${motivo}`);
+}
 
 function afirmar(ok, afirmacao, detalhe) {
   if (ok) {
@@ -58,7 +76,29 @@ const CANONICOS = [
   'docs/TERCEIROS.md',
   'docs/AUTORIZACOES.md',
 ];
+
+/**
+ * Os que não viajam para o espelho público, e porquê.
+ *
+ * O `docs/TITULARIDADE.md` traz o apuramento de como a obra foi produzida e as
+ * perguntas que ficam para um advogado; o `docs/AUTORIZACOES.md` traz as
+ * autorizações declaradas e o que falta documentar em cada uma. Os dois são
+ * posição negocial, e o espelho é público — saem de lá pelo
+ * `scripts/espelho/remover.txt`.
+ *
+ * **Aqui continuam obrigatórios.** Este ficheiro corre nos dois repositórios,
+ * e a regra é a mesma dos outros guiões da casa: no privado exige-se, no
+ * espelho diz-se que não se mediu. Uma lista encurtada seria a alternativa
+ * fácil e a errada — deixaria de apanhar o dia em que um deles desaparecesse
+ * do sítio onde tem mesmo de estar.
+ */
+const SO_NO_DOSSIE = new Set(['docs/TITULARIDADE.md', 'docs/AUTORIZACOES.md']);
+
 for (const doc of CANONICOS) {
+  if (SO_NO_DOSSIE.has(doc) && !existsSync(join(RAIZ, doc)) && ehEspelho()) {
+    saltar(`${doc} existe`, 'vive no dossiê privado');
+    continue;
+  }
   afirmar(existsSync(join(RAIZ, doc)), `${doc} existe`);
 }
 
@@ -132,7 +172,7 @@ for (const pasta of ['packages/ingest/src/__fixtures__', 'instantaneos']) {
 // Quem quiser saber o que falta a cada uma lê o registo, que o diz linha a
 // linha.
 
-const autorizacoes = ler('docs/AUTORIZACOES.md');
+const autorizacoes = ler('docs/AUTORIZACOES.md'); // '' quando vive só no dossiê
 if (existsSync(join(RAIZ, 'instantaneos'))) {
   const pastas = readdirSync(join(RAIZ, 'instantaneos'), { withFileTypes: true })
     .filter((entrada) => entrada.isDirectory())
@@ -181,7 +221,10 @@ afirmar(/SPDX-License-Identifier/.test(reuse), 'REUSE.toml tem identificadores S
 // ---------------------------------------------------------------------------
 
 console.log();
-console.log(`${passou} verificações passaram, ${falhas} a falhar.`);
+console.log(
+  `${passou} verificações passaram, ${falhas} a falhar` +
+    (saltadas ? `, ${saltadas} saltadas (vivem no dossiê privado).` : '.'),
+);
 if (falhas > 0) {
   console.log();
   console.log('Um documento de proveniência que não bate certo com o disco não serve');
