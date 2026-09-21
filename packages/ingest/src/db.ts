@@ -13,11 +13,15 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { DerivadasDoCartaz } from './cartazes.js';
 import { z } from 'zod';
 import {
+  BALDE_DOS_CARTAZES,
   FALHAS_ATE_PAUSA,
   HORAS_EM_PAUSA,
   nextBaseline,
+  pastaDoCartaz,
+  type CartazGuardado,
   type EventRow,
   type SessionRow,
 } from '@coreto/core';
@@ -80,6 +84,11 @@ const STORED_KEYS = [
   'image_alt',
   'image_width',
   'image_height',
+  'image_origem',
+  'image_miniatura',
+  'image_guardado_em',
+  'image_retirado_em',
+  'image_retirado_por',
   'status',
   'origin',
   'confidence',
@@ -220,6 +229,11 @@ const storedEventSchema: z.ZodType<StoredEvent, unknown> = z.object({
   image_height: nullableInteger,
   image_credit: nullableString,
   image_alt: nullableString,
+  image_origem: nullableString,
+  image_miniatura: nullableString,
+  image_guardado_em: nullableString,
+  image_retirado_em: nullableString,
+  image_retirado_por: nullableString,
   status: z.enum(['draft', 'published', 'hidden', 'cancelled', 'postponed', 'archived']),
   origin: z.enum(['scraper', 'email', 'form', 'manual']),
   confidence: nullableNumber.transform((value) => value ?? 0.5),
@@ -255,6 +269,15 @@ const MODERATION_OWNED: readonly StoredKey[] = [
   'duplicate_group_id',
   'is_canonical',
   'created_at',
+  /*
+   * Retirar um cartaz é um gesto de quem responde pelo sítio, feito porque
+   * alguém o pediu. A recolha não sabe dele e não tem nada que o pisar —
+   * `keepIfEmpty` já bastava, porque o que ela traz é sempre nulo, mas o que
+   * esta lista diz é de quem é a coluna, e estas duas são de quem carregou no
+   * botão.
+   */
+  'image_retirado_em',
+  'image_retirado_por',
 ];
 
 function isEmpty(value: unknown): boolean {
@@ -527,6 +550,23 @@ export interface IngestDatabase extends RunStore {
   reconcileMissing(sourceId: string, seenKeys: readonly string[]): Promise<ReconcileOutcome>;
   /** Quantos eventos publicados esta fonte tem — a base da trava de segurança. */
   countPublishedFromSource(sourceId: string): Promise<number>;
+  /**
+   * Escreve as duas derivadas de um cartaz no balde e devolve os endereços.
+   *
+   * `null` quando a escrita falhou — e uma escrita falhada é uma ficha que
+   * continua a apontar para a origem, não uma recolha em apuros.
+   */
+  guardarCartaz(derivadas: DerivadasDoCartaz): Promise<CartazGuardado | null>;
+  /**
+   * Apaga as cópias de um evento, menos as que se quiser manter.
+   *
+   * Sem nada a manter, apaga tudo: é o que se faz quando se retira um cartaz a
+   * pedido e quando se desliga o alojamento de uma fonte que já tinha cópias.
+   * Com as duas que se acabou de escrever, é a limpeza do cartaz anterior —
+   * nome diferente, ficheiro novo, e o velho a ocupar espaço sem ninguém que
+   * lhe saiba o caminho.
+   */
+  apagarCartazes(eventId: string, manter?: readonly string[]): Promise<number>;
 }
 
 export interface ReconcileOutcome {
@@ -784,6 +824,56 @@ class SupabaseIngestDatabase implements IngestDatabase {
       locks.set(row.event_id, fields);
     }
     return locks;
+  }
+
+  async guardarCartaz(derivadas: DerivadasDoCartaz): Promise<CartazGuardado | null> {
+    const balde = this.client.storage.from(BALDE_DOS_CARTAZES);
+
+    for (const derivada of [derivadas.grande, derivadas.miniatura]) {
+      const { error } = await balde.upload(derivada.caminho, derivada.bytes, {
+        contentType: 'image/webp',
+        /*
+         * Um ano de cache, e é seguro porque o nome traz o resumo do endereço
+         * de origem: um cartaz substituído no servidor da câmara chega com
+         * outro endereço e sai com outro nome. Não há o que invalidar.
+         */
+        cacheControl: '31536000',
+        /*
+         * Uma recolha interrompida a meio deixa a grande escrita e a pequena
+         * por escrever; a da noite seguinte volta a escrever as duas, e sem
+         * isto a primeira dava conflito e a cópia ficava por fazer para
+         * sempre.
+         */
+        upsert: true,
+      });
+      if (error) return null;
+    }
+
+    return {
+      url: balde.getPublicUrl(derivadas.grande.caminho).data.publicUrl,
+      miniatura: balde.getPublicUrl(derivadas.miniatura.caminho).data.publicUrl,
+      largura: derivadas.grande.largura,
+      altura: derivadas.grande.altura,
+    };
+  }
+
+  async apagarCartazes(eventId: string, manter: readonly string[] = []): Promise<number> {
+    const pasta = pastaDoCartaz(eventId);
+    const balde = this.client.storage.from(BALDE_DOS_CARTAZES);
+
+    const { data, error } = await balde.list(pasta);
+    // Falhar a limpeza é deixar lixo no balde, e deixar lixo não vale uma
+    // recolha dada por falhada. Quem chama trata o zero como «nada a fazer».
+    if (error || !data) return 0;
+
+    const guardar = new Set(manter);
+    const aApagar = data
+      .map((ficheiro) => `${pasta}/${ficheiro.name}`)
+      .filter((caminho) => !guardar.has(caminho));
+    if (aApagar.length === 0) return 0;
+
+    const { error: erroAoApagar } = await balde.remove(aApagar);
+    return erroAoApagar ? 0 : aApagar.length;
   }
 
   async countPublishedFromSource(sourceId: string): Promise<number> {
