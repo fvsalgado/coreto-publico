@@ -80,6 +80,7 @@ const EVENTO: EventCard = {
   is_free: true,
   price_display: null,
   image_url: null,
+  image_miniatura: null,
   image_alt: null,
   wheelchair_accessible: true,
   has_sign_language: false,

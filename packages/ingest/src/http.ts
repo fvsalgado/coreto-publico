@@ -342,6 +342,37 @@ export class HttpClient {
     bytes: number,
     options: RequestOptions = {},
   ): Promise<Uint8Array | null> {
+    return this.pedaco(url, bytes, options);
+  }
+
+  /**
+   * O ficheiro inteiro, até um tecto de bytes.
+   *
+   * É o mesmo pedido que o `cabecalho` faz — as mesmas regras de `robots.txt`,
+   * o mesmo estrangulamento por hospedeiro, a mesma ausência de repetição — com
+   * um orçamento que é o ficheiro todo em vez dos primeiros kilobytes. Serve a
+   * cópia dos cartazes (`packages/ingest/src/cartazes.ts`).
+   *
+   * **É método à parte e não o `cabecalho` com um número grande** porque os
+   * dois pedem coisas diferentes a quem os lê: um cabeçalho cortado é o caso
+   * normal e lê-se na mesma; um ficheiro cortado é lixo, e quem chama tem de
+   * saber distinguir «o servidor mandou 300 KB» de «o servidor mandou mais do
+   * que o tecto e isto é o princípio de uma imagem». O tecto vem de fora por
+   * essa razão: quem o escolhe é quem sabe reconhecer que se bateu nele.
+   */
+  async ficheiro(
+    url: string,
+    limiteDeBytes: number,
+    options: RequestOptions = {},
+  ): Promise<Uint8Array | null> {
+    return this.pedaco(url, limiteDeBytes, options);
+  }
+
+  private async pedaco(
+    url: string,
+    bytes: number,
+    options: RequestOptions = {},
+  ): Promise<Uint8Array | null> {
     // Um cartaz é um ficheiro no servidor de outra pessoa como qualquer outro.
     // Até 14 de setembro de 2026 este caminho não perguntava nada ao
     // `robots.txt` — ficou escrito como limite conhecido no PR #160, e é aqui

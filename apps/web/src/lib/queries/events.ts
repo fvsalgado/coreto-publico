@@ -5,6 +5,7 @@ import type { AnelDeFronteira } from '../mapa';
 import { EIXOS_DE_ACESSIBILIDADE } from '../agenda';
 import { consultaDePesquisa } from '../pesquisa';
 import { publicClient } from '../supabase/server';
+import { reportarErro } from '../registo';
 import { degradarForaDaCache, ehPaginaAlemDoFim, exigirLeitura } from './falhas';
 import {
   CARD_EVENT_FIELDS,
@@ -72,6 +73,9 @@ export const CACHE_TAGS = {
   /* A identidade das regiões. Muda quando uma CIM entra ou edita a sua
      linha — isto é, quase nunca; a etiqueta existe para esse dia. */
   regions: 'regions',
+  /* A montra da entrada. Invalidar isto refaz a entrada sem esperar a hora
+     do ISR — é o que o painel faz ao fixar ou largar um destaque. */
+  destaques: 'destaques',
   municipality: (id: string) => `events:${id}`,
 } as const;
 
@@ -431,6 +435,56 @@ export async function withCardTimes<T extends EventCard>(
     from,
   );
   return events.map((event) => ({ ...event, start_time: cardTime(event, sessions[event.id]) }));
+}
+
+/**
+ * Os eventos que quem administra fixou na montra da entrada (0161).
+ *
+ * Vêm por ordem de `posicao` e só os que estão publicados: um destaque fixado
+ * sobre um evento que depois foi despublicado não deve voltar à entrada pela
+ * porta dos destaques. O `!inner` é o que faz esse recorte no próprio pedido —
+ * sem ele, o PostgREST devolvia a linha do destaque com `events: null` e a
+ * montra ficava com um buraco.
+ *
+ * **Não filtra por data aqui.** O que já passou sai em `comporDestaques`, do
+ * `@coreto/core`, que é onde a regra vive e onde há testes a segurá-la; um
+ * segundo filtro de datas neste SQL era uma segunda definição de «passado».
+ */
+async function fetchDestaquesFixados(regiao: string): Promise<EventCard[]> {
+  const supabase = publicClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('region_highlights')
+    .select(`posicao, events!inner(${CARD_EVENT_FIELDS})`)
+    .eq('region_id', regiao)
+    .eq('events.status', 'published')
+    .eq('events.is_canonical', true)
+    .order('posicao', { ascending: true });
+
+  /*
+   * **Degrada, e é a exceção que confirma a regra das outras leituras.** A
+   * agenda propaga o erro porque uma agenda vazia mente; a montra não: sem os
+   * fixados, `comporDestaques` enche-a com a semana e a entrada continua a
+   * mostrar programação verdadeira. Deitar abaixo a página inicial inteira
+   * por causa da ordem dos cartazes seria trocar um enfeite por um 500.
+   */
+  if (error) {
+    reportarErro('listDestaquesFixados', error);
+    return [];
+  }
+
+  type Linha = { events: EventCard | EventCard[] | null };
+  return ((data ?? []) as unknown as Linha[]).flatMap((linha) =>
+    linha.events === null ? [] : Array.isArray(linha.events) ? linha.events : [linha.events],
+  );
+}
+
+export function listDestaquesFixados(regiao: string): Promise<EventCard[]> {
+  return unstable_cache(fetchDestaquesFixados, ['destaques', regiao], {
+    tags: [CACHE_TAGS.events, CACHE_TAGS.destaques],
+    revalidate: REVALIDATE_SECONDS,
+  })(regiao);
 }
 
 /**

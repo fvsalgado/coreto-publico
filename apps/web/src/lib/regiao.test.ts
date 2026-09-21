@@ -60,6 +60,7 @@ const LINHA_DO_MEDIO_TEJO: LinhaDeRegiao = {
   bbox_lon_min: -8.8,
   bbox_lon_max: -7.8,
   gate_enabled: false,
+  destaques_alvo: 12,
 };
 
 /**
@@ -103,6 +104,7 @@ const LINHA_DA_TRAVESSIA: LinhaDeRegiao = {
   bbox_lon_min: -8.4,
   bbox_lon_max: -8.0,
   gate_enabled: false,
+  destaques_alvo: 12,
 };
 
 const mt = regiaoDaLinha(LINHA_DO_MEDIO_TEJO);

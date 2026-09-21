@@ -29,6 +29,15 @@ export interface SourceRow {
   min_expected_items: number;
   consecutive_failures: number;
   circuit_open_until: string | null;
+  /**
+   * Se os cartazes desta fonte podem ser copiados para o nosso balde (0162).
+   *
+   * Verdadeiro para câmaras e juntas — organismos públicos —, falso para tudo
+   * o resto até alguém o declarar no painel. Uma fonte nova não aloja nada:
+   * apontar para uma imagem é ligar, guardar uma cópia é reproduzir, e a
+   * segunda pede uma decisão de quem responde pelo sítio.
+   */
+  cartaz_alojavel: boolean;
 }
 
 /**
@@ -72,6 +81,12 @@ export const sourceRowSchema: z.ZodType<SourceRow, unknown> = z.object({
     .boolean()
     .nullish()
     .transform((value) => value ?? true),
+  // A omissão é `false` e não `true`: uma base que ainda não tem a coluna, ou
+  // uma linha que a tem a nulo, não é razão para começar a copiar.
+  cartaz_alojavel: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? false),
   baseline_item_count: z
     .number()
     .int()

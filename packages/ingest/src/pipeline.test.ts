@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { eventFingerprint, type EventRow, type SessionRow } from '@coreto/core';
+import {
+  eventFingerprint,
+  type CartazGuardado,
+  type EventRow,
+  type SessionRow,
+} from '@coreto/core';
+import type { DerivadasDoCartaz } from './cartazes.js';
 import type { SourceRow } from './adapter.js';
 import type {
   EspacoPorResolver,
@@ -131,6 +137,7 @@ function makeSource(overrides: Partial<SourceRow> = {}): SourceRow {
     min_expected_items: 0,
     consecutive_failures: 0,
     circuit_open_until: null,
+    cartaz_alojavel: false,
     ...overrides,
   };
 }
@@ -156,8 +163,37 @@ class FakeDatabase implements IngestDatabase {
   readonly fingerprintsDeOutrasFontes = new Set<string>();
   private runCounter = 0;
 
+  /** Cartazes escritos no balde de mentira, por caminho. */
+  readonly cartazes = new Map<string, number>();
+  /** Caminhos apagados, pela ordem por que o foram. */
+  readonly cartazesApagados: string[] = [];
+
   loadSources(): Promise<SourceRow[]> {
     return Promise.resolve([]);
+  }
+
+  guardarCartaz(derivadas: DerivadasDoCartaz): Promise<CartazGuardado | null> {
+    for (const derivada of [derivadas.grande, derivadas.miniatura]) {
+      this.cartazes.set(derivada.caminho, derivada.bytes.length);
+    }
+    return Promise.resolve({
+      url: `https://balde.exemplo/${derivadas.grande.caminho}`,
+      miniatura: `https://balde.exemplo/${derivadas.miniatura.caminho}`,
+      largura: derivadas.grande.largura,
+      altura: derivadas.grande.altura,
+    });
+  }
+
+  apagarCartazes(eventId: string, manter: readonly string[] = []): Promise<number> {
+    const guardar = new Set(manter);
+    const aApagar = [...this.cartazes.keys()].filter(
+      (caminho) => caminho.startsWith(`cartazes/${eventId}/`) && !guardar.has(caminho),
+    );
+    for (const caminho of aApagar) {
+      this.cartazes.delete(caminho);
+      this.cartazesApagados.push(caminho);
+    }
+    return Promise.resolve(aApagar.length);
   }
 
   loadCategoryAliases(): Promise<Map<string, string>> {
@@ -1397,5 +1433,170 @@ describe('uma fonte que não responde falha, e não se chama agenda vazia', () =
     expect(outcome.status).toBe('partial');
     expect(outcome.http.responses).toBeGreaterThan(0);
     expect(outcome.layoutDrift).toBe(true);
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * A cópia dos cartazes (0162)
+ * ---------------------------------------------------------------------------
+ *
+ * O que estes testes protegem não é o redimensionamento — isso é do `sharp` e
+ * prova-se em `cartazes.test.ts`. É a regra de quem tem direito a uma cópia e
+ * o que acontece quando ela falha, que é onde uma decisão jurídica vira
+ * comportamento.
+ */
+const LISTAGEM_COM_CARTAZ = `<ul class="lista">
+  <li class="evento">
+    <h3><a href="/agenda/concerto-de-natal">Concerto de Natal</a></h3>
+    <time class="data" datetime="2026-05-15">15 de maio de 2026</time>
+    <span class="local">Cine-Teatro Paraíso</span>
+    <img class="cartaz" src="/cartazes/concerto.png" />
+  </li>
+</ul>`;
+
+const CONFIG_COM_CARTAZ = { ...CONFIG, imageSelector: '.cartaz' };
+
+/** Um PNG verdadeiro, feito pelo mesmo leitor que a recolha usa. */
+async function pngDeProva(largura = 900, altura = 1200): Promise<Uint8Array> {
+  const { default: sharp } = await import('sharp');
+  const bytes = await sharp({
+    create: { width: largura, height: altura, channels: 3, background: '#7a1f2b' },
+  })
+    .png()
+    .toBuffer();
+  return new Uint8Array(bytes);
+}
+
+function httpComCartaz(cartaz: Uint8Array | null, listagem = LISTAGEM_COM_CARTAZ): HttpClient {
+  return new HttpClient({
+    minHostIntervalMs: 0,
+    sleep: () => Promise.resolve(),
+    fetchImpl: comRobots((input) => {
+      const url = typeof input === 'string' ? input : String(input);
+      if (url.includes('/cartazes/')) {
+        if (!cartaz) return Promise.resolve(new Response('não existe', { status: 404 }));
+        return Promise.resolve(
+          // O `Blob` e não os bytes directos: o `BodyInit` do DOM não existe no
+          // `lib` deste pacote, que não corre em browser nenhum, e um `Blob`
+          // serve a mesma coisa com um tipo que o Node já traz.
+          new Response(new Blob([cartaz]), {
+            status: 200,
+            headers: { 'content-type': 'image/png' },
+          }),
+        );
+      }
+      return Promise.resolve(new Response(listagem, { status: 200 }));
+    }),
+  });
+}
+
+describe('os cartazes das fontes alojáveis', () => {
+  it('uma fonte declarada alojável fica com a cópia, e a origem fica escrita', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: true });
+    await run(fonte, db, httpComCartaz(await pngDeProva()));
+
+    const evento = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(evento?.image_url).toMatch(/^https:\/\/balde\.exemplo\/cartazes\//);
+    expect(evento?.image_miniatura).toMatch(/-400\.webp$/);
+    expect(evento?.image_origem).toBe('https://www.cm-tomar.pt/cartazes/concerto.png');
+    expect(evento?.image_guardado_em).not.toBeNull();
+    // A segunda cautela: uma cópia sem crédito é a coisa que isto não pode
+    // produzir.
+    expect(evento?.image_credit).toBe('Câmara Municipal de Tomar');
+    expect(db.cartazes.size).toBe(2);
+  });
+
+  /*
+   * A primeira cautela, e é a que tem consequências fora do código: apontar
+   * para uma imagem é ligar, guardar uma cópia é reproduzir. Uma fonte que não
+   * seja um organismo público continua a ser apontada, e é tudo.
+   */
+  it('uma fonte que não foi declarada alojável não deixa cópia nenhuma', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: false });
+    await run(fonte, db, httpComCartaz(await pngDeProva()));
+
+    const evento = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(evento?.image_url).toBe('https://www.cm-tomar.pt/cartazes/concerto.png');
+    expect(evento?.image_origem).toBe('https://www.cm-tomar.pt/cartazes/concerto.png');
+    expect(evento?.image_miniatura).toBeNull();
+    expect(db.cartazes.size).toBe(0);
+  });
+
+  it('um servidor que não serve o cartaz deixa a ficha a apontar para a origem', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: true });
+    await run(fonte, db, httpComCartaz(null));
+
+    const evento = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(evento?.image_url).toBe('https://www.cm-tomar.pt/cartazes/concerto.png');
+    expect(evento?.image_miniatura).toBeNull();
+    expect(db.cartazes.size).toBe(0);
+  });
+
+  /*
+   * O que não é uma imagem que reconheçamos não chega ao descodificador
+   * nativo, que é a superfície de ataque desta casa toda. Uma página de erro
+   * servida com o nome de um `.png` é o caso comum, e não é uma avaria.
+   */
+  it('uma página de erro com nome de cartaz não é copiada', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: true });
+    const html = new TextEncoder().encode('<!doctype html><title>404</title>');
+    await run(fonte, db, httpComCartaz(html));
+
+    const evento = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(evento?.image_url).toBe('https://www.cm-tomar.pt/cartazes/concerto.png');
+    expect(db.cartazes.size).toBe(0);
+  });
+
+  /*
+   * A terceira cautela. Um cartaz retirado a pedido não volta — e não volta
+   * sem a recolha ter de se lembrar dele: o que ela não faz é ir buscá-lo.
+   * (O gatilho da 0162 é a outra metade, e apanha quem escrever por outra
+   * porta.)
+   */
+  it('um cartaz retirado a pedido não se vai buscar nem se escreve', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: true });
+    const http = httpComCartaz(await pngDeProva());
+
+    await run(fonte, db, http);
+    const antes = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(antes?.image_miniatura).not.toBeNull();
+
+    // Alguém carrega no botão de retirar, no painel.
+    db.events.set(antes!.id, {
+      ...antes!,
+      image_url: null,
+      image_origem: null,
+      image_miniatura: null,
+      image_retirado_em: '2026-09-21T10:00:00.000Z',
+      image_retirado_por: 'dono',
+    });
+    db.cartazes.clear();
+
+    await run(fonte, db, http);
+    const depois = [...db.events.values()].find((e) => e.title === 'Concerto de Natal');
+    expect(depois?.image_url).toBeNull();
+    expect(depois?.image_origem).toBeNull();
+    expect(depois?.image_miniatura).toBeNull();
+    expect(db.cartazes.size).toBe(0);
+  });
+
+  it('a segunda noite não volta a copiar o mesmo cartaz', async () => {
+    const db = new FakeDatabase();
+    const fonte = makeSource({ config: CONFIG_COM_CARTAZ, cartaz_alojavel: true });
+    const http = httpComCartaz(await pngDeProva());
+
+    await run(fonte, db, http);
+    const caminhos = [...db.cartazes.keys()];
+    db.cartazesApagados.length = 0;
+
+    await run(fonte, db, http);
+    expect([...db.cartazes.keys()]).toEqual(caminhos);
+    expect(db.cartazesApagados).toEqual([]);
   });
 });

@@ -36,6 +36,8 @@ export interface EventoNoMapa {
   longitude: number | null;
   /** A capa, e o que a capa tipográfica desenha quando não há cartaz. */
   image_url: string | null;
+  /** A cópia pequena, quando o cartaz é nosso. O painel desenha-a a 80 px. */
+  image_miniatura: string | null;
   image_alt: string | null;
   category_slug: string | null;
   /** A página de quem organiza. É a ligação para quem quer confirmar. */

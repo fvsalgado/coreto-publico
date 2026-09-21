@@ -29,8 +29,12 @@ import {
   type RunStatus,
   type SessionRow,
   BYTES_DE_CABECALHO,
+  MAXIMO_DE_BYTES_DO_ORIGINAL,
+  creditoDoCartaz,
+  decidirCartaz,
   medidasDaImagem,
 } from '@coreto/core';
+import { derivarCartaz } from './cartazes.js';
 import { parseAdapterConfig, type SourceRow } from './adapter.js';
 import { getAdapter } from './adapters/index.js';
 import type { HttpClient, HttpCounters } from './http.js';
@@ -526,6 +530,161 @@ async function medirCartaz(
   return { largura: medidas.largura, altura: medidas.altura };
 }
 
+/**
+ * O cartaz de um evento: copiado para casa, ou servido da origem.
+ *
+ * Escreve seis colunas em `merged` e não devolve nada, de propósito: são seis
+ * colunas que só fazem sentido juntas, e uma função que devolvesse três delas
+ * deixava a quarta a quem chamasse — que é como se escrevem os estados
+ * impossíveis (uma miniatura sem grande, um `image_guardado_em` sem cópia).
+ *
+ * **A origem é `image_origem` e nunca `image_url`.** Depois da fusão,
+ * `image_url` tanto pode ser o cartaz que a fonte acabou de publicar como o
+ * endereço da nossa própria cópia da noite passada — o `mergeEventUpdate`
+ * guarda o que lá estava quando a fonte não traz nada. Ler dali a origem era,
+ * uma noite em cada tantas, mandar a recolha copiar a nossa própria cópia.
+ *
+ * **Sem base de dados não se copia nada.** Numa simulação (`--dry-run`) ou sem
+ * credenciais não há balde onde escrever, e uma cópia a metade — o ficheiro
+ * por escrever e a coluna escrita — é pior do que cópia nenhuma. Nesse caso
+ * faz-se o que se fazia antes disto existir: aponta-se para a origem e
+ * medem-se as medidas.
+ */
+async function tratarCartaz(
+  context: PipelineContext,
+  writer: IngestDatabase | null,
+  source: SourceRow,
+  merged: EventRow,
+  previous: StoredEvent | null,
+  log: RunLogger,
+  agora: string,
+): Promise<void> {
+  const semCartaz = () => {
+    merged.image_url = null;
+    merged.image_origem = null;
+    merged.image_miniatura = null;
+    merged.image_width = null;
+    merged.image_height = null;
+    merged.image_guardado_em = null;
+  };
+
+  const apontar = async (origem: string) => {
+    merged.image_url = origem;
+    merged.image_origem = origem;
+    merged.image_miniatura = null;
+    merged.image_guardado_em = null;
+    const medidas = await medirCartaz(context.http, origem, previous, log);
+    merged.image_width = medidas.largura;
+    merged.image_height = medidas.altura;
+  };
+
+  const decisao = decidirCartaz({
+    origem: merged.image_origem,
+    alojavel: source.cartaz_alojavel && writer !== null,
+    retirado: previous?.image_retirado_em !== null && previous?.image_retirado_em !== undefined,
+    anterior: previous
+      ? {
+          image_url: previous.image_url,
+          image_origem: previous.image_origem,
+          image_miniatura: previous.image_miniatura,
+        }
+      : null,
+  });
+
+  switch (decisao.accao) {
+    case 'retirado':
+      // O gatilho da 0162 apanhava isto de qualquer maneira. Fazê-lo aqui
+      // também é o que evita o pedido à rede: ir buscar a imagem de quem pediu
+      // para a tirarmos era cumprir o pedido pela metade.
+      semCartaz();
+      return;
+
+    case 'nenhum':
+      semCartaz();
+      return;
+
+    case 'apontar':
+      // Desligar o alojamento de uma fonte no painel não é só deixar de
+      // copiar: é apagar o que já se copiou dela.
+      if (decisao.havia && writer) await writer.apagarCartazes(merged.id);
+      await apontar(decisao.origem);
+      return;
+
+    case 'manter':
+      merged.image_url = previous?.image_url ?? null;
+      merged.image_origem = previous?.image_origem ?? null;
+      merged.image_miniatura = previous?.image_miniatura ?? null;
+      merged.image_width = previous?.image_width ?? null;
+      merged.image_height = previous?.image_height ?? null;
+      merged.image_guardado_em = previous?.image_guardado_em ?? null;
+      return;
+
+    case 'copiar': {
+      const guardado = await copiar(context, writer, merged.id, decisao.origem, log);
+      if (!guardado) {
+        // Uma cópia que não se fez não é uma ficha sem cartaz: é a ficha que
+        // existia antes disto, a apontar para a origem. Tenta-se outra vez
+        // amanhã — ver `decidirCartaz`.
+        await apontar(decisao.origem);
+        return;
+      }
+      merged.image_url = guardado.url;
+      merged.image_origem = decisao.origem;
+      merged.image_miniatura = guardado.miniatura;
+      merged.image_width = guardado.largura;
+      merged.image_height = guardado.altura;
+      merged.image_guardado_em = agora;
+      // A segunda das três cautelas, e a única sem um botão nem uma coluna a
+      // garanti-la: escreve-se no momento em que a cópia se faz, ou não se
+      // escreve nunca.
+      merged.image_credit = creditoDoCartaz(merged.image_credit, source.name);
+      return;
+    }
+  }
+}
+
+/** Descarregar, decompor e escrever — e dizer no registo o que correu mal. */
+async function copiar(
+  context: PipelineContext,
+  writer: IngestDatabase | null,
+  eventId: string,
+  origem: string,
+  log: RunLogger,
+) {
+  if (!writer) return null;
+
+  const original = await context.http.ficheiro(origem, MAXIMO_DE_BYTES_DO_ORIGINAL);
+  if (!original) return null;
+
+  const derivacao = await derivarCartaz(original, eventId, origem);
+  if (derivacao.estado !== 'ok') {
+    /*
+     * Informativo e não aviso, e é o mesmo argumento do `medirCartaz`: um
+     * cartaz que fica por copiar é uma ficha que aponta para a origem, como
+     * sempre apontou — não uma fonte partida. Um aviso por cada um enchia o
+     * registo da noite com coisas que ninguém vai arranjar.
+     */
+    const porque =
+      derivacao.estado === 'grande-demais'
+        ? 'acima do tecto de bytes'
+        : derivacao.estado === 'formato-desconhecido'
+          ? 'formato que não se lê'
+          : derivacao.razao;
+    log.info('cartaz não copiado', `${origem} — ${porque}`);
+    return null;
+  }
+
+  const guardado = await writer.guardarCartaz(derivacao);
+  if (!guardado) {
+    log.info('cartaz não copiado', `${origem} — o balde recusou a escrita`);
+    return null;
+  }
+
+  // O cartaz anterior deste evento fica sem ninguém que lhe saiba o caminho.
+  await writer.apagarCartazes(eventId, [derivacao.grande.caminho, derivacao.miniatura.caminho]);
+  return guardado;
+}
+
 async function collectAndWrite(
   source: SourceRow,
   context: PipelineContext,
@@ -837,11 +996,10 @@ async function collectAndWrite(
 
       const merged = mergeEventUpdate(previous, incoming);
 
-      // As medidas do cartaz. Só há pedido quando o endereço é novo ou quando
-      // o que lá está ainda não tem medidas — ver `medirCartaz`.
-      const cartaz = await medirCartaz(context.http, merged.image_url, previous, log);
-      merged.image_width = cartaz.largura;
-      merged.image_height = cartaz.altura;
+      // O cartaz: copiado para casa quando a fonte o permite, servido da
+      // origem quando não. Em regime normal não sai daqui um pedido nem um
+      // byte para o balde — ver `decidirCartaz`.
+      await tratarCartaz(context, writer, source, merged, previous, log, nowIso);
 
       /*
        * O `content_hash` diz se a **fonte** mudou; não diz se a nossa leitura
@@ -921,17 +1079,31 @@ async function collectAndWrite(
        * (guardar que já se tentou) era uma coluna a mais para poupar meia dúzia
        * de linhas.
        */
-      const medidasIguais =
+      const cartazIgual =
         previous !== null &&
         previous.image_width === merged.image_width &&
-        previous.image_height === merged.image_height;
+        previous.image_height === merged.image_height &&
+        /*
+         * E as três colunas da cópia, pela mesma razão exacta.
+         *
+         * Um cartaz novo na mesma ficha não muda o `content_hash` — ele cobre
+         * o título, a descrição, a data, o espaço e o preço em bruto, e não a
+         * imagem. Sem estas três linhas, a noite em que a câmara troca o
+         * cartaz era uma noite em que se descarregava a imagem, se
+         * redimensionava, se escrevia no balde — e se saltava a escrita na
+         * base. O sítio ficava com o cartaz do mês passado e o balde com os
+         * dois.
+         */
+        previous.image_url === merged.image_url &&
+        previous.image_origem === merged.image_origem &&
+        previous.image_miniatura === merged.image_miniatura;
 
       if (
         previous &&
         previous.content_hash &&
         previous.content_hash === merged.content_hash &&
         leituraIgual &&
-        medidasIguais
+        cartazIgual
       ) {
         counters.itemsUnchanged += 1;
         unchangedIds.push(previous.id);

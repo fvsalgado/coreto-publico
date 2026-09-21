@@ -45,6 +45,7 @@ function fonte(url = 'https://agenda-inventada.example/', config: Record<string,
     min_expected_items: 0,
     consecutive_failures: 0,
     circuit_open_until: null,
+    cartaz_alojavel: false,
   };
   return row;
 }

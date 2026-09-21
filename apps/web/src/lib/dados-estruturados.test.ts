@@ -53,8 +53,10 @@ const EVENTO: EventDetail = {
   price_raw: null,
   ticketing_url: null,
   image_url: null,
+  image_miniatura: null,
   image_alt: null,
   image_credit: null,
+  image_origem: null,
   image_width: null,
   image_height: null,
   wheelchair_accessible: null,
@@ -141,6 +143,7 @@ const LINHA_DA_REGIAO: LinhaDeRegiao = {
   bbox_lon_min: -8.8,
   bbox_lon_max: -7.8,
   gate_enabled: false,
+  destaques_alvo: 12,
 };
 
 const REGIAO = regiaoDaLinha(LINHA_DA_REGIAO);

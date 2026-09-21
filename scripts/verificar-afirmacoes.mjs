@@ -759,6 +759,35 @@ presente('apps/web/app/[regiao]/page.tsx', /comResultados/, {
   }
 }
 
+// ---- Os cartazes que guardamos ----
+//
+// As três cautelas da migração 0162. Duas delas têm a base a garanti-las — o
+// gatilho que impede a reposição e a coluna que declara a fonte — e provam-se
+// nas asserções da própria migração, contra um Postgres a sério. A terceira,
+// o crédito, não tem: escreve-se no momento em que a cópia se faz, ou não se
+// escreve nunca. É por isso que está aqui.
+
+presente('packages/ingest/src/pipeline.ts', /creditoDoCartaz/, {
+  afirmacao: 'uma cópia de cartaz é escrita com o crédito de quem o publicou',
+  porque:
+    'o docs/TERCEIROS.md promete que nenhuma cópia é servida sem crédito, e nada na base o obriga: em produção, 219 de 296 eventos tinham imagem e nenhum tinha crédito',
+});
+
+// O `kind` descreve o feitio do sítio; não diz de quem ele é. Três das treze
+// fontes `venue_site` estão em domínios de câmara. Quem responde pelo sítio é
+// que declara, fonte a fonte, no painel.
+ausente('packages/core/src/cartazes.ts', /municipal_site|parish_site/, {
+  afirmacao: 'quem se pode copiar é uma declaração por fonte e não uma inferência do tipo',
+  porque:
+    'inferir do `kind` faria o produto começar a copiar sozinho de uma fonte nova só por ela ter sido classificada — e a decisão de reproduzir obra alheia não é uma classificação',
+});
+
+presente('apps/web/app/admin/cartazes/page.tsx', /retirarCartaz/, {
+  afirmacao: 'há um botão que retira um cartaz a pedido de quem é seu autor',
+  porque:
+    'guardar uma cópia de obra gráfica alheia só se defende com um caminho de volta que se percorre num gesto, e não por email a quem sabe SQL',
+});
+
 // ---- Privacidade e medição ----
 
 presente(

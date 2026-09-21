@@ -188,6 +188,18 @@ export default async function Regioes({ searchParams }: Props) {
                   <dt className="text-muted">Ordem</dt>
                   <dd className="tabular-nums">{regiao.sort_order}</dd>
                 </div>
+                <div>
+                  {/* A montra da entrada (0161): os cartazes que abrem a
+                      página inicial, fixados aqui e completados pela semana. */}
+                  <dt className="text-muted">Montra</dt>
+                  <dd>
+                    <Link href={`${ficha}/destaques`} className="underline underline-offset-4">
+                      {(regiao.destaques_alvo ?? 12) === 0
+                        ? 'desligada'
+                        : `${regiao.destaques_alvo ?? 12} cartazes`}
+                    </Link>
+                  </dd>
+                </div>
               </dl>
 
               <ul className="mt-3 space-y-1 text-sm">

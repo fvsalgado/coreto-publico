@@ -37,6 +37,7 @@ function source(config: Record<string, unknown> = { originHeader: ORIGIN }): Sou
     min_expected_items: 1,
     consecutive_failures: 0,
     circuit_open_until: null,
+    cartaz_alojavel: false,
   };
 }
 

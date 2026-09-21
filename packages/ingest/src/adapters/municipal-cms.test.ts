@@ -141,6 +141,7 @@ describe('municipalCmsAdapter', () => {
         min_expected_items: 0,
         consecutive_failures: 0,
         circuit_open_until: null,
+        cartaz_alojavel: false,
       },
       http: new HttpClient({
         minHostIntervalMs: 0,

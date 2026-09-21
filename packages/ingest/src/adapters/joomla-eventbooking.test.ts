@@ -39,6 +39,7 @@ function source(id: string, url: string, municipio: string): SourceRow {
     min_expected_items: 0,
     consecutive_failures: 0,
     circuit_open_until: null,
+    cartaz_alojavel: false,
   };
 }
 

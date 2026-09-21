@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { reportarErro } from '../registo';
-import { normalizeForHash } from '@coreto/core';
+import { BALDE_DOS_CARTAZES, normalizeForHash, pastaDoCartaz } from '@coreto/core';
 import { z } from 'zod';
 import { requireAdmin } from './auth';
 import {
@@ -202,6 +202,7 @@ export async function actualizarSitio(): Promise<void> {
     CACHE_TAGS.sources,
     CACHE_TAGS.sections,
     CACHE_TAGS.regions,
+    CACHE_TAGS.destaques,
   ]) {
     revalidateTag(tag, { expire: 0 });
   }
@@ -249,6 +250,181 @@ export async function alternarSeccao(formData: FormData): Promise<void> {
       data === true
         ? `A secção passou a estar ${ligar ? 'ligada' : 'desligada'}.`
         : 'Nada mudou — já estava assim.',
+    ),
+  );
+}
+
+/**
+ * A montra da entrada: fixar, largar, mover, e dizer quantos cabem.
+ *
+ * As quatro ações escrevem em `region_highlights` e em `regions`, e nenhuma
+ * passa por uma função SQL — ao contrário da moderação, que tem de deixar
+ * rasto em `admin_actions` porque decide o que o público vê. Um destaque é
+ * ordem de montra: muda-se, desfaz-se, e quem o fixou fica escrito na própria
+ * linha (`fixado_por`), que é o rasto que esta decisão pede.
+ *
+ * Todas invalidam `destaques`, e só essa: a montra é a única coisa que muda.
+ */
+const CAMINHO_DOS_DESTAQUES = (regiao: string) =>
+  `/admin/regioes/${encodeURIComponent(regiao)}/destaques`;
+
+/** Quantos destaques uma região aceita ter fixados de uma vez. */
+const DESTAQUES_MAX = 24;
+
+function regiaoDoFormulario(formData: FormData): string {
+  const regiao = String(formData.get('regiao') ?? '').trim();
+  return regiao || REGIAO_PRINCIPAL;
+}
+
+export async function fixarDestaque(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = regiaoDoFormulario(formData);
+  const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
+  const evento = String(formData.get('evento') ?? '').trim();
+  if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
+
+  /*
+   * A posição nova é a seguir à última, e lê-se antes de escrever.
+   *
+   * Duas pessoas a fixar ao mesmo tempo podiam pedir a mesma posição; a
+   * restrição `region_highlights_posicao_unica` recusa a segunda, e o aviso
+   * diz para repetir. É a resposta certa para uma colisão que acontece uma
+   * vez em muitos anos num painel com um utilizador — uma sequência por
+   * região seria mais máquina do que o problema merece.
+   */
+  const { data: ultima, error: erroDaLeitura } = await supabase
+    .from('region_highlights')
+    .select('posicao')
+    .eq('region_id', regiao)
+    .order('posicao', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroDaLeitura) redirect(comAviso(voltarPara, erroDaLeitura.message));
+
+  const seguinte = (ultima?.posicao ?? 0) + 1;
+  if (seguinte > DESTAQUES_MAX) {
+    redirect(comAviso(voltarPara, `A montra não leva mais de ${DESTAQUES_MAX} fixados.`));
+  }
+
+  const { error } = await supabase
+    .from('region_highlights')
+    .insert({ region_id: regiao, event_id: evento, posicao: seguinte, fixado_por: actor });
+  if (error) {
+    redirect(
+      comAviso(voltarPara, error.code === '23505' ? 'Esse evento já está fixado.' : error.message),
+    );
+  }
+
+  revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
+  redirect(comAviso(voltarPara, 'Fixado na montra.'));
+}
+
+export async function largarDestaque(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = regiaoDoFormulario(formData);
+  const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
+  const evento = String(formData.get('evento') ?? '').trim();
+  if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
+
+  const { error } = await supabase
+    .from('region_highlights')
+    .delete()
+    .eq('region_id', regiao)
+    .eq('event_id', evento);
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  /*
+   * Não se renumera o que ficou, de propósito. As posições são uma ordem e
+   * não uma contagem: com 1, 2 e 4 a montra lê-se na mesma ordem, e uma
+   * renumeração é três escritas a mais para arrumar um número que ninguém vê.
+   */
+  revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
+  redirect(comAviso(voltarPara, 'Largado da montra.'));
+}
+
+export async function moverDestaque(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = regiaoDoFormulario(formData);
+  const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
+  const evento = String(formData.get('evento') ?? '').trim();
+  const sentido = String(formData.get('sentido') ?? '');
+  if (!evento || (sentido !== 'cima' && sentido !== 'baixo')) {
+    redirect(comAviso(voltarPara, 'Movimento desconhecido.'));
+  }
+
+  const { data: linhas, error: erroDaLeitura } = await supabase
+    .from('region_highlights')
+    .select('event_id, posicao')
+    .eq('region_id', regiao)
+    .order('posicao', { ascending: true });
+  if (erroDaLeitura) redirect(comAviso(voltarPara, erroDaLeitura.message));
+
+  const lista = (linhas ?? []) as Array<{ event_id: string; posicao: number }>;
+  const onde = lista.findIndex((linha) => linha.event_id === evento);
+  const vizinho = sentido === 'cima' ? onde - 1 : onde + 1;
+  if (onde < 0 || vizinho < 0 || vizinho >= lista.length) {
+    redirect(comAviso(voltarPara, 'Já está no fim dessa ponta.'));
+  }
+
+  /*
+   * Trocar duas posições são duas escritas, e a restrição de unicidade
+   * recusaria a primeira a meio do caminho. O terceiro valor livre é o
+   * estacionamento: sai um, entra o outro, volta o primeiro. Três escritas em
+   * vez de duas, e nenhuma delas inválida em nenhum instante — que é o que se
+   * pede a uma tabela com uma restrição a sério.
+   */
+  const daqui = lista[onde] as { event_id: string; posicao: number };
+  const dali = lista[vizinho] as { event_id: string; posicao: number };
+  const estacionamento = Math.max(...lista.map((linha) => linha.posicao)) + 1;
+
+  const mover = async (eventoId: string, posicao: number) =>
+    supabase
+      .from('region_highlights')
+      .update({ posicao })
+      .eq('region_id', regiao)
+      .eq('event_id', eventoId);
+
+  for (const passo of [
+    () => mover(daqui.event_id, estacionamento),
+    () => mover(dali.event_id, daqui.posicao),
+    () => mover(daqui.event_id, dali.posicao),
+  ]) {
+    const { error } = await passo();
+    if (error) redirect(comAviso(voltarPara, error.message));
+  }
+
+  revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
+  redirect(comAviso(voltarPara, 'Ordem mudada.'));
+}
+
+export async function definirAlvoDeDestaques(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const supabase = requireAdminClient();
+  const regiao = regiaoDoFormulario(formData);
+  const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
+
+  const alvo = z.coerce.number().int().min(0).max(DESTAQUES_MAX).safeParse(formData.get('alvo'));
+  if (!alvo.success) {
+    redirect(comAviso(voltarPara, `O número tem de estar entre 0 e ${DESTAQUES_MAX}.`));
+  }
+
+  const { error } = await supabase
+    .from('regions')
+    .update({ destaques_alvo: alvo.data })
+    .eq('id', regiao);
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  // A entrada lê o alvo da linha da região, que entra pela etiqueta das
+  // regiões; a montra lê-se pela dos destaques. Mudam as duas.
+  revalidateTag(CACHE_TAGS.regions, { expire: 0 });
+  revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
+  redirect(
+    comAviso(
+      voltarPara,
+      alvo.data === 0 ? 'A montra da entrada fica desligada.' : `A montra passa a ${alvo.data}.`,
     ),
   );
 }
@@ -904,6 +1080,135 @@ export async function criarRegiao(formData: FormData): Promise<void> {
       `Região «${dados.name}» criada, com ${n} ${n === 1 ? 'concelho' : 'concelhos'} — cada um com um ` +
         'espaço provisório e uma fonte desligada. O domínio no Vercel e no DNS é o passo seguinte ' +
         'do guia docs/NOVA-CIM.md.',
+    ),
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Os cartazes: retirar a pedido, repor, e declarar que fontes se podem copiar.
+ *
+ * As três cautelas da migração 0162 têm cada uma o seu sítio, e duas delas
+ * são aqui: **quem se pode copiar** (a declaração por fonte) e **como se
+ * retira** (o botão). A terceira — o crédito — escreve-se na recolha, no
+ * momento em que a cópia se faz.
+ * ------------------------------------------------------------------------- */
+
+const CAMINHO_DOS_CARTAZES = '/admin/cartazes';
+
+/**
+ * Apaga do balde as cópias de um evento.
+ *
+ * **Apagar a linha sem apagar os ficheiros era o pior dos dois mundos.** O
+ * endereço do balde é público e adivinha-se a partir da página se alguém tiver
+ * guardado o HTML; um pedido de retirada cumprido só na base deixava a imagem
+ * a responder na mesma, a quem soubesse o caminho, para sempre. É a mesma
+ * armadilha que o expurgo das submissões acautela no balde privado.
+ *
+ * Não lança: os ficheiros que ficarem por apagar ficam registados e a marca na
+ * base — que é o que esconde a imagem de toda a gente — já está posta.
+ */
+async function apagarCopiasDoCartaz(eventId: string): Promise<void> {
+  const supabase = requireAdminClient();
+  const pasta = pastaDoCartaz(eventId);
+  const balde = supabase.storage.from(BALDE_DOS_CARTAZES);
+
+  const { data, error } = await balde.list(pasta);
+  if (error) {
+    reportarErro('apagarCopiasDoCartaz.list', error);
+    return;
+  }
+  const caminhos = (data ?? []).map((ficheiro) => `${pasta}/${ficheiro.name}`);
+  if (caminhos.length === 0) return;
+
+  const { error: erroAoApagar } = await balde.remove(caminhos);
+  if (erroAoApagar) reportarErro('apagarCopiasDoCartaz.remove', erroAoApagar);
+}
+
+/**
+ * Retira o cartaz de um evento, a pedido de quem é seu autor.
+ *
+ * Duas escritas e uma ordem que importa: **primeiro a base, depois o balde.**
+ * A marca na base é o que esconde a imagem de toda a gente e o que impede a
+ * recolha de a ir buscar outra vez; os ficheiros são o que resta de visível a
+ * quem já tiver o endereço. Falhar a segunda deixa um ficheiro órfão que
+ * ninguém alcança pelo sítio. Falhar a primeira, com a segunda feita, deixava
+ * a página a apontar para um endereço morto e a recolha a repor tudo à noite.
+ */
+export async function retirarCartaz(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+  const evento = String(formData.get('evento') ?? '').trim();
+  const voltarPara = String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES);
+  if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
+
+  const { error } = await supabase.rpc('retirar_cartaz', {
+    p_event_id: evento,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  await apagarCopiasDoCartaz(evento);
+
+  invalidate(formData.get('concelho'));
+  redirect(comAviso(voltarPara, 'Cartaz retirado. Não volta com a recolha.'));
+}
+
+/**
+ * Levanta a marca, e é o desfazer de um botão que se carrega sem querer.
+ *
+ * A imagem não volta já: volta na recolha seguinte, que a vai buscar à fonte
+ * como sempre foi. Dizê-lo no aviso é o que evita que alguém carregue nisto
+ * três vezes à espera de ver o cartaz aparecer.
+ */
+export async function reporCartaz(formData: FormData): Promise<void> {
+  const actor = await requireAdmin();
+  const supabase = requireAdminClient();
+  const evento = String(formData.get('evento') ?? '').trim();
+  const voltarPara = String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES);
+  if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
+
+  const { error } = await supabase.rpc('repor_cartaz', {
+    p_event_id: evento,
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  invalidate(formData.get('concelho'));
+  redirect(comAviso(voltarPara, 'Marca levantada. O cartaz volta na próxima recolha.'));
+}
+
+/**
+ * Declara se os cartazes de uma fonte podem ser copiados.
+ *
+ * É a primeira das três cautelas, e é uma decisão de quem responde pelo sítio
+ * — não uma inferência do tipo da fonte. Uma câmara e uma junta são organismos
+ * públicos e a migração ligou-as; uma sala, um santuário ou um blogue não são,
+ * e ficam desligados até alguém olhar para eles.
+ *
+ * **Desligar não é só deixar de copiar.** As cópias que a fonte já tinha são
+ * apagadas na recolha seguinte, que volta a apontar para a origem — ver o
+ * `havia` em `decidirCartaz`. O que se decidiu não guardar não fica guardado.
+ */
+export async function declararAlojamentoDaFonte(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const supabase = requireAdminClient();
+  const fonte = String(formData.get('fonte') ?? '').trim();
+  const voltarPara = `${CAMINHO_DOS_CARTAZES}?vista=fontes`;
+  if (!fonte) redirect(comAviso(voltarPara, 'Falta dizer qual é a fonte.'));
+
+  const alojavel = String(formData.get('alojavel') ?? '') === 'sim';
+  const { error } = await supabase
+    .from('sources')
+    .update({ cartaz_alojavel: alojavel })
+    .eq('id', fonte);
+  if (error) redirect(comAviso(voltarPara, error.message));
+
+  redirect(
+    comAviso(
+      voltarPara,
+      alojavel
+        ? 'Os cartazes desta fonte passam a ser copiados na próxima recolha.'
+        : 'As cópias desta fonte são apagadas na próxima recolha.',
     ),
   );
 }

@@ -110,19 +110,61 @@ sítio. Distribuída sob **SIL Open Font License 1.1**.
 `pnpm-lock.yaml` fixa as versões; as licenças são as de cada pacote.
 
 A única dependência de produção com copyleft é **`@img/sharp-libvips-linux-x64`**,
-sob **LGPL-3.0-or-later** — copyleft fraco ao nível da biblioteca, dependência
-opcional do Next.js, distribuída como binário pré-compilado de 18,6 MB que
-agrega bibliotecas C de licenças diversas e **não traz um único ficheiro de
-licença na pasta**. Num modelo em que o dono aloja e não distribui ao cliente,
-é dúvida para o advogado — está na pergunta 9 de
-[`TITULARIDADE.md`](TITULARIDADE.md).
+sob **LGPL-3.0-or-later** — copyleft fraco ao nível da biblioteca, distribuída
+como binário pré-compilado de 18,6 MB que agrega bibliotecas C de licenças
+diversas e **não traz um único ficheiro de licença na pasta**. Num modelo em
+que o dono aloja e não distribui ao cliente, é dúvida para o advogado — está na
+pergunta 9 de [`TITULARIDADE.md`](TITULARIDADE.md).
+
+**A 21 de setembro de 2026 deixou de ser só uma dependência opcional do
+Next.js: o `sharp` passou a ser dependência directa de `@coreto/ingest`**, que
+é quem redimensiona os cartazes copiados. A licença é a mesma e a pergunta ao
+advogado é a mesma; o que muda é que já não se pode responder «vem por
+arrastamento e pode sair quando o Next.js quiser». Corre na recolha, numa
+máquina do GitHub, e nada do binário chega ao browser de quem lê.
 
 ---
 
+## Os cartazes dos eventos
+
+**Até 21 de setembro de 2026 este documento dizia que os cartazes não estavam
+alojados por nós e que o assunto estava «por decidir». Ficou decidido: passam a
+estar.** O que muda de natureza é o acto — apontar para uma imagem é ligar,
+guardar uma cópia é reproduzir —, e é por isso que a decisão veio com três
+cautelas e não com um botão.
+
+**Só de fontes oficiais.** A coluna `sources.cartaz_alojavel` (migração 0162) é
+uma declaração e não uma inferência: a migração ligou-a para as câmaras
+municipais e as juntas de freguesia — organismos públicos, cuja agenda é
+comunicação institucional — e deixou-a desligada para tudo o resto. Das treze
+fontes `venue_site`, três estão em domínios de câmara e podiam bem ser
+copiáveis; quem o diz é quem responde pelo sítio, a olhar para elas uma a uma
+no painel, e não um `like '%cm-%'` numa migração. Uma fonte nova não aloja nada
+até alguém o declarar.
+
+**Sempre com crédito e ligação à origem.** A coluna `image_credit` existia
+desde a 0004 e estava vazia em todos os eventos; passa a ser escrita no momento
+em que a cópia se faz, com o nome de quem publicou o cartaz — que é o que se
+sabe com verdade, ao contrário de quem o desenhou, que não está escrito em lado
+nenhum da página de onde veio. A ficha do evento mostra-o e liga ao ficheiro
+original em `image_origem`, para quem quiser ir ver o resto.
+
+**E retira-se num gesto.** `/admin/cartazes` é a mesa de pedidos: procura-se
+pelo título, carrega-se em «Retirar a pedido», e a imagem sai da página e do
+balde. A parte que custou a escrever é a que garante que não volta — a recolha
+corre todas as noites e ia buscá-la outra vez —, e está num gatilho da base
+(`events_cartaz_retirado`) que esvazia as colunas da imagem a cada escrita,
+venha ela da recolha, da moderação ou do painel. Não é a recolha que se lembra:
+é a base que não deixa.
+
+O que não muda: os cartazes continuam a ser obra gráfica com autor, e as três
+cautelas são mitigações e não uma licença. A pergunta de fundo — se a cópia com
+crédito de comunicação institucional municipal é uso legítimo — é a mesma mesa
+da revisão jurídica do dossiê, e está na
+[`TITULARIDADE.md`](TITULARIDADE.md).
+
 ## O que este documento não cobre
 
-O conteúdo que o produto **exibe** vindo de servidores de terceiros: os cartazes
-dos eventos, que são obra gráfica com autor e não estão alojados por nós. Em
-produção, 219 de 296 eventos têm imagem e **nenhum tem crédito**. É problema
-real e é de outra natureza — não é o que se licencia, é o que se publica —, e
-está por decidir.
+O que o sítio vai buscar a servidores de terceiros em tempo de execução e não
+guarda: os cartazes das fontes que não estão declaradas como alojáveis, que
+continuam a ser servidos de casa de quem os publicou.

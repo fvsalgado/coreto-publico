@@ -56,6 +56,7 @@ function evento(over: Partial<EventoNoMapa> & { id: string }): EventoNoMapa {
     latitude: null,
     longitude: null,
     image_url: null,
+    image_miniatura: null,
     image_alt: null,
     category_slug: null,
     source_url: null,

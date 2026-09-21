@@ -108,6 +108,14 @@ export interface Regiao {
   responsavelPeloTratamento: ResponsavelPeloTratamento | null;
   /** A contagem que a própria região declara — a mesma das schema-checks. */
   concelhosDeclarados: number;
+  /**
+   * Quantos cartazes a fila de destaques da entrada mostra (0161).
+   *
+   * É decisão editorial da região e não do desenho: uma região com quatro
+   * concelhos fica melhor com seis do que com doze meio vazios. Zero desliga
+   * a fila.
+   */
+  destaquesAlvo: number;
   /** A contagem por extenso: «onze». Pré-calculada porque a prosa a usa muito. */
   concelhosPorExtenso: string;
   bbox: { latMin: number; latMax: number; lonMin: number; lonMax: number };
@@ -179,6 +187,7 @@ export interface LinhaDeRegiao {
   bbox_lon_max: number;
   /** 0157 — se esta região está atrás de uma barreira de senha. */
   gate_enabled: boolean;
+  destaques_alvo: number | null;
 }
 
 function artigoValido(article: string): ArtigoDeRegiao {
@@ -297,6 +306,7 @@ export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
             epdContacto: null,
           },
     concelhosDeclarados: linha.expected_municipality_count,
+    destaquesAlvo: linha.destaques_alvo ?? 12,
     concelhosPorExtenso: numeroPorExtenso(linha.expected_municipality_count),
     bbox: {
       latMin: linha.bbox_lat_min,
@@ -333,6 +343,7 @@ export const REGIAO_DE_RECURSO: Regiao = {
   ogImage: null,
   responsavelPeloTratamento: null,
   concelhosDeclarados: 0,
+  destaquesAlvo: 12,
   concelhosPorExtenso: '',
   bbox: { latMin: 0, latMax: 0, lonMin: 0, lonMax: 0 },
 };
