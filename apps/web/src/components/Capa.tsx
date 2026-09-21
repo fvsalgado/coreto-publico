@@ -109,8 +109,9 @@ export function Capa({ event, today, className = '' }: Props) {
    * A miniatura, quando o cartaz é nosso.
    *
    * O cartão da agenda desenha esta moldura a 84 píxeis no telemóvel; a
-   * vitrine dos destaques desenha-a a 336. Servir o mesmo ficheiro aos dois é
-   * a diferença entre 20 KB e 110 KB **vinte vezes por página**.
+   * vitrine dos destaques desenha-a a 336. Servir o mesmo ficheiro aos dois
+   * custa a diferença entre os dois **vinte vezes por página** — medido nos
+   * primeiros 38 cartazes copiados, 14 KB a miniatura contra 43 KB o grande.
    *
    * Cai para o cartaz inteiro quando não há cópia nossa — um evento de fonte
    * não alojável, ou uma cópia que ainda não se fez —, e aí esta moldura faz

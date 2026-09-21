@@ -49,10 +49,11 @@ export const CARD_EVENT_FIELDS = [
    * A miniatura da cópia (0162), e é a coluna mais barata que aqui entrou.
    *
    * O cartão desenha o cartaz a 84 píxeis no telemóvel. Servir-lhe o mesmo
-   * ficheiro que a ficha desenha a toda a largura é a diferença entre 20 KB e
-   * 110 KB **vinte vezes por página** — 400 KB contra 2,2 MB numa lista de
-   * vinte cartões. Nula nos eventos servidos da origem, e aí a `Capa` desenha
-   * o que há, como sempre desenhou.
+   * ficheiro que a ficha desenha a toda a largura custa a diferença entre os
+   * dois **vinte vezes por página**: medido nos primeiros 38 cartazes
+   * copiados, 14 KB a miniatura contra 43 KB o grande — 280 KB contra 860 KB
+   * numa lista de vinte cartões. Nula nos eventos servidos da origem, e aí a
+   * `Capa` desenha o que há, como sempre desenhou.
    */
   'image_miniatura',
   /*
