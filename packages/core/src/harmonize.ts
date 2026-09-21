@@ -274,6 +274,17 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
      */
     image_width: null,
     image_height: null,
+    // O cartaz que a fonte publicou é a origem por definição. O que o sítio
+    // serve decide-se na recolha, que é quem sabe se há cópia — ver
+    // `decidirCartaz`, em `@coreto/core`, e `tratarCartaz`, na recolha.
+    image_origem: raw.imageUrl ?? null,
+    image_miniatura: null,
+    image_guardado_em: null,
+    // A marca de retirado é de quem a pôs. O harmonizador não sabe dela, e
+    // escrever nulo aqui não a apaga: o `mergeEventUpdate` guarda o que está,
+    // e o gatilho da 0162 não deixaria de qualquer modo.
+    image_retirado_em: null,
+    image_retirado_por: null,
     status: 'draft',
     origin: 'scraper',
     confidence: scoreConfidence(raw, { venueId, category: category.categorySlug, sessions }),

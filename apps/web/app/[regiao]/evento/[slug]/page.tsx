@@ -478,9 +478,39 @@ export default async function EventPage({ params }: Props) {
               }`}
             />
           </div>
+          {/*
+              O crédito, e a ligação para a página de onde o cartaz veio.
+ 
+              **Deixou de ser um enfeite no dia em que passámos a guardar uma
+              cópia.** Apontar para uma imagem é ligar; guardar uma cópia é
+              reproduzir, e uma reprodução de obra gráfica alheia sem dizer de
+              quem é e sem caminho de volta à origem é a coisa que a decisão de
+              alojar não pode produzir. É a segunda das três cautelas da
+              migração 0162, e é a única sem uma coluna nem um botão a
+              garanti-la — vive aqui e no momento em que a cópia se faz.
+ 
+              A ligação é ao `image_origem`, que é o endereço do próprio
+              ficheiro no servidor de quem o publicou, e não ao `source_url`,
+              que é a página do evento: quem vem por aqui quer ver o cartaz
+              como ele lá está.
+ 
+              Sem cópia nossa não há crédito escrito e não se desenha nada — o
+              cartaz é servido de casa de quem o publicou, e ligar para o sítio
+              de onde o browser já o foi buscar não acrescenta nada a ninguém. */}
           {event.image_credit ? (
             <figcaption className="mt-2 text-sm text-muted">
-              Imagem: {event.image_credit}
+              Cartaz:{' '}
+              {event.image_origem ? (
+                <a
+                  href={event.image_origem}
+                  rel="noopener nofollow"
+                  className="underline underline-offset-4"
+                >
+                  {event.image_credit}
+                </a>
+              ) : (
+                event.image_credit
+              )}
             </figcaption>
           ) : null}
         </figure>

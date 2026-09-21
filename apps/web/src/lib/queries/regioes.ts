@@ -27,7 +27,7 @@ const COLUNAS_DA_REGIAO =
   'data_controller_nif, data_controller_address, data_controller_email, ' +
   'data_controller_dpo, data_controller_dpo_contact, ' +
   'expected_municipality_count, bbox_lat_min, bbox_lat_max, bbox_lon_min, bbox_lon_max, ' +
-  'gate_enabled';
+  'gate_enabled, destaques_alvo';
 
 /**
  * Uma região pelo identificador. `null` para slug desconhecido ou sem base.

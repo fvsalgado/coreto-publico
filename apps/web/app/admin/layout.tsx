@@ -29,6 +29,7 @@ const NAV = [
   { href: '/admin/fontes', label: 'Fontes' },
   { href: '/admin/etiquetas', label: 'Etiquetas' },
   { href: '/admin/espacos', label: 'Espaços' },
+  { href: '/admin/cartazes', label: 'Cartazes' },
   { href: '/admin/qualidade', label: 'Qualidade' },
   { href: '/admin/regioes', label: 'Regiões' },
   { href: '/admin/auditoria', label: 'Auditoria' },

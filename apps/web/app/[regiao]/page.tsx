@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
+  comporDestaques,
   janelaDaSemana,
   listMunicipalityNames,
   todayInLisbon,
@@ -13,6 +14,7 @@ import { MunicipalityGrid } from '@/src/components/MunicipalityGrid';
 import { semAsDesligadas, type Ancora } from '@/src/lib/navegacao';
 import {
   countEventsByMunicipality,
+  listDestaquesFixados,
   listEvents,
   listMunicipalities,
   listVenueNames,
@@ -156,7 +158,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
    */
   const today = todayInLisbon();
 
-  const [week, municipalities, counts, venueNames, desligadas, atalhosComEventos] =
+  const [week, municipalities, counts, venueNames, desligadas, atalhosComEventos, fixados] =
     await Promise.all([
       // A mesma semana que o atalho «Esta semana» da agenda mostra — a definição
       // vive em `@coreto/core` para as duas vistas serem os mesmos sete dias por
@@ -173,12 +175,42 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
       // O tempo primeiro, e o preço e o público a seguir: é a ordem da
       // pergunta, não a ordem por que os atalhos foram sendo escritos.
       comResultados(regiao.id, [...atalhosDeTempo(today), ...SHORTCUTS]),
+      // Os que quem administra fixou na montra (0161). Podem ser de fora da
+      // semana: um destaque é uma escolha, e uma escolha não se limita a sete
+      // dias.
+      listDestaquesFixados(regiao.id),
     ]);
 
   // A hora de cada cartão da semana. A entrada chamava `listEvents` e mais
   // nada, e `listEvents` nunca lê `event_sessions`; as regras estão em
   // `withCardTimes`.
   const events = await withCardTimes(week.events, today, listFeedSessions);
+
+  /*
+   * A montra: o que foi escolhido primeiro, o resto tirado à sorte da semana.
+   *
+   * A hora vem pelo mesmo `withCardTimes` dos cartões da semana, e sobre a
+   * lista já composta — os fixados podem não estar na semana, e sem isto
+   * entravam na montra sem hora enquanto os da semana a tinham.
+   *
+   * A semente é a região e o dia: o dia inteiro vê a mesma montra, ela muda
+   * sozinha de manhã, e duas pessoas na mesma vila veem a mesma coisa. As
+   * razões estão em `comporDestaques`.
+   */
+  const destaques = await withCardTimes(
+    comporDestaques({
+      fixados: fixados.map((evento) => ({ ...evento, ate: evento.date_end ?? evento.date_start })),
+      daSemana: week.events.map((evento) => ({
+        ...evento,
+        ate: evento.date_end ?? evento.date_start,
+      })),
+      alvo: regiao.destaquesAlvo,
+      hoje: today,
+      semente: `${regiao.id}:${today}`,
+    }),
+    today,
+    listFeedSessions,
+  );
 
   // «Onze concelhos, um palco» — a contagem por extenso vem da região; num
   // build sem base não há contagem e a frase degrada sem números.
@@ -221,7 +253,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
       </header>
 
       <Destaques
-        events={events}
+        events={destaques}
         today={today}
         municipalityNames={municipalityNames}
         venueNames={venueNames}

@@ -536,6 +536,114 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
   return (data ?? []) as unknown as AdminEventRow[];
 }
 
+/** Uma linha da montra da entrada, no painel. */
+export interface DestaqueDoPainel {
+  event_id: string;
+  posicao: number;
+  fixado_por: string;
+  fixado_em: string;
+  title: string;
+  slug: string;
+  date_start: string | null;
+  date_end: string | null;
+  image_url: string | null;
+  municipality_id: string;
+  /** Já acabou: continua fixado e a entrada não o mostra. */
+  passou: boolean;
+}
+
+/**
+ * Os destaques fixados de uma região, com o que o painel precisa de mostrar.
+ *
+ * Traz também os que já passaram — ao contrário da entrada, que os esconde.
+ * É a diferença entre as duas vistas e é deliberada: quem administra tem de
+ * os ver para os largar, e uma montra que esconde do painel o que esconde do
+ * público deixa lixo fixado que ninguém sabe que lá está.
+ */
+export async function listDestaquesDoPainel(regiao: string): Promise<DestaqueDoPainel[]> {
+  const supabase = requireAdminClient();
+  const hoje = todayInLisbon();
+
+  const { data, error } = await supabase
+    .from('region_highlights')
+    .select(
+      'event_id, posicao, fixado_por, fixado_em, ' +
+        'events!inner(title, slug, date_start, date_end, image_url, municipality_id)',
+    )
+    .eq('region_id', regiao)
+    .order('posicao', { ascending: true });
+
+  exigirLeitura('listDestaquesDoPainel', error);
+
+  type Linha = {
+    event_id: string;
+    posicao: number;
+    fixado_por: string;
+    fixado_em: string;
+    events: {
+      title: string;
+      slug: string;
+      date_start: string | null;
+      date_end: string | null;
+      image_url: string | null;
+      municipality_id: string;
+    };
+  };
+
+  return ((data ?? []) as unknown as Linha[]).map((linha) => ({
+    event_id: linha.event_id,
+    posicao: linha.posicao,
+    fixado_por: linha.fixado_por,
+    fixado_em: linha.fixado_em,
+    ...linha.events,
+    passou: (linha.events.date_end ?? linha.events.date_start ?? '') < hoje,
+  }));
+}
+
+/** Um evento que se pode fixar na montra. */
+export interface CandidatoADestaque {
+  id: string;
+  title: string;
+  date_start: string | null;
+  date_end: string | null;
+  image_url: string | null;
+  municipality_id: string;
+}
+
+/**
+ * Os eventos que se podem fixar: publicados, por acontecer, desta região.
+ *
+ * Por ordem de quando acontecem, e não por título: quem está a montar a
+ * montra está a olhar para a semana que vem. O `q` serve a caixa de pesquisa
+ * do painel, porque uma região com cento e dezasseis eventos futuros não se
+ * percorre numa lista.
+ */
+export async function listCandidatosADestaque(
+  regiao: string,
+  q?: string,
+  limite = 40,
+): Promise<CandidatoADestaque[]> {
+  const supabase = requireAdminClient();
+  const hoje = todayInLisbon();
+
+  let query = supabase
+    .from('events')
+    .select('id, title, date_start, date_end, image_url, municipality_id, municipalities!inner()')
+    .eq('municipalities.region_id', regiao)
+    .eq('status', 'published')
+    .eq('is_canonical', true)
+    .or(`date_end.gte.${hoje},date_start.gte.${hoje}`);
+
+  if (q?.trim()) query = query.ilike('title', `%${q.trim()}%`);
+
+  const { data, error } = await query
+    .order('agenda_date', { ascending: true, nullsFirst: false })
+    .limit(limite);
+
+  exigirLeitura('listCandidatosADestaque', error);
+  return (data ?? []) as unknown as CandidatoADestaque[];
+}
+
 /** Quantos há em cada estado, para os atalhos no topo da página. */
 export async function countEventsByStatus(): Promise<Record<string, number>> {
   const supabase = requireAdminClient();
@@ -947,6 +1055,8 @@ export interface RegionAdminRow {
   is_enabled: boolean;
   /** Se a região está atrás da barreira de senha (0157). A senha não vem aqui. */
   gate_enabled: boolean;
+  /** Quantos cartazes a montra da entrada mostra (0161). Zero desliga-a. */
+  destaques_alvo: number | null;
   sort_order: number;
   updated_at: string;
 }
@@ -1186,4 +1296,138 @@ async function idsSemHora(
   // devolver zero eventos — indistinguível de não haver nenhum por corrigir.
   exigirLeitura('idsSemHora', error);
   return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/**
+ * Um cartaz na secretária de quem responde pelos pedidos.
+ *
+ * O que a linha precisa de dizer é o que alguém precisa de saber para decidir
+ * em dez segundos: que evento é, de que fonte veio, se a cópia é nossa ou não,
+ * e — quando já foi retirado — quando e por quem.
+ */
+export interface CartazDoPainel {
+  id: string;
+  slug: string;
+  title: string;
+  date_start: string | null;
+  date_end: string | null;
+  municipality_id: string;
+  source_id: string | null;
+  image_url: string | null;
+  image_miniatura: string | null;
+  image_origem: string | null;
+  image_credit: string | null;
+  image_guardado_em: string | null;
+  image_retirado_em: string | null;
+  image_retirado_por: string | null;
+}
+
+export const CARTAZES_PAGE_SIZE = 40;
+
+const COLUNAS_DO_CARTAZ =
+  'id, slug, title, date_start, date_end, municipality_id, source_id, image_url, image_miniatura, image_origem, image_credit, image_guardado_em, image_retirado_em, image_retirado_por';
+
+export interface FiltroDeCartazes {
+  /** `nossos` (há cópia), `origem` (aponta), `retirados`, ou todos. */
+  estado?: string;
+  q?: string;
+  concelho?: string;
+}
+
+/**
+ * Os cartazes do catálogo, para a secretária dos pedidos.
+ *
+ * **Os retirados estão sempre na lista, e não é um detalhe de arrumação.** A
+ * página pública esconde-os — não há imagem nenhuma para mostrar —, e se o
+ * painel os escondesse também, um cartaz retirado por engano ficava
+ * irrecuperável a não ser por SQL. Quem retira tem de poder ver o que retirou.
+ *
+ * Por ordem de quando a cópia se fez, com os mais recentes à cabeça: quem vem
+ * a esta página vem quase sempre atrás de um pedido sobre alguma coisa que
+ * está no ar agora.
+ */
+export async function listCartazes(
+  filtro: FiltroDeCartazes = {},
+  limite = CARTAZES_PAGE_SIZE,
+): Promise<CartazDoPainel[]> {
+  const supabase = requireAdminClient();
+  let query = supabase.from('events').select(COLUNAS_DO_CARTAZ).eq('is_canonical', true);
+
+  if (filtro.estado === 'retirados') {
+    query = query.not('image_retirado_em', 'is', null);
+  } else if (filtro.estado === 'nossos') {
+    query = query.not('image_miniatura', 'is', null);
+  } else if (filtro.estado === 'origem') {
+    query = query.is('image_miniatura', null).not('image_url', 'is', null);
+  } else {
+    // «Todos» quer dizer todos os que têm cartaz ou tiveram um: um evento sem
+    // imagem nenhuma e sem pedido nenhum não tem nada que fazer nesta página.
+    query = query.or('image_url.not.is.null,image_retirado_em.not.is.null');
+  }
+
+  if (filtro.q?.trim()) query = query.ilike('title', `%${filtro.q.trim()}%`);
+  if (filtro.concelho) query = query.eq('municipality_id', filtro.concelho);
+
+  const { data, error } = await query
+    .order('image_guardado_em', { ascending: false, nullsFirst: false })
+    .order('date_start', { ascending: false, nullsFirst: false })
+    .limit(limite);
+
+  exigirLeitura('listCartazes', error);
+  return (data ?? []) as unknown as CartazDoPainel[];
+}
+
+/** Quantos há de cada, para os atalhos no topo e para a conta do espaço. */
+export async function contarCartazes(): Promise<{
+  nossos: number;
+  daOrigem: number;
+  retirados: number;
+}> {
+  const supabase = requireAdminClient();
+  const [nossos, daOrigem, retirados] = await Promise.all([
+    supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_canonical', true)
+      .not('image_miniatura', 'is', null),
+    supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_canonical', true)
+      .is('image_miniatura', null)
+      .not('image_url', 'is', null),
+    supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_canonical', true)
+      .not('image_retirado_em', 'is', null),
+  ]);
+
+  exigirLeitura('contarCartazes', nossos.error ?? daOrigem.error ?? retirados.error);
+  return {
+    nossos: nossos.count ?? 0,
+    daOrigem: daOrigem.count ?? 0,
+    retirados: retirados.count ?? 0,
+  };
+}
+
+/** As fontes e a declaração de quem pode ser copiado. Ver a migração 0162. */
+export interface FonteAlojavel {
+  id: string;
+  name: string;
+  kind: string;
+  url: string;
+  is_enabled: boolean;
+  cartaz_alojavel: boolean;
+}
+
+export async function listFontesParaAlojamento(): Promise<FonteAlojavel[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('sources')
+    .select('id, name, kind, url, is_enabled, cartaz_alojavel')
+    .order('cartaz_alojavel', { ascending: false })
+    .order('name');
+  exigirLeitura('listFontesParaAlojamento', error);
+  return (data ?? []) as unknown as FonteAlojavel[];
 }

@@ -179,6 +179,27 @@ export interface EventRow {
    */
   image_width: number | null;
   image_height: number | null;
+  /**
+   * De onde o cartaz veio, no servidor de quem o publicou (migração 0162).
+   *
+   * O `image_url` acima quer dizer sempre **o que o sítio serve**; esta diz
+   * **de onde veio**. Enquanto não há cópia nossa são a mesma coisa, porque é
+   * o mesmo ficheiro; quando há, é esta que a ficha credita e liga.
+   */
+  image_origem: string | null;
+  /** A cópia pequena (400 px) para as miniaturas. Nula sem cópia nossa. */
+  image_miniatura: string | null;
+  /** Quando a cópia foi feita. Nula quando o cartaz é servido da origem. */
+  image_guardado_em: string | null;
+  /**
+   * Quando o cartaz foi retirado a pedido de quem é seu autor.
+   *
+   * Enquanto não for nula, nenhum processo consegue voltar a pôr imagem neste
+   * evento: não é a recolha que se lembra, é o gatilho
+   * `events_cartaz_retirado` que não deixa. Ver a migração 0162.
+   */
+  image_retirado_em: string | null;
+  image_retirado_por: string | null;
   status: EventStatus;
   origin: EventOrigin;
   confidence: number;

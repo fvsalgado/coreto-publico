@@ -5,6 +5,8 @@ import { BandstandMark } from '@/src/components/BandstandMark';
 interface CapaEvent {
   title: string;
   image_url: string | null;
+  /** A cópia pequena (400 px), quando o cartaz é nosso. Ver a migração 0162. */
+  image_miniatura: string | null;
   image_alt: string | null;
   category_slug: string | null;
   date_start: string | null;
@@ -103,6 +105,19 @@ export function Capa({ event, today, className = '' }: Props) {
   const category = formatCategory(event.category_slug);
   const when = coverDay(event.date_start, event.date_end, today);
   const cartaz = posterBackground(event.image_url);
+  /*
+   * A miniatura, quando o cartaz é nosso.
+   *
+   * O cartão da agenda desenha esta moldura a 84 píxeis no telemóvel; a
+   * vitrine dos destaques desenha-a a 336. Servir o mesmo ficheiro aos dois é
+   * a diferença entre 20 KB e 110 KB **vinte vezes por página**.
+   *
+   * Cai para o cartaz inteiro quando não há cópia nossa — um evento de fonte
+   * não alojável, ou uma cópia que ainda não se fez —, e aí esta moldura faz
+   * exactamente o que fazia antes de a cópia existir.
+   */
+  const pequeno = posterBackground(event.image_miniatura) ?? cartaz;
+  const duasMedidas = pequeno !== cartaz;
 
   return (
     <div
@@ -177,16 +192,46 @@ export function Capa({ event, today, className = '' }: Props) {
                 A folga é em `inset` negativo e não em `scale`: o `scale`
                 amplia a franja na mesma proporção em que afasta a margem, e
                 nunca a alcança. */}
+            {/* O desfocado é sempre a miniatura, e nunca outra coisa: por
+                baixo de um `blur(24px)` não há detalhe nenhum que os mil e
+                duzentos píxeis do grande acrescentem. É o caso em que a
+                medida pequena não é um compromisso — é a certa. */}
             <div
-              style={{ backgroundImage: cartaz }}
+              style={{ backgroundImage: pequeno }}
               className="absolute -inset-12 bg-cover bg-center blur-xl saturate-150 dark:brightness-[0.45] dark:saturate-100"
             />
           </div>
-          <div
-            aria-hidden="true"
-            style={{ backgroundImage: cartaz }}
-            className="absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md"
-          />
+          {/* E à frente, a medida que a caixa merece.
+ 
+              São duas camadas e não uma com dois endereços porque não há
+              maneira de escolher um endereço por largura de contentor: o
+              `srcset` é do `<img>`, e esta moldura é de fundos por razões que
+              estão escritas em cima. Duas camadas resolvem-no sem JavaScript —
+              a que está `display:none` não é descarregada, que é a regra que
+              faz isto valer a pena.
+ 
+              Sem cópia nossa há uma só, porque os dois endereços eram o mesmo
+              e duas camadas iguais é uma a mais. */}
+          {duasMedidas ? (
+            <>
+              <div
+                aria-hidden="true"
+                style={{ backgroundImage: pequeno }}
+                className="absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md @min-[16rem]:hidden"
+              />
+              <div
+                aria-hidden="true"
+                style={{ backgroundImage: cartaz }}
+                className="absolute inset-0 z-20 m-[3px] hidden rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md @min-[16rem]:block"
+              />
+            </>
+          ) : (
+            <div
+              aria-hidden="true"
+              style={{ backgroundImage: cartaz }}
+              className="absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md"
+            />
+          )}
         </>
       ) : null}
     </div>

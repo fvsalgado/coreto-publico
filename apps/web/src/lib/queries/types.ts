@@ -39,6 +39,14 @@ export interface EventCard {
   image_url: string | null;
   image_alt: string | null;
   /**
+   * A cópia pequena do cartaz (400 px), quando há cópia nossa (0162).
+   *
+   * Nula é o caso normal de um evento cujo cartaz é servido da origem, e não
+   * uma falha: a `Capa` desenha o `image_url` nas duas camadas, como sempre
+   * desenhou.
+   */
+  image_miniatura: string | null;
+  /**
    * Dá para entrar numa cadeira de rodas?
    *
    * Vem da coluna derivada `wheelchair_accessible_resolved` (0129) por alias
@@ -74,6 +82,7 @@ export interface EventPoint {
   latitude: number | null;
   longitude: number | null;
   image_url: string | null;
+  image_miniatura: string | null;
   image_alt: string | null;
   category_slug: string | null;
   source_url: string | null;
@@ -122,6 +131,14 @@ export interface EventDetail extends EventCard {
    */
   image_width: number | null;
   image_height: number | null;
+  /**
+   * De onde o cartaz veio, no servidor de quem o publicou (0162).
+   *
+   * O `image_url` quer dizer **o que o sítio serve**; esta diz **de onde
+   * veio**. Enquanto não há cópia nossa são a mesma coisa, porque é o mesmo
+   * ficheiro. É esta que a ficha credita e liga.
+   */
+  image_origem: string | null;
   origin: string;
   source_url: string | null;
   updated_at: string;

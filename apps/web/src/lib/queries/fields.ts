@@ -46,6 +46,16 @@ export const CARD_EVENT_FIELDS = [
   'image_url',
   'image_alt',
   /*
+   * A miniatura da cópia (0162), e é a coluna mais barata que aqui entrou.
+   *
+   * O cartão desenha o cartaz a 84 píxeis no telemóvel. Servir-lhe o mesmo
+   * ficheiro que a ficha desenha a toda a largura é a diferença entre 20 KB e
+   * 110 KB **vinte vezes por página** — 400 KB contra 2,2 MB numa lista de
+   * vinte cartões. Nula nos eventos servidos da origem, e aí a `Capa` desenha
+   * o que há, como sempre desenhou.
+   */
+  'image_miniatura',
+  /*
    * O nome fica, a coluna muda: passa a vir a resolvida da 0129.
    *
    * **Porquê a troca.** O cartão lia `events.wheelchair_accessible`, que está
@@ -108,6 +118,9 @@ export const MAP_EVENT_FIELDS = [
   // mostra o evento e não só o seu nome: sem elas, carregar numa marca dava
   // uma lista de títulos onde a agenda dá cartazes.
   'image_url',
+  // A miniatura pela mesma razão do cartão: o painel do mapa desenha a capa a
+  // oitenta píxeis, e é o degrau mais pequeno que esta moldura tem.
+  'image_miniatura',
   'image_alt',
   'category_slug',
   'source_url',
@@ -146,6 +159,16 @@ export const DETAIL_EVENT_FIELDS = [
    * coluna que ninguém lê.
    */
   'status',
+  /*
+   * De onde o cartaz veio (0162).
+   *
+   * A ficha é o único sítio que a desenha, e desenha-a porque tem de a
+   * desenhar: uma cópia de um cartaz alheio sem crédito e sem ligação à página
+   * de origem é a cópia que não se pode fazer. O `image_credit` já cá estava e
+   * estava vazio em todos os eventos; agora tem quem o escreva e esta coluna é
+   * para onde ele liga.
+   */
+  'image_origem',
   'subtitle',
   'description',
   'location_address',

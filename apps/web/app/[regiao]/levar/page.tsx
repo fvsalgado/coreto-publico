@@ -120,6 +120,7 @@ const exemploDeResposta = (origem: string) => `{
       "price_display": null,
       "image_url": "…",
       "image_alt": "…",
+      "image_miniatura": "…",
       "wheelchair_accessible": true,
       "has_sign_language": false,
       "has_audio_description": false,
@@ -498,6 +499,16 @@ export default async function LevarPage({ params }: Props) {
             ligações, e não o texto integral nem as imagens. Para republicar uma descrição ou um
             cartaz, o pedido é a quem organiza — e o campo{' '}
             <code className="rounded bg-accent-soft px-1">url</code> de cada evento leva lá.
+          </p>
+          <p>
+            Desde 21 de setembro de 2026, o{' '}
+            <code className="rounded bg-accent-soft px-1">image_url</code> de alguns eventos aponta
+            para uma cópia nossa, redimensionada, do cartaz que a câmara publicou — é mais rápida e
+            não morre quando a câmara arruma a pasta do ano. Guardar uma cópia não a torna nossa:
+            continua de quem a fez, e quem a quiser republicar continua a ter de pedir a quem
+            organiza. O <code className="rounded bg-accent-soft px-1">image_miniatura</code> é a
+            mesma imagem a 400 píxeis, para listas; é nulo quando o cartaz é servido de casa de quem
+            o publicou.
           </p>
           <p>
             Atribuição sugerida: «Dados da agenda cultural{' '}
