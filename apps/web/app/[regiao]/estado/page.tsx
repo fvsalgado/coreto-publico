@@ -88,11 +88,15 @@ function LinhaDaFonte({ fonte }: { fonte: FonteComSaude }) {
   );
 }
 
-function Numero({ valor, rotulo }: { valor: number; rotulo: string }) {
+/**
+ * Um contador, com o rótulo no número certo. Lê-se de seguida — «1 atrasada»,
+ * e não «1 atrasadas» —, e é assim que um leitor de ecrã o diz.
+ */
+function Numero({ valor, rotulo }: { valor: number; rotulo: readonly [string, string] }) {
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-3">
       <p className="font-display text-3xl font-semibold tabular-nums">{valor}</p>
-      <p className="ct-eyebrow mt-0.5">{rotulo}</p>
+      <p className="ct-eyebrow mt-0.5">{valor === 1 ? rotulo[0] : rotulo[1]}</p>
     </div>
   );
 }
@@ -236,10 +240,10 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Numero valor={recolha.emDia.length} rotulo="em dia" />
-          <Numero valor={recolha.atrasadas.length} rotulo="atrasadas" />
-          <Numero valor={recolha.paradas.length} rotulo="paradas" />
-          <Numero valor={recolha.porEstrear.length} rotulo="por estrear" />
+          <Numero valor={recolha.emDia.length} rotulo={['em dia', 'em dia']} />
+          <Numero valor={recolha.atrasadas.length} rotulo={['atrasada', 'atrasadas']} />
+          <Numero valor={recolha.paradas.length} rotulo={['parada', 'paradas']} />
+          <Numero valor={recolha.porEstrear.length} rotulo={['por estrear', 'por estrear']} />
         </div>
 
         {familias.length > 0 ? (
@@ -301,8 +305,8 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <Numero valor={agenda.total} rotulo="eventos por vir" />
-          <Numero valor={agenda.vazios.length} rotulo="concelhos a zero" />
+          <Numero valor={agenda.total} rotulo={['evento por vir', 'eventos por vir']} />
+          <Numero valor={agenda.vazios.length} rotulo={['concelho a zero', 'concelhos a zero']} />
         </div>
 
         {agenda.vazios.length > 0 ? (

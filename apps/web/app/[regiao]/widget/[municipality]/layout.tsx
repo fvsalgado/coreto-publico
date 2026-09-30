@@ -12,6 +12,18 @@
  *
  * Repara em onde este ficheiro está: em `[municipality]`, e não em `/widget`.
  * A página de documentação é uma página normal do sítio e fica com a moldura.
+ *
+ * A regra tem dois andares, e o segundo não se vê à primeira. Numa região do
+ * tipo `montra`, o layout da região embrulha o sítio num invólucro
+ * `[data-paleta]` com `display: contents` (ver `[regiao]/layout.tsx`), e o
+ * `main` deixa de ser filho do `body`. Com um andar só, a regra escondia o
+ * invólucro — e com ele o widget inteiro, que na demonstração saía em branco.
+ * O invólucro fica, porque é ele que dá a cor; esconde-se o que ele traz além
+ * do `main`.
+ *
+ * A explicação vive aqui e não no comentário da folha de estilo: esse vai para
+ * o navegador dentro do `<style>`, e o glossário interno não sai para texto
+ * servido (`scripts/verificar-afirmacoes.mjs`).
  */
 
 const BARE_PAGE = `
@@ -27,9 +39,11 @@ const BARE_PAGE = `
    * O anunciador de rotas do Next fica: é uma região viva para os leitores
    * de ecrã e não se vê.
    */
-  body > *:not(main#conteudo):not(next-route-announcer) { display: none; }
+  body > *:not(main#conteudo):not(next-route-announcer):not([data-paleta]),
+  body > [data-paleta] > *:not(main#conteudo) { display: none; }
 
-  body > main#conteudo {
+  body > main#conteudo,
+  body > [data-paleta] > main#conteudo {
     max-width: none;
     padding: 0;
     margin: 0;

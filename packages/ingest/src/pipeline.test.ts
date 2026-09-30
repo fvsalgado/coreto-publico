@@ -1480,7 +1480,12 @@ function httpComCartaz(cartaz: Uint8Array | null, listagem = LISTAGEM_COM_CARTAZ
           // O `Blob` e não os bytes directos: o `BodyInit` do DOM não existe no
           // `lib` deste pacote, que não corre em browser nenhum, e um `Blob`
           // serve a mesma coisa com um tipo que o Node já traz.
-          new Response(new Blob([cartaz]), {
+          //
+          // E uma cópia dos bytes, e não os mesmos: com o `@types/node` 26, um
+          // `Blob` só aceita bytes assentes num `ArrayBuffer`, e o tipo de
+          // `cartaz` também admite um `SharedArrayBuffer`. A cópia é sempre de
+          // um `ArrayBuffer`, com as definições de hoje e com essas.
+          new Response(new Blob([new Uint8Array(cartaz)]), {
             status: 200,
             headers: { 'content-type': 'image/png' },
           }),

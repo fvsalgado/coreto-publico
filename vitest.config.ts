@@ -16,8 +16,16 @@ export default defineConfig({
    * correr com «React is not defined». É o caso da rota que desenha o cartão
    * de partilha: JSX que nunca vê um navegador, mas que tem de ser executado
    * para se provar que desenha.
+   *
+   * A mesma coisa vai dita duas vezes, e é de propósito. O Vite 8 troca o
+   * esbuild pelo Oxc e deixa de ler a opção `esbuild`: sem a linha `oxc`, fica
+   * com o `jsx: preserve` do `tsconfig` e entrega JSX por transformar a quem
+   * analisa os imports — e quatro ficheiros de teste deixam de carregar. O
+   * Vite 7 não conhece a opção `oxc` e ignora-a. Quando o grupo `ferramentas`
+   * passar para o 8, a linha `esbuild` pode sair.
    */
   esbuild: { jsx: 'automatic' },
+  oxc: { jsx: { runtime: 'automatic' } },
   // O `server-only` é resolvido pelo empacotador do Next e não existe como
   // pacote. Sem este substituto, qualquer teste que toque num módulo de
   // servidor rebenta a carregar em vez de correr. A garantia que esse import
