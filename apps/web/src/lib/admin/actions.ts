@@ -11,10 +11,13 @@ import {
   changedFields,
   comAviso,
   destinoDoPainel,
+  eventoParaAprovar,
   LOTE_MAX,
+  proposedFromPayload,
   readEvent,
   readSessions,
 } from './fields';
+import { getPropostaDaSubmissao } from './queries';
 import { requireAdminClient } from '../supabase/server';
 import { SECCOES_OPCIONAIS } from '../navegacao';
 import { REGIAO_PRINCIPAL } from '../regiao-host';
@@ -47,8 +50,26 @@ export async function approveSubmission(formData: FormData): Promise<void> {
   const submissionId = String(formData.get('submission_id') ?? '');
   if (!submissionId) throw new Error('submissão em falta');
 
-  const event = readEvent(formData);
+  /*
+   * A proposta lê-se da base, e não de um campo escondido do formulário.
+   *
+   * Vinha num `<input type="hidden" name="proposed">` só com os quinze campos
+   * editáveis — e era tudo o que a aprovação conhecia da proposta. O resto (o
+   * público, os eixos da acessibilidade, os números do preço) não ia a lado
+   * nenhum, e o evento publicava-se sem ele. Lida aqui, a proposta é a mesma
+   * que a página desenhou, inteira, e não o que o navegador decidiu devolver.
+   */
+  const submission = await getPropostaDaSubmissao(submissionId);
+  if (!submission) throw new Error('submissão não encontrada');
+  const payload = submission.payload;
+  const proposed: Record<string, unknown> = proposedFromPayload(payload, {
+    municipality_id: submission.municipality_id,
+    venue_id: submission.venue_id,
+  });
+
+  const edited = readEvent(formData);
   const sessions = readSessions(formData);
+  const event = eventoParaAprovar(payload, proposed, edited);
   const first = sessions[0];
   if (first) event.date_start = first.session_date;
 
@@ -60,9 +81,10 @@ export async function approveSubmission(formData: FormData): Promise<void> {
   });
   if (error) throw new Error(error.message);
 
-  // Bloqueia o que o editor mudou face ao que a fonte propunha.
-  const proposed = JSON.parse(String(formData.get('proposed') ?? '{}')) as Record<string, unknown>;
-  const locked = changedFields(proposed, event);
+  // Bloqueia o que o editor mudou face ao que a fonte propunha — e só isso: os
+  // campos herdados não passaram pelas mãos de ninguém, e a recolha da noite
+  // seguinte continua livre de os acertar.
+  const locked = changedFields(proposed, edited);
   if (locked.length > 0 && typeof eventId === 'string') {
     const { error: lockError } = await supabase.rpc('lock_event_fields', {
       p_event_id: eventId,

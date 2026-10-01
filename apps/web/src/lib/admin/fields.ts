@@ -1,3 +1,12 @@
+import {
+  extractAccessibility,
+  parseAudience,
+  parseDurationMinutes,
+  parsePrice,
+  truncate,
+} from '@coreto/core';
+import { formatAudience, formatDuration } from '../format';
+
 /**
  * O formulário de revisão, traduzido.
  *
@@ -40,15 +49,15 @@ export type Proposed = { [K in Exclude<EditableField, 'is_free'>]: string } & { 
 const BOOLEAN_FIELDS = new Set<EditableField>(['is_free']);
 
 /**
- * Como a extração de email e formulário nomeia cada campo editável.
+ * Como a extração de email nomeia cada campo editável.
  *
  * Não é uma conversão mecânica de camelCase para snake_case: `priceRaw` entra
  * em `price_display`.
  *
- * O `series_id` não está aqui porque **nenhuma extração o propõe** — nem o
- * email nem o formulário público têm por onde o adivinhar. Isso não quer dizer
- * que ninguém o proponha: o ramo da recolha lê as chaves pelo nome da coluna,
- * e o adaptador do CAMINHOS manda `series_id` nos dez eventos que publicou.
+ * O `series_id` não está aqui porque **a extração não o propõe** — um email
+ * não tem por onde o adivinhar. Isso não quer dizer que ninguém o proponha: a
+ * recolha e o envio por programa escrevem as chaves pelo nome da coluna, e o
+ * adaptador do CAMINHOS manda `series_id` nos dez eventos que publicou.
  */
 const CHAVES_DA_EXTRACAO: Partial<Record<EditableField, string>> = {
   title: 'title',
@@ -79,30 +88,71 @@ function texto(valor: unknown): string {
   return '';
 }
 
+function objeto(valor: unknown): Record<string, unknown> | null {
+  return typeof valor === 'object' && valor !== null && !Array.isArray(valor)
+    ? (valor as Record<string, unknown>)
+    : null;
+}
+
 /**
- * Há duas formas de payload na mesma coluna, e é preciso saber ler as duas.
+ * As três formas de payload que a mesma coluna guarda.
  *
- * Quem chega por email ou formulário traz o que a extração propôs, plano e em
- * camelCase. Quem chega pela recolha traz o que o adaptador já leu da página,
- * aninhado — `{ raw, event, sessions }` — com o evento em snake_case, que são
- * as mesmas chaves de `EDITABLE_FIELDS`.
+ * - **`recolha`** — o que o adaptador já leu da página, aninhado:
+ *   `{ raw, event, sessions }`, com o evento em snake_case.
+ * - **`programa`** — o envio por programa, `POST /api/submissions`: o
+ *   `EventCandidate` de `submissions/build-row.ts`, **liso e em snake_case**,
+ *   com as sessões já em linhas. É a porta que a página do produto oferece a
+ *   quem já tem os eventos noutro sistema.
+ * - **`extracao`** — o que a extração leu de um email, liso e em camelCase
+ *   (`ExtractedEvent`, em `@coreto/core`), com as datas em `dates`.
  *
- * Ler só a primeira forma foi o que pôs um evento de Ourém na fila com o
+ * **Eram duas, e a terceira lia-se como a segunda.** O canal por programa
+ * guardava snake_case no topo e este ficheiro, sem `event`, ia procurar as
+ * chaves da extração: `categorySlug`, `priceRaw`, `ticketingUrl`. Não as
+ * encontrava, e o formulário de aprovação abria com a categoria, o preço, a
+ * bilhética, a acessibilidade e o local em branco — medido a 1 de outubro de
+ * 2026 com um concerto enviado completo, que saiu publicado sem nada disso. É
+ * o único erro que esta casa não sabe desfazer, perder o que alguém escreveu,
+ * cometido no gesto mais frequente do painel e sem aviso nenhum.
+ *
+ * A forma reconhece-se pelo que só ela tem: o `event` aninhado é da recolha,
+ * as sessões em linhas no topo são do programa, e o resto é da extração —
+ * incluindo o `{}` de um email que ainda não foi lido.
+ */
+export type FormaDoPayload = 'recolha' | 'programa' | 'extracao';
+
+export function formaDoPayload(payload: Record<string, unknown>): FormaDoPayload {
+  if (objeto(payload.event)) return 'recolha';
+  if (Array.isArray(payload.sessions)) return 'programa';
+  return 'extracao';
+}
+
+/** O evento proposto, onde quer que ele esteja dentro do payload. */
+function eventoDoPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return objeto(payload.event) ?? payload;
+}
+
+/**
+ * Há três formas de payload na mesma coluna, e é preciso saber ler as três —
+ * ver `formaDoPayload`.
+ *
+ * Ler só a da extração foi o que pôs um evento de Ourém na fila com o
  * formulário inteiro em branco: o pipeline sabia o título, a data, a descrição
  * e o cartaz, e a página pedia que se escrevesse tudo à mão. O que faltava
- * mesmo era o sítio — e era só isso que devia estar por preencher.
+ * mesmo era o sítio — e era só isso que devia estar por preencher. A mesma
+ * lição chegou depois pelo canal por programa, que também escreve as colunas
+ * pelo nome delas.
  */
 export function proposedFromPayload(
   payload: Record<string, unknown>,
   fallback: { municipality_id?: string | null; venue_id?: string | null } = {},
 ): Proposed {
-  const evento = payload.event;
-  const daRecolha = typeof evento === 'object' && evento !== null;
-  const origem = (daRecolha ? evento : payload) as Record<string, unknown>;
+  const forma = formaDoPayload(payload);
+  const origem = eventoDoPayload(payload);
 
   const proposto: Record<string, string | boolean> = {};
   for (const campo of EDITABLE_FIELDS) {
-    const chave = daRecolha ? campo : CHAVES_DA_EXTRACAO[campo];
+    const chave = forma === 'extracao' ? CHAVES_DA_EXTRACAO[campo] : campo;
     const valor = chave ? origem[chave] : undefined;
     proposto[campo] = BOOLEAN_FIELDS.has(campo) ? valor === true : texto(valor);
   }
@@ -112,14 +162,276 @@ export function proposedFromPayload(
   if (!proposto.municipality_id) proposto.municipality_id = texto(fallback.municipality_id);
   if (!proposto.venue_id) proposto.venue_id = texto(fallback.venue_id);
 
+  /*
+   * O espaço que a extração leu e o catálogo não reconheceu passa a local.
+   *
+   * A extração escreve o nome do sítio em `venueName`, e a resolução contra o
+   * catálogo põe o espaço na coluna da submissão — quando o encontra. Quando
+   * não encontra, o nome ficava só no payload e o formulário abria com o
+   * local em branco: um evento sem sítio, quando o email dizia qual era. É a
+   * regra do harmonizador da recolha, `raw.venueName` a cair para
+   * `location_name`, aplicada ao email.
+   */
+  if (forma === 'extracao' && !proposto.venue_id && !proposto.location_name) {
+    proposto.location_name = texto(origem.venueName);
+  }
+
   return proposto as unknown as Proposed;
 }
 
 /**
- * As sessões propostas, das duas formas.
+ * As colunas que a `approve_submission` escreve e que o formulário não mostra.
  *
- * A recolha guarda-as já como linhas — `session_date`, `start_time`,
- * `end_time` — e a extração como `dates`, com `date` e `startTime` e sem fim.
+ * São as que a máquina já tinha decidido — o público e a idade, a duração, os
+ * números do preço, os cinco eixos da acessibilidade, as coordenadas, o
+ * crédito do cartaz, o endereço de origem. A página de revisão não as desenha
+ * (são deduções, não escolhas), e por isso não as submetia: a aprovação
+ * publicava o evento com elas todas a nulo. Um concerto enviado com
+ * «Plateia com acesso a cadeira de rodas» chegava à agenda sem o sinal de
+ * acesso, e um espetáculo «a partir dos 6 anos» fora do filtro da família.
+ *
+ * Nenhuma entra em `EDITABLE_FIELDS`, e é de propósito: isso desenhava-lhes
+ * uma caixa e trancava-as contra a recolha da noite seguinte.
+ */
+export const CAMPOS_HERDADOS = [
+  'title_raw',
+  'description_short',
+  'location_address',
+  'latitude',
+  'longitude',
+  'tags',
+  'audience',
+  'min_age',
+  'recurrence',
+  'duration_minutes',
+  'price_min',
+  'price_max',
+  'price_raw',
+  'wheelchair_accessible',
+  'has_sign_language',
+  'has_audio_description',
+  'has_subtitles',
+  'is_relaxed_performance',
+  'image_credit',
+  'image_alt',
+  'source_url',
+] as const;
+
+/** O tamanho do resumo, o mesmo do harmonizador e do envio por programa. */
+const RESUMO_MAX = 400;
+
+function alguMudou(mudados: ReadonlySet<string>, campos: readonly EditableField[]): boolean {
+  return campos.some((campo) => mudados.has(campo));
+}
+
+function textoOuNulo(valor: unknown): string | null {
+  return typeof valor === 'string' && valor.trim() !== '' ? valor.trim() : null;
+}
+
+/**
+ * O que acompanha o formulário até à aprovação, para nada se perder pelo
+ * caminho.
+ *
+ * Três regras, e cada uma tem a sua razão:
+ *
+ * - **O que a proposta trazia vai tal e qual** quando ninguém mexeu naquilo de
+ *   que depende. É a leitura da fonte, e a moderação aprova-a — não a refaz.
+ * - **O que se deduz de um campo que o editor mudou volta a deduzir-se**, com
+ *   as mesmas funções da recolha (`@coreto/core`), a partir do que ficou
+ *   escrito. Quem acrescenta «sessão com Língua Gestual Portuguesa» às notas
+ *   de acessibilidade espera ver o evento no filtro da LGP; quem troca o preço
+ *   não pode ficar com os números do preço antigo por baixo — é o par
+ *   «Entrada livre» com `price_min` 6 que o `decidirPreco` do harmonizador
+ *   existe para não escrever. E quem muda o espaço tira ao evento as
+ *   coordenadas e a morada do sítio onde ele já não é.
+ * - **A extração de email não traz deduções nenhumas**, e por isso fazem-se
+ *   aqui, da mesma maneira e com as mesmas funções que a recolha e o envio por
+ *   programa as fazem. O público que o email declara (`audienceRaw`) e o preço
+ *   que escreveu (`priceRaw`) deixam de cair no chão.
+ *
+ * O que fica de fora de propósito: a impressão digital (a função SQL calcula-a
+ * do título, da data e do concelho que forem aprovados, e uma copiada da
+ * proposta ficava errada no dia em que o editor corrigisse o título), a
+ * confiança e a origem (são da submissão, e a função lê-as de lá).
+ */
+export function camposHerdados(
+  payload: Record<string, unknown>,
+  proposto: Record<string, unknown>,
+  editado: Record<string, unknown>,
+): Record<string, unknown> {
+  const forma = formaDoPayload(payload);
+  const origem = eventoDoPayload(payload);
+  const bruto = objeto(payload.raw) ?? {};
+  const mudados = new Set(changedFields(proposto, editado));
+  const final = (campo: EditableField): string | null =>
+    textoOuNulo(campo in editado ? editado[campo] : proposto[campo]);
+
+  const herdados: Record<string, unknown> = {};
+  if (forma !== 'extracao') {
+    for (const campo of CAMPOS_HERDADOS) {
+      const valor = origem[campo];
+      if (valor !== undefined && valor !== null) herdados[campo] = valor;
+    }
+  } else {
+    // Da extração, o que ela escreveu por extenso e tem coluna própria.
+    const precoEscrito = textoOuNulo(origem.priceRaw);
+    if (precoEscrito) herdados.price_raw = precoEscrito;
+  }
+  const deduzir = forma === 'extracao';
+
+  const titulo = final('title');
+  const subtitulo = final('subtitle');
+  const descricao = final('description');
+  const notas = final('accessibility_notes');
+
+  if (deduzir || alguMudou(mudados, ['description'])) {
+    herdados.description_short = truncate(descricao, RESUMO_MAX);
+  }
+
+  if (deduzir || alguMudou(mudados, ['title', 'subtitle', 'description', 'accessibility_notes'])) {
+    const acesso = extractAccessibility(titulo, subtitulo, descricao, notas);
+    herdados.wheelchair_accessible = acesso.wheelchair_accessible ?? null;
+    herdados.has_sign_language = acesso.has_sign_language;
+    herdados.has_audio_description = acesso.has_audio_description;
+    herdados.has_subtitles = acesso.has_subtitles;
+    herdados.is_relaxed_performance = acesso.is_relaxed_performance;
+  }
+
+  if (deduzir || alguMudou(mudados, ['title', 'description'])) {
+    // O público declarado pela fonte pesa como na recolha: é o primeiro texto
+    // que o `parseAudience` lê, e a idade que a fonte deu em número manda.
+    const declarado = textoOuNulo(forma === 'extracao' ? origem.audienceRaw : bruto.audienceRaw);
+    const publico = parseAudience(declarado, titulo, descricao);
+    herdados.audience = publico.audience ?? null;
+    const idadeDaFonte = typeof bruto.minAge === 'number' ? bruto.minAge : null;
+    herdados.min_age = idadeDaFonte ?? publico.min_age ?? null;
+  }
+
+  if (deduzir || alguMudou(mudados, ['description', 'accessibility_notes'])) {
+    const duracaoDaFonte = typeof bruto.durationMinutes === 'number' ? bruto.durationMinutes : null;
+    herdados.duration_minutes = duracaoDaFonte ?? parseDurationMinutes(descricao, notas);
+  }
+
+  if (deduzir || alguMudou(mudados, ['price_display', 'is_free'])) {
+    const gratis = (('is_free' in editado ? editado.is_free : proposto.is_free) ?? false) === true;
+    const lido = parsePrice(final('price_display'));
+    herdados.price_min = gratis ? 0 : (lido.priceMin ?? null);
+    herdados.price_max = gratis ? null : (lido.priceMax ?? null);
+  }
+
+  if (alguMudou(mudados, ['venue_id', 'location_name'])) {
+    delete herdados.latitude;
+    delete herdados.longitude;
+    delete herdados.location_address;
+  }
+
+  if (alguMudou(mudados, ['image_url'])) {
+    // O crédito e a descrição eram do cartaz que saiu.
+    delete herdados.image_credit;
+    herdados.image_alt = final('image_url') ? titulo : null;
+  }
+
+  return herdados;
+}
+
+/** Os nomes por trás dos identificadores, para «O que chegou» não mostrar slugs. */
+export interface NomesDaProposta {
+  municipios: Readonly<Record<string, string>>;
+  categorias: Readonly<Record<string, string>>;
+  espacos: Readonly<Record<string, string>>;
+}
+
+const EIXOS_RECEBIDOS = [
+  ['wheelchair_accessible', 'Acesso a cadeiras de rodas'],
+  ['has_sign_language', 'Língua Gestual Portuguesa'],
+  ['has_audio_description', 'Audiodescrição'],
+  ['has_subtitles', 'Legendagem'],
+  ['is_relaxed_performance', 'Sessão relaxada'],
+] as const;
+
+/**
+ * O que chegou por programa, campo a campo, para quem modera o ver.
+ *
+ * Um envio por programa não tem texto em bruto — chega já em campos —, e a
+ * coluna «O que chegou» dizia «Sem texto.» ao lado de um aviso de extração a
+ * mandar preencher à mão. Quem moderava não tinha como saber o que a pessoa
+ * enviara, e por isso também não via o que o formulário deixava cair. Agora
+ * vê a lista, e é contra ela que confere o formulário.
+ *
+ * Só o que veio preenchido: um campo vazio não é uma coisa que chegou.
+ */
+export function camposRecebidos(
+  payload: Record<string, unknown>,
+  nomes: NomesDaProposta,
+): Array<{ rotulo: string; valor: string }> {
+  const campos: Array<{ rotulo: string; valor: string }> = [];
+  const juntar = (rotulo: string, valor: string | null | undefined) => {
+    if (valor && valor.trim() !== '') campos.push({ rotulo, valor: valor.trim() });
+  };
+  const de = (mapa: Readonly<Record<string, string>>, id: unknown): string | null => {
+    const chave = textoOuNulo(id);
+    return chave ? (mapa[chave] ?? chave) : null;
+  };
+
+  juntar('Título', textoOuNulo(payload.title));
+  juntar('Concelho', de(nomes.municipios, payload.municipality_id));
+  juntar('Espaço', de(nomes.espacos, payload.venue_id));
+  juntar('Local', textoOuNulo(payload.location_name));
+  juntar('Categoria', de(nomes.categorias, payload.category_slug));
+
+  const sessoes = proposedSessions(payload)
+    .filter((sessao) => sessao.date)
+    .map((sessao) => (sessao.start ? `${sessao.date} às ${sessao.start}` : sessao.date));
+  if (sessoes.length > 0) {
+    juntar(
+      payload.is_ongoing === true ? 'Em cartaz' : 'Datas',
+      sessoes.join(payload.is_ongoing === true ? ' a ' : ' · '),
+    );
+  }
+
+  if (payload.is_free === true) juntar('Entrada livre', 'sim');
+  juntar('Preço', textoOuNulo(payload.price_display));
+  const escrito = textoOuNulo(payload.price_raw);
+  if (escrito && escrito !== textoOuNulo(payload.price_display))
+    juntar('Preço, como foi escrito', escrito);
+  juntar('Bilhetes', textoOuNulo(payload.ticketing_url));
+  juntar('Página do evento', textoOuNulo(payload.source_url));
+  juntar('Como chegar', textoOuNulo(payload.how_to_arrive));
+  juntar('Acessibilidade', textoOuNulo(payload.accessibility_notes));
+  for (const [coluna, rotulo] of EIXOS_RECEBIDOS) {
+    if (payload[coluna] === true) juntar(rotulo, 'sim');
+    else if (coluna === 'wheelchair_accessible' && payload[coluna] === false) juntar(rotulo, 'não');
+  }
+  juntar('Público', formatAudience(textoOuNulo(payload.audience)));
+  if (typeof payload.min_age === 'number') juntar('Idade mínima', `${payload.min_age} anos`);
+  juntar(
+    'Duração',
+    typeof payload.duration_minutes === 'number' ? formatDuration(payload.duration_minutes) : null,
+  );
+  const descricao = textoOuNulo(payload.description);
+  juntar('Descrição', descricao ? (truncate(descricao, 280) ?? descricao) : null);
+  return campos;
+}
+
+/**
+ * O evento que vai à aprovação: o que o editor escreveu, por cima do que a
+ * proposta trazia e o formulário não mostrava. Por cima, e não por baixo —
+ * nenhum campo herdado pode desfazer uma escolha de quem modera.
+ */
+export function eventoParaAprovar(
+  payload: Record<string, unknown>,
+  proposto: Record<string, unknown>,
+  editado: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...camposHerdados(payload, proposto, editado), ...editado };
+}
+
+/**
+ * As sessões propostas, das três formas.
+ *
+ * A recolha e o envio por programa guardam-nas já como linhas —
+ * `session_date`, `start_time`, `end_time` — e a extração como `dates`, com
+ * `date` e `startTime` e sem fim.
  */
 export function proposedSessions(payload: Record<string, unknown>): ProposedSession[] {
   const daRecolha = payload.sessions;
@@ -208,9 +520,8 @@ export function readEvent(formData: FormData): Record<string, unknown> {
 /**
  * Se o candidato já vinha marcado como período.
  *
- * O payload chega em duas formas — aninhado (`{ event: {...} }`) quando vem da
- * recolha, liso quando vem da extração —, e o `proposedFromPayload` já sabe
- * disso há muito. A caixa «Em cartaz» lia só a forma lisa, e por isso vinha
+ * O payload chega aninhado (`{ event: {...} }`) quando vem da recolha, e liso
+ * quando vem da extração ou do envio por programa — ver `formaDoPayload`. A caixa «Em cartaz» lia só a forma lisa, e por isso vinha
  * desmarcada para as 49 submissões que este sistema recebeu, que são todas da
  * recolha. Quem aprovasse sem reparar transformava um período de três semanas
  * em dois espetáculos, o de abrir e o de fechar.

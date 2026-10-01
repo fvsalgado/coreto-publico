@@ -6,6 +6,7 @@ import {
   fraseDaFonte,
   leituraDoConcelho,
   pausaAtiva,
+  resumoParaQuemVisita,
   saudeDaFonte,
   veredito,
 } from './estado';
@@ -174,7 +175,7 @@ describe('fraseDaFonte', () => {
   it('lida e sem nada legível: as duas datas, e a diferença entre elas', () => {
     const frase = fraseDaFonte(comSaude(haDias(20), haDias(0)), data);
     expect(frase).toBe(
-      `Lida a ${haDias(0).slice(0, 10)}, mas sem eventos legíveis desde ${haDias(20).slice(0, 10)}.`,
+      `Tentámos lê-la a ${haDias(0).slice(0, 10)}, mas não conseguimos ler eventos desde ${haDias(20).slice(0, 10)}.`,
     );
     // A frase antiga dizia «Lida com sucesso a …» e parava aí.
     expect(frase).not.toContain('com sucesso');
@@ -186,7 +187,7 @@ describe('fraseDaFonte', () => {
 
   it('tentada e nunca com resultado não se confunde com nunca tentada', () => {
     expect(fraseDaFonte(comSaude(null, haDias(0)), data)).toBe(
-      `Lida a ${haDias(0).slice(0, 10)}, e ainda sem eventos legíveis.`,
+      `Tentámos lê-la a ${haDias(0).slice(0, 10)}, e ainda não conseguimos ler nenhum evento.`,
     );
   });
 });
@@ -426,6 +427,124 @@ describe('a frase de uma fonte em pausa', () => {
     const frase = fraseDaFonte(recolha.emPausa[0]!, comoData);
     expect(frase).toContain('Em pausa até');
     expect(frase).toContain('bloqueio da CIM, à espera de resposta');
-    expect(frase).not.toContain('Sem uma leitura');
+    expect(frase).not.toMatch(/conseguimos ler|Tentámos/);
+  });
+});
+
+/**
+ * O topo da página, para quem a lê de fora (C4-023, C1-024, C4-024).
+ *
+ * O caso de produção a 1 de outubro de 2026, reconstituído: 31 agendas em dia;
+ * as oito câmaras do mesmo sistema de publicação caladas desde 11 de setembro
+ * com a pausa já expirada; o CAMINHOS, regional, também calado; três
+ * concelhos sem nada marcado. O veredito disse «A pausa de 8 fontes acabou e
+ * ninguém as renovou» — e continua a dizê-lo à sonda. A página diz isto.
+ */
+describe('resumoParaQuemVisita', () => {
+  const CONCELHOS_MT = [
+    { id: 'abrantes', name: 'Abrantes' },
+    { id: 'entroncamento', name: 'Entroncamento' },
+    { id: 'tomar', name: 'Tomar' },
+    { id: 'sardoal', name: 'Sardoal' },
+  ];
+  const EM_DIA = Array.from({ length: 31 }, (_, i) => ({
+    ...fonte(`jf-${i}`, haDias(0)),
+    municipality_id: 'abrantes',
+  }));
+  const PARADAS = [
+    { ...pausada('cm-tomar', haDias(22), -9), municipality_id: 'tomar' },
+    { ...pausada('cm-entroncamento', haDias(22), -9), municipality_id: 'entroncamento' },
+    { ...fonte('cm-sardoal', haDias(13)), municipality_id: 'sardoal' },
+    { ...pausada('caminhos', haDias(22), -9), name: 'CAMINHOS', municipality_id: null },
+  ];
+  const AGENDA = { total: 85, vazios: ['Entroncamento'] };
+
+  const resumo = resumoParaQuemVisita(
+    avaliarRecolha([...EM_DIA, ...PARADAS], AGORA),
+    AGENDA,
+    CONCELHOS_MT,
+  );
+  const texto = [resumo.titulo, ...resumo.linhas.map((l) => `${l.rotulo}: ${l.texto}`)].join('\n');
+
+  it('abre com o que há, e o que está em dia vem antes do que falta', () => {
+    expect(resumo.titulo).toBe('A agenda tem 85 eventos marcados daqui para a frente.');
+    const tipos = resumo.linhas.map((linha) => linha.tipo);
+    expect(tipos[0]).toBe('em-dia');
+    expect(resumo.linhas[0]?.texto).toBe('31 das 35 agendas que lemos todos os dias.');
+    expect(tipos.indexOf('em-dia')).toBeLessThan(tipos.indexOf('por-ler'));
+  });
+
+  it('diz o que falta pelo efeito em quem procura, sem esconder a agenda regional', () => {
+    const incompleta = resumo.linhas.find((linha) => linha.tipo === 'incompleto');
+    expect(incompleta?.texto).toBe(
+      'a programação de Entroncamento, Sardoal e Tomar; e a de uma agenda regional: CAMINHOS.',
+    );
+  });
+
+  it('liga o concelho a zero à agenda que não se lê, em vez de deixar concluir que não há nada', () => {
+    const semNada = resumo.linhas.find((linha) => linha.tipo === 'sem-nada');
+    expect(semNada?.texto).toContain('Entroncamento.');
+    expect(semNada?.texto).toContain('pode haver programação que não chegou aqui');
+  });
+
+  it('não fala para dentro: nem pausas por renovar, nem «parado», nem «fonte»', () => {
+    expect(texto).not.toMatch(/renov|PARADO|parad|fonte/i);
+  });
+
+  it('o veredito da sonda continua o mesmo, que é para ele que ela olha', () => {
+    const recolha = avaliarRecolha([...EM_DIA, ...PARADAS], AGORA);
+    expect(veredito(recolha, AGENDA)).toEqual({
+      grau: 'mau',
+      frase: 'A pausa de 3 fontes acabou e ninguém as renovou.',
+    });
+  });
+
+  it('com tudo em dia, diz que está tudo em dia e mais nada', () => {
+    const tudo = resumoParaQuemVisita(
+      avaliarRecolha(EM_DIA, AGORA),
+      { total: 12, vazios: [] },
+      CONCELHOS_MT,
+    );
+    expect(tudo.linhas).toEqual([
+      { tipo: 'em-dia', rotulo: 'Em dia', texto: 'as 31 agendas que lemos todos os dias.' },
+    ]);
+  });
+
+  it('numa demonstração diz o que é uma demonstração, e não uma avaria', () => {
+    const demo = resumoParaQuemVisita(avaliarRecolha([], AGORA), { total: 30, vazios: [] }, [], {
+      demonstracao: true,
+    });
+    expect(demo.titulo).toBe(
+      'Esta é uma demonstração: os eventos foram escritos à mão, e não há agendas para ler.',
+    );
+    expect(demo.linhas.map((linha) => linha.texto).join(' ')).toContain('30 eventos inventados');
+    // O que a página dizia: «ATENÇÃO — Não há nenhuma fonte ligada nesta região.»
+    expect(JSON.stringify(demo)).not.toMatch(/ATENÇÃO|fonte ligada/i);
+  });
+
+  it('numa região a sério sem agendas ligadas, diz de onde vem o que lá está', () => {
+    const nova = resumoParaQuemVisita(avaliarRecolha([], AGORA), { total: 3, vazios: [] }, []);
+    expect(nova.linhas).toEqual([
+      {
+        tipo: 'nota',
+        rotulo: 'Sem agendas ligadas',
+        texto:
+          'ainda não lemos automaticamente nenhuma agenda desta região: o que aparece aqui chega por quem o envia.',
+      },
+    ]);
+  });
+
+  it('as em pausa contam como podendo faltar, e mandam ver o motivo', () => {
+    const comPausa = resumoParaQuemVisita(
+      avaliarRecolha(
+        [...EM_DIA, { ...pausada('cm-tomar', haDias(22), 5), municipality_id: 'tomar' }],
+        AGORA,
+      ),
+      { total: 40, vazios: [] },
+      CONCELHOS_MT,
+    );
+    const linhas = Object.fromEntries(comPausa.linhas.map((linha) => [linha.tipo, linha.texto]));
+    expect(linhas['em-pausa']).toContain('o motivo de cada uma está na lista abaixo');
+    expect(linhas.incompleto).toBe('a programação de Tomar.');
   });
 });

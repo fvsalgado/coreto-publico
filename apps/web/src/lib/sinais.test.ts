@@ -49,6 +49,39 @@ describe('sinaisDeAcessibilidade', () => {
   });
 });
 
+/**
+ * De quem é o acesso (C2-011). Desde a 0129, o cartão lê a coluna resolvida —
+ * a do evento, ou a do espaço quando o evento se cala — e dizia «Acessível»
+ * nos dois casos. Um concerto no jardim do teatro não fica acessível por o
+ * teatro o ser: quando o «sim» é do espaço, o sinal di-lo.
+ */
+describe('o acesso que vem do espaço', () => {
+  it('diz que é do espaço, à vista e por extenso', () => {
+    const [sinal] = sinaisDeAcessibilidade(
+      { wheelchair_accessible: true },
+      { acessoDoEspaco: true },
+    );
+    expect(sinal?.curto).toBe('Espaço acessível');
+    expect(sinal?.rotulo).toBe('Espaço com acesso a cadeiras de rodas');
+  });
+
+  it('a declaração do próprio evento continua a ser «Acessível»', () => {
+    const [sinal] = sinaisDeAcessibilidade({ wheelchair_accessible: true });
+    expect(sinal?.curto).toBe('Acessível');
+  });
+
+  it('não inventa acesso: sem «sim», a origem não muda nada', () => {
+    expect(
+      sinaisDeAcessibilidade({ wheelchair_accessible: null }, { acessoDoEspaco: true }),
+    ).toEqual([]);
+    const [sinal] = sinaisDeAcessibilidade(
+      { wheelchair_accessible: false },
+      { acessoDoEspaco: true },
+    );
+    expect(sinal?.curto).toBe('Sem acesso');
+  });
+});
+
 describe('sinalDePreco', () => {
   it('destaca a entrada livre', () => {
     expect(sinalDePreco({ is_free: true, price_display: '5 €' })).toMatchObject({

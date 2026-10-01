@@ -6,7 +6,7 @@ import { PageHeader } from '@/src/components/PageHeader';
 import { ListagemStructuredData } from '@/src/components/StructuredData';
 import { VenueCard } from '@/src/components/VenueCard';
 import { espacosPorConfirmar } from '@/src/lib/coreto';
-import { nomeCasaCom } from '@/src/lib/espaco';
+import { filtrarEspacos } from '@/src/lib/espaco';
 import { formatVenueKind } from '@/src/lib/format';
 import {
   countEventsByVenue,
@@ -34,15 +34,16 @@ interface Props {
 /**
  * Filtros da página.
  *
- * `associations` é um literal e não um booleano coagido de propósito: o
- * formulário só emite `1`, e `z.coerce.boolean()` daria `true` a um
- * `associations=0` escrito à mão, que é o contrário do que quem o escreveu
+ * `associations` e `acessivel` são literais e não booleanos coagidos de
+ * propósito: o formulário só emite `1`, e `z.coerce.boolean()` daria `true` a
+ * um `associations=0` escrito à mão, que é o contrário do que quem o escreveu
  * queria.
  */
 const venueFilterSchema = z.object({
   q: z.string().trim().max(80).optional(),
   kind: z.string().trim().max(40).optional(),
   associations: z.literal('1').optional(),
+  acessivel: z.literal('1').optional(),
 });
 
 type VenueFilter = z.infer<typeof venueFilterSchema>;
@@ -53,7 +54,7 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 
 function readFilter(searchParams: SearchParams): VenueFilter {
   const raw: Record<string, string> = {};
-  for (const key of ['q', 'kind', 'associations'] as const) {
+  for (const key of ['q', 'kind', 'associations', 'acessivel'] as const) {
     const value = firstValue(searchParams[key])?.trim();
     if (value) raw[key] = value;
   }
@@ -124,17 +125,28 @@ export default async function VenuesPage({ params, searchParams }: Props) {
 
   const activeKind = kinds.find((item) => item.kind === filter.kind) ?? null;
   const onlyAssociations = filter.associations === '1';
+  /*
+   * Só os espaços que declaram acesso a cadeiras de rodas (C2-012).
+   *
+   * «Um sítio onde se entre de cadeira de rodas» é das perguntas mais
+   * concretas que se trazem a uma lista de espaços, e a casa tinha a resposta
+   * em cada ficha — a 3 700 píxeis do topo da do Cine-Teatro — e em nenhum
+   * cartão nem filtro. É a declaração do espaço e mais nada: sem ela, o
+   * espaço fica de fora, e a nota da caixa di-lo.
+   */
+  const soAcessiveis = filter.acessivel === '1';
   const procura = filter.q ?? '';
 
-  const venues = allVenues.filter((venue) => {
-    if (!nomeCasaCom(venue.name, procura)) return false;
-    if (activeKind && venue.kind !== activeKind.kind) return false;
-    if (onlyAssociations && !venue.is_association) return false;
-    return true;
+  const venues = filtrarEspacos(allVenues, {
+    procura,
+    tipo: activeKind?.kind ?? null,
+    soColetividades: onlyAssociations,
+    soAcessiveis,
   });
 
   const groups = groupByMunicipality(municipalities, venues);
   const associationCount = allVenues.filter((venue) => venue.is_association).length;
+  const acessiveisCount = allVenues.filter((venue) => venue.wheelchair_accessible === true).length;
 
   const hasCatalogue = allVenues.length > 0;
 
@@ -146,7 +158,8 @@ export default async function VenuesPage({ params, searchParams }: Props) {
         ? '1 espaço.'
         : `${venues.length} espaços em ${groups.length} ${groups.length === 1 ? 'concelho' : 'concelhos'}.`;
 
-  const activeFilterCount = (procura ? 1 : 0) + (activeKind ? 1 : 0) + (onlyAssociations ? 1 : 0);
+  const activeFilterCount =
+    (procura ? 1 : 0) + (activeKind ? 1 : 0) + (onlyAssociations ? 1 : 0) + (soAcessiveis ? 1 : 0);
   const origem = urlDoSitio(regiao, SITE_URL);
 
   return (
@@ -231,20 +244,48 @@ export default async function VenuesPage({ params, searchParams }: Props) {
               </select>
             </div>
 
-            <label
-              htmlFor="filtro-coletividades"
-              className="flex min-h-11 items-center gap-2.5 text-sm sm:mt-6"
-            >
-              <input
-                type="checkbox"
-                id="filtro-coletividades"
-                name="associations"
-                value="1"
-                defaultChecked={onlyAssociations}
-                className="size-5 accent-accent"
-              />
-              Só coletividades{associationCount > 0 ? ` (${associationCount})` : ''}
-            </label>
+            <fieldset>
+              <legend className="block text-sm font-medium">Mostrar apenas</legend>
+              <label
+                htmlFor="filtro-coletividades"
+                className="flex min-h-11 items-center gap-2.5 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  id="filtro-coletividades"
+                  name="associations"
+                  value="1"
+                  defaultChecked={onlyAssociations}
+                  className="size-5 accent-accent"
+                />
+                Só coletividades{associationCount > 0 ? ` (${associationCount})` : ''}
+              </label>
+              {/* Oferece-se quando há o que mostrar, como as caixas da agenda:
+                  uma caixa que devolve sempre zero é uma armadilha. Sem
+                  nenhum, diz-se — esconder calado é a outra armadilha. */}
+              {acessiveisCount > 0 || soAcessiveis ? (
+                <label
+                  htmlFor="filtro-acessivel"
+                  className="flex min-h-11 items-center gap-2.5 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    id="filtro-acessivel"
+                    name="acessivel"
+                    value="1"
+                    defaultChecked={soAcessiveis}
+                    aria-describedby="filtro-acessivel-nota"
+                    className="size-5 accent-accent"
+                  />
+                  Com acesso a cadeiras de rodas{acessiveisCount > 0 ? ` (${acessiveisCount})` : ''}
+                </label>
+              ) : null}
+              <p id="filtro-acessivel-nota" className="mt-1 text-sm text-muted">
+                {acessiveisCount > 0 || soAcessiveis
+                  ? 'Os espaços que declaram acesso a cadeiras de rodas — sem declaração, um espaço fica de fora. A ficha de cada um diz o que se sabe.'
+                  : 'Por agora, nenhum espaço desta lista declara acesso a cadeiras de rodas.'}
+              </p>
+            </fieldset>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -325,9 +366,11 @@ export default async function VenuesPage({ params, searchParams }: Props) {
               : 'O catálogo ainda não está disponível.'
           }
           description={
-            hasCatalogue
-              ? 'Talvez o tipo escolhido ainda não tenha nenhum espaço registado. E se faltar aqui a coletividade da vossa terra, basta dizer — é para isso que a lista existe.'
-              : 'Estamos a reunir os espaços concelho a concelho. Se faltar aqui a coletividade da vossa terra, é a melhor altura para o dizer.'
+            !hasCatalogue
+              ? 'Estamos a reunir os espaços concelho a concelho. Se faltar aqui a coletividade da vossa terra, é a melhor altura para o dizer.'
+              : soAcessiveis
+                ? 'Só aparecem os espaços que declaram acesso a cadeiras de rodas, e sem declaração não quer dizer sem acesso: a ficha de cada espaço diz o que se sabe.'
+                : 'Talvez o tipo escolhido ainda não tenha nenhum espaço registado. E se faltar aqui a coletividade da vossa terra, basta dizer — é para isso que a lista existe.'
           }
           action={{ href: '/submeter', label: 'Falta um espaço' }}
         />

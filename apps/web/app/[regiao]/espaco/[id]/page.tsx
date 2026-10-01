@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon } from '@coreto/core';
-import { EmptyState } from '@/src/components/EmptyState';
+import { EmptyState, quaisAgendasPorLer } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
 import { HowToArriveSection } from '@/src/components/HowToArriveSection';
 import { PageHeader } from '@/src/components/PageHeader';
@@ -10,8 +10,10 @@ import { Sinais, Sinal } from '@/src/components/Sinais';
 import { PlaceStructuredData } from '@/src/components/StructuredData';
 import { SITE_URL } from '@/src/lib/env';
 import { perfilDoEspaco } from '@/src/lib/espaco';
+import { avaliarRecolha, leituraDoConcelho } from '@/src/lib/estado';
 import { formatLongDate, formatVenueKind } from '@/src/lib/format';
 import {
+  eventosComAcessoDoEspaco,
   getVenueDetail,
   listCoretos,
   listEvents,
@@ -99,6 +101,8 @@ export default async function VenuePage({ params }: Props) {
     listCoretos(regiao.id),
     listPublicSources(regiao.id),
   ]);
+  // De que eventos o acesso a cadeiras de rodas é o deste espaço (C2-011).
+  const acessoDoEspaco = await eventosComAcessoDoEspaco(result.events);
 
   const [haCoretos, haFontes] = await Promise.all([
     seccaoLigada(regiao.id, 'coretos'),
@@ -124,6 +128,22 @@ export default async function VenuePage({ params }: Props) {
   // que está nesta página é o mesmo princípio da página das fontes, aplicado
   // à ficha.
   const fonteDoEspaco = sources.find((source) => source.is_enabled && source.venue_id === venue.id);
+  /*
+   * E se ela está a ser lida. A nota dizia «é lida todas as noites» em
+   * qualquer caso — uma promessa de hora que a recolha não cumpre (corre uma
+   * vez por dia, quando o GitHub a deixa) e uma afirmação que deixava de ser
+   * verdade no dia em que a agenda do espaço deixasse de se ler. A mesma régua
+   * da página do concelho: por ler, diz-se desde quando.
+   */
+  const leituraDoEspaco = fonteDoEspaco ? leituraDoConcelho(avaliarRecolha([fonteDoEspaco])) : null;
+  const dominioDaFonte = (() => {
+    if (!fonteDoEspaco?.url) return null;
+    try {
+      return new URL(fonteDoEspaco.url).hostname.replace(/^www\./, '');
+    } catch {
+      return null;
+    }
+  })();
 
   return (
     <>
@@ -236,6 +256,7 @@ export default async function VenuePage({ params }: Props) {
             <EventList
               events={result.events}
               today={today}
+              acessoDoEspaco={acessoDoEspaco}
               showMunicipality={false}
               dayHeadingLevel={3}
               idPrefix="espaco"
@@ -249,14 +270,42 @@ export default async function VenuePage({ params }: Props) {
         </div>
       </section>
 
-      {fonteDoEspaco ? (
-        <p className="mt-4 max-w-2xl text-sm text-muted">
-          A programação deste espaço é lida todas as noites em {fonteDoEspaco.name}.
+      {/* De onde vem o que está aqui, dito a quem visita (C2-017): «lida em
+          Cine-Teatro Paraíso» era a frase da equipa, e a promessa de «todas
+          as noites» não era nossa. O endereço do sítio é o que quem lê
+          reconhece, e a ligação deixa-o confirmar. */}
+      {fonteDoEspaco && leituraDoEspaco ? (
+        <p
+          className={`mt-4 max-w-2xl text-sm ${leituraDoEspaco.tipo === 'por-ler' ? 'text-highlight' : 'text-muted'}`}
+        >
+          {leituraDoEspaco.tipo === 'por-ler' ? (
+            <>
+              Pode faltar programação. {quaisAgendasPorLer(leituraDoEspaco.fontes, formatLongDate)}
+            </>
+          ) : (
+            <>
+              Lemos todos os dias a programação que o espaço publica
+              {dominioDaFonte && fonteDoEspaco.url ? (
+                <>
+                  {' '}
+                  em{' '}
+                  <a
+                    href={fonteDoEspaco.url}
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4"
+                  >
+                    {dominioDaFonte}
+                  </a>
+                </>
+              ) : null}
+              .
+            </>
+          )}
           {haFontes ? (
             <>
               {' '}
               <Link href="/fontes" className="underline underline-offset-4">
-                As regras da recolha estão explicadas
+                Como lemos as agendas
               </Link>
               .
             </>

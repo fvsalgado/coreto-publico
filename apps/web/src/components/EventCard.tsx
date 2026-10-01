@@ -20,6 +20,11 @@ interface Props {
   venueName?: string;
   /** O cartão traz o concelho quando a lista atravessa concelhos. */
   showMunicipality?: boolean;
+  /**
+   * O acesso a cadeiras de rodas que o cartão mostra é o do espaço: o evento
+   * não declara nada (`eventosComAcessoDoEspaco`). Ver `sinaisDeAcessibilidade`.
+   */
+  acessoDoEspaco?: boolean;
 }
 
 /**
@@ -41,6 +46,7 @@ export function EventCard({
   municipalityName,
   venueName,
   showMunicipality = true,
+  acessoDoEspaco = false,
 }: Props) {
   const where = venueName ?? event.location_name;
   const category = formatCategory(event.category_slug);
@@ -92,7 +98,7 @@ export function EventCard({
      * «apagado» — o «sem acesso» verificado — continua a sair, que é decisão
      * antiga e continua certa: a ausência pertence à ficha, onde se decide.
      */
-    ...sinaisDeAcessibilidade(event).filter((sinal) => sinal.tom !== 'apagado'),
+    ...sinaisDeAcessibilidade(event, { acessoDoEspaco }).filter((sinal) => sinal.tom !== 'apagado'),
   ];
 
   return (

@@ -39,10 +39,27 @@ export interface FonteDeAcessibilidade {
  * se pode ler como silêncio da fonte e nunca como «não tem» — a única que
  * distingue os três estados é o acesso a cadeiras de rodas, que é anulável.
  */
-export function sinaisDeAcessibilidade(fonte: FonteDeAcessibilidade): Descritor[] {
+export function sinaisDeAcessibilidade(
+  fonte: FonteDeAcessibilidade,
+  opcoes: {
+    /**
+     * O acesso a cadeiras de rodas que se mostra é o do espaço: o evento não
+     * declara nada, e desde a 0129 a coluna resolvida cai para o do espaço.
+     * O sinal tem de dizer de quem é (C2-011) — um concerto no jardim do
+     * teatro não fica acessível por o teatro o ser.
+     */
+    acessoDoEspaco?: boolean;
+  } = {},
+): Descritor[] {
   const sinais: Descritor[] = [];
 
-  if (fonte.wheelchair_accessible === true) {
+  if (fonte.wheelchair_accessible === true && opcoes.acessoDoEspaco) {
+    sinais.push({
+      icone: 'acessivel',
+      rotulo: 'Espaço com acesso a cadeiras de rodas',
+      curto: 'Espaço acessível',
+    });
+  } else if (fonte.wheelchair_accessible === true) {
     sinais.push({ icone: 'acessivel', rotulo: 'Acesso a cadeiras de rodas', curto: 'Acessível' });
   } else if (fonte.wheelchair_accessible === false) {
     sinais.push({

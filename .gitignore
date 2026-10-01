@@ -82,4 +82,11 @@ apps/web/public/maplibre/
 # que um dia diverge da fonte sem ninguém reparar — e a versão que alguém
 # anexou a um processo seria a errada. Gera-se com `pnpm dossie`, e o CI
 # publica-o como artefacto descarregável em cada alteração.
-estado/
+#
+# Ancorado à raiz, e não por estética: sem a barra, `estado/` apanhava também
+# `apps/web/app/[regiao]/estado/`. O Git não o mostrava — um ficheiro já
+# versionado não se ignora —, mas o Tailwind lê o `.gitignore` para saber o
+# que não varrer, e deixava de fora a página `/estado` inteira: as classes que
+# só ela usa nunca chegavam ao CSS, e os números do estado saíam do tamanho do
+# texto à volta.
+/estado/

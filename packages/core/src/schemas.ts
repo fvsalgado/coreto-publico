@@ -185,6 +185,13 @@ export const eventFilterSchema = z.object({
   audiodescricao: z.coerce.boolean().optional(),
   legendas: z.coerce.boolean().optional(),
   relaxada: z.coerce.boolean().optional(),
+  /*
+   * Para crianças e famílias: a categoria «Infantil e família», ou o público
+   * que o evento declara. Era um atalho para a categoria, com dois eventos
+   * (C2-009), e deixava de fora o filme de animação de domingo de manhã que
+   * estava em «Cinema». A regra inteira está em `apps/web/src/lib/agenda.ts`.
+   */
+  familia: z.coerce.boolean().optional(),
   venue: z.string().max(120).optional(),
   series: z.string().max(120).optional(),
   q: z.string().trim().max(120).optional(),

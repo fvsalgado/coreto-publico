@@ -31,6 +31,7 @@ import {
   formatLongDate,
 } from '@/src/lib/format';
 import {
+  eventosComAcessoDoEspaco,
   getEvent,
   getVenue,
   listCategories,
@@ -85,7 +86,10 @@ export async function generateStaticParams({
 const ORIGIN_LABELS: Record<string, string> = {
   scraper: 'Recolhido do sítio da entidade organizadora',
   email: 'Enviado por email para a agenda',
-  form: 'Enviado pelo formulário público',
+  // `form` é o envio por programa (`POST /api/submissions`) e, antes dele, o
+  // formulário público que saiu. «Pelo formulário público» descrevia uma porta
+  // que já não existe; isto é verdade para as duas.
+  form: 'Enviado diretamente para a agenda',
   manual: 'Introduzido à mão pela equipa',
 };
 
@@ -197,11 +201,13 @@ export default async function EventPage({ params }: Props) {
   if (!event) notFound();
 
   const today = todayInLisbon();
-  const [municipalities, categories, series, venue] = await Promise.all([
+  const [municipalities, categories, series, venue, acessoDoEspaco] = await Promise.all([
     listMunicipalities(regiao.id),
     listCategories(),
     listSeries(regiao.id),
     event.venue_id ? getVenue(regiao.id, event.venue_id) : Promise.resolve(null),
+    // Se o acesso a cadeiras de rodas que a ficha mostra é o do espaço (C2-011).
+    eventosComAcessoDoEspaco([event]),
   ]);
 
   const municipality = municipalities.find((item) => item.id === event.municipality_id) ?? null;
@@ -666,6 +672,7 @@ export default async function EventPage({ params }: Props) {
             event={event}
             venueWheelchairAccessible={venue?.wheelchair_accessible ?? null}
             venueAccessibilityNotes={venue?.accessibility_notes ?? null}
+            acessoDoEspaco={acessoDoEspaco.has(event.id)}
           />
         </section>
       ) : null}

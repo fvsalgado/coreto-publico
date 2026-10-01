@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
 import { ActiveFilters } from '@/src/components/ActiveFilters';
+import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
 import { FilaDePilulas } from '@/src/components/FilaDePilulas';
@@ -11,7 +13,9 @@ import { Pagination } from '@/src/components/Pagination';
 import { ListagemStructuredData } from '@/src/components/StructuredData';
 import { VistaDaAgenda } from '@/src/components/VistaDaAgenda';
 import {
+  contarEixosDaAgenda,
   contarFacetas,
+  eventosComAcessoDoEspaco,
   listCategories,
   listEvents,
   listMunicipalities,
@@ -28,13 +32,16 @@ import {
   PATH_DO_MAPA,
   atalhosDeData,
   buildHref,
+  concelhosSemEventos,
+  eixosDoFormulario,
   fichasDosFiltros,
   filtroIndexavel,
+  nomesDosEixos,
   pilulasDeFaceta,
   readFilter,
   type SearchParams,
 } from '@/src/lib/agenda';
-import { descreverFiltro } from '@/src/lib/agenda-servidor';
+import { descreverFiltro, saidasDoVazio, type PropostaDoVazio } from '@/src/lib/agenda-servidor';
 import { urlDoSitio, type Regiao } from '@/src/lib/regiao';
 
 interface Props {
@@ -113,34 +120,43 @@ export default async function AgendaPage({ params, searchParams }: Props) {
   const filter = readFilter(await searchParams);
   const today = todayInLisbon();
 
-  const [result, municipalities, categories, venueNames, series, facetas] = await Promise.all([
-    listEvents(regiao.id, filter),
-    listMunicipalities(regiao.id),
-    listCategories(),
-    // Sem concelho no filtro, os nomes de espaço vêm todos: é o que permite
-    // dar nome ao espaço filtrado mesmo quando o concelho não está escolhido.
-    listVenueNames(regiao.id, filter.municipality),
-    listSeries(regiao.id),
-    // Os números das pílulas. Sem base, ou acima do tecto, vêm a `null` e as
-    // pílulas saem sem número — nunca com um número errado.
-    contarFacetas(regiao.id, filter),
-  ]);
+  const [result, municipalities, categories, venueNames, series, facetas, eixosDaAgenda] =
+    await Promise.all([
+      listEvents(regiao.id, filter),
+      listMunicipalities(regiao.id),
+      listCategories(),
+      // Sem concelho no filtro, os nomes de espaço vêm todos: é o que permite
+      // dar nome ao espaço filtrado mesmo quando o concelho não está escolhido.
+      listVenueNames(regiao.id, filter.municipality),
+      listSeries(regiao.id),
+      // Os números das pílulas. Sem base, ou acima do tecto, vêm a `null` e as
+      // pílulas saem sem número — nunca com um número errado.
+      contarFacetas(regiao.id, filter),
+      // Os eixos da acessibilidade na agenda inteira, para dizer o que nenhum
+      // evento declara em vez de esconder a caixa calado (C2-010).
+      contarEixosDaAgenda(regiao.id),
+    ]);
 
   // A hora de cada cartão, na mesma leitura de sessões que a API pública faz
   // para esta mesma página. As regras — e a razão de não ser coluna do cartão
-  // — estão em `withCardTimes`.
-  const events = await withCardTimes(result.events, today, listFeedSessions);
+  // — estão em `withCardTimes`. E, ao lado, de que eventos o acesso a cadeiras
+  // de rodas é o do espaço, para o cartão o dizer (C2-011).
+  const [events, acessoDoEspaco] = await Promise.all([
+    withCardTimes(result.events, today, listFeedSessions),
+    eventosComAcessoDoEspaco(result.events),
+  ]);
 
   const municipalityNames: Record<string, string> = Object.fromEntries(
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
 
-  const fichas = fichasDosFiltros(filter, today, {
+  const nomes = {
     municipalities: municipalityNames,
     categories: Object.fromEntries(categories.map((category) => [category.slug, category.name])),
     venues: venueNames,
     series: Object.fromEntries(series.map((item) => [item.id, item.name])),
-  });
+  };
+  const fichas = fichasDosFiltros(filter, today, nomes);
 
   const descricao = await descreverFiltro(regiao, filter, today);
   const atalhos = atalhosDeData(filter, today);
@@ -153,17 +169,17 @@ export default async function AgendaPage({ params, searchParams }: Props) {
    * coisa só. As categorias saem pela ordem da taxonomia, e as vazias caem
    * quando há contagem (ver `pilulasDeFaceta`).
    */
+  const opcoesDeConcelho = municipalities.map((municipality) => ({
+    valor: municipality.id,
+    rotulo: municipality.name,
+  }));
   const pilulasDeConcelho =
     municipalities.length > 1
-      ? pilulasDeFaceta(
-          filter,
-          'municipality',
-          municipalities.map((municipality) => ({
-            valor: municipality.id,
-            rotulo: municipality.name,
-          })),
-          facetas.municipality,
-        )
+      ? pilulasDeFaceta(filter, 'municipality', opcoesDeConcelho, facetas.municipality)
+      : [];
+  const concelhosAZero =
+    municipalities.length > 1
+      ? concelhosSemEventos(filter, opcoesDeConcelho, facetas.municipality)
       : [];
   const pilulasDeCategoria = pilulasDeFaceta(
     filter,
@@ -222,6 +238,32 @@ export default async function AgendaPage({ params, searchParams }: Props) {
         ? '1 evento encontrado.'
         : `${result.total} eventos encontrados.`;
 
+  /*
+   * Os eixos pedidos que nenhum evento da agenda inteira declara (C2-010).
+   * Com `?lgp=1` e nenhuma sessão com Língua Gestual Portuguesa, o vazio
+   * respondia «não temos eventos com estes filtros» a quem fez uma pergunta
+   * de sim ou não — a resposta é «não há nenhum, por agora», e di-lo.
+   */
+  const pedidosSemNenhum = eixosDoFormulario(
+    filter,
+    facetas.acessibilidade,
+    eixosDaAgenda,
+  ).nenhumNaAgenda.filter((eixo) => filter[eixo.chave]);
+
+  // Por onde sair de uma lista vazia — contado, e só quando está vazia.
+  const saidas =
+    result.total === 0 ? await saidasDoVazio(regiao, filter, nomes, facetas.municipality) : null;
+  const propostas: PropostaDoVazio[] = saidas
+    ? [
+        ...(saidas.proximoDia ? [saidas.proximoDia] : []),
+        ...saidas.alargar,
+        ...saidas.outrosConcelhos.map((proposta) => ({
+          ...proposta,
+          rotulo: `Em ${proposta.rotulo}`,
+        })),
+      ]
+    : [];
+
   return (
     <>
       {afirmaAListaInteira ? (
@@ -262,6 +304,10 @@ export default async function AgendaPage({ params, searchParams }: Props) {
         }
       />
 
+      {/* A pesquisa à vista, antes de tudo: é o atalho de quem já sabe o que
+          quer, e estava atrás da gaveta dos filtros (C3-020). */}
+      <CaixaDePesquisa filter={filter} alvoDaLupa className="mb-3 max-w-xl" />
+
       {/* Fora do recolhível de propósito: são ligações, funcionam sem
           JavaScript, e um atalho atrás de uma gaveta é um campo de formulário
           com outro nome. Quando, onde, o quê — três filas, cada uma numa
@@ -283,6 +329,7 @@ export default async function AgendaPage({ params, searchParams }: Props) {
           nome="Concelhos"
           className="mt-2 sm:mt-0"
           pilulas={pilulasDeConcelho.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
+          semEventos={concelhosAZero.map((concelho) => ({ ...concelho, chave: concelho.valor }))}
         />
         <FilaDePilulas
           nome="Categorias"
@@ -299,12 +346,16 @@ export default async function AgendaPage({ params, searchParams }: Props) {
           action={PATH}
           activeCount={fichas.length}
           eixosDeAcessibilidade={facetas.acessibilidade}
+          eixosDaAgenda={eixosDaAgenda}
+          total={result.total}
         />
       </div>
 
       <ActiveFilters filters={fichas} clearHref={PATH} />
 
-      <p role="status" className="mt-3 text-sm text-muted">
+      {/* A zero, a frase só se ouve: o vazio por baixo diz o mesmo à vista, e
+          dizê-lo duas vezes seguidas era o eco que o C2-008 apontou. */}
+      <p role="status" className={result.total === 0 ? 'sr-only' : 'mt-3 text-sm text-muted'}>
         {summary}
         {totalPages > 1 ? ` A mostrar a página ${filter.page} de ${totalPages}.` : ''}
       </p>
@@ -316,16 +367,58 @@ export default async function AgendaPage({ params, searchParams }: Props) {
             today={today}
             municipalityNames={municipalityNames}
             venueNames={venueNames}
+            acessoDoEspaco={acessoDoEspaco}
             showMunicipality={!filter.municipality}
             dayHeadingLevel={2}
             idPrefix="agenda"
           />
         ) : (
+          /*
+           * O vazio responde com o que existe (C2-008): o dia mais próximo
+           * com eventos, o que se pode tirar ao filtro e quantos aparecem, os
+           * outros concelhos onde a mesma procura dá — e, num concelho cuja
+           * agenda não se lê, que pode haver o que não chegou aqui. O «Enviar
+           * um evento» era o único botão, para quem programa; fica em texto,
+           * por baixo, para quem organiza.
+           */
           <EmptyState
-            title="Sem resultados para estes filtros."
-            description="Alargue o intervalo de datas ou limpe alguns filtros."
-            action={{ href: '/submeter', label: 'Enviar um evento' }}
-          />
+            title={
+              pedidosSemNenhum.length > 0
+                ? `Por agora, nenhum evento desta agenda declara ${nomesDosEixos(pedidosSemNenhum)}.`
+                : filter.q && fichas.length === 1
+                  ? `Não encontrámos «${filter.q}» nos próximos eventos.`
+                  : 'Não temos eventos com estes filtros.'
+            }
+            description={saidas?.avisoDoConcelho ?? undefined}
+            secundaria={
+              pedidosSemNenhum.length > 0
+                ? {
+                    texto: 'Se organiza um,',
+                    href: '/submeter',
+                    label: 'diga-nos',
+                    depois: '— aparece aqui.',
+                  }
+                : { texto: 'Organiza alguma coisa?', href: '/submeter', label: 'Envie-nos.' }
+            }
+          >
+            {propostas.length > 0 ? (
+              <ul aria-label="Por onde continuar" className="mx-auto mt-5 max-w-md space-y-1">
+                {propostas.map((proposta) => (
+                  <li key={proposta.href}>
+                    <Link
+                      href={proposta.href}
+                      className="inline-flex min-h-11 items-center gap-2 font-medium"
+                    >
+                      <span className="underline underline-offset-4">{proposta.rotulo}</span>
+                      <span className="text-sm font-normal text-muted">
+                        — {proposta.quantos === 1 ? '1 evento' : `${proposta.quantos} eventos`}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </EmptyState>
         )}
       </div>
 

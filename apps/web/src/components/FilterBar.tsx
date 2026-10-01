@@ -1,7 +1,15 @@
 import Link from 'next/link';
 import type { EventFilter } from '@coreto/core';
-import { EIXOS_DE_ACESSIBILIDADE, type EixoDeAcessibilidade } from '@/src/lib/agenda';
+import {
+  FAMILIA,
+  buildHref,
+  eixosDoFormulario,
+  nomesDosEixos,
+  type EixoDeAcessibilidade,
+} from '@/src/lib/agenda';
+import { comInicialMaiuscula } from '@/src/lib/regiao';
 import type { Category, Municipality } from '@/src/lib/queries/types';
+import { ReporAoVoltar } from './ReporAoVoltar';
 
 interface Props {
   filter: EventFilter;
@@ -16,6 +24,14 @@ interface Props {
    * filtro — ou `null` quando não se contou. Um eixo a zero não se oferece.
    */
   eixosDeAcessibilidade?: Readonly<Record<string, number>> | null;
+  /**
+   * O mesmo, na agenda inteira e sem filtro nenhum — para dizer que nenhum
+   * evento desta agenda declara um eixo, em vez de esconder a caixa calado
+   * (C2-010). `null` quando não se contou, e aí não se diz nada.
+   */
+  eixosDaAgenda?: Readonly<Record<string, number>> | null;
+  /** Quantos eventos tem a lista à vista — num recorte vazio não se fala de eixos. */
+  total?: number | null;
 }
 
 // `border-field` e não `border-border`: a moldura de um campo identifica um
@@ -50,44 +66,57 @@ export function FilterBar({
   action,
   activeCount = 0,
   eixosDeAcessibilidade = null,
+  eixosDaAgenda = null,
+  total = null,
 }: Props) {
-  /*
-   * Que eixos se oferecem.
-   *
-   * Sem contagem — um build sem base, ou uma janela grande de mais para se
-   * contar — mostra-se o das cadeiras de rodas e mais nada: é o que existia
-   * antes disto e o único que se sabe estar preenchido em produção. Com
-   * contagem, oferece-se o que tem eventos, mais o que já esteja a valer no
-   * endereço (senão não havia como o desligar).
-   */
-  const eixos = EIXOS_DE_ACESSIBILIDADE.filter((eixo) => {
-    if (filter[eixo.chave]) return true;
-    if (eixosDeAcessibilidade === null) return eixo.chave === 'accessible';
-    return (eixosDeAcessibilidade[eixo.chave] ?? 0) > 0;
-  });
+  // Que caixas se oferecem, e o que se diz das que não — a regra e as razões
+  // estão em `eixosDoFormulario`.
+  const {
+    oferecidos: eixos,
+    nenhumNaAgenda,
+    nenhumNoRecorte,
+  } = eixosDoFormulario(filter, eixosDeAcessibilidade, eixosDaAgenda, total);
+  const outros = eixos.filter((eixo) => eixo.chave !== 'accessible');
 
   return (
     <details className="ct-recolhivel ct-recolhivel-sempre rounded border border-border bg-surface">
-      <summary aria-label="Mostrar ou esconder a pesquisa e os filtros da agenda">
-        <span>Pesquisar e filtrar</span>
+      {/* A pesquisa saiu daqui para a caixa à vista (`CaixaDePesquisa`), e o
+          resumo diz só o que fica. Sem `aria-label`: o `<details>` já se
+          anuncia aberto ou fechado, e um nome que não contém o texto à vista
+          é um botão que quem usa a voz não consegue chamar (WCAG 2.5.3). O
+          número diz-se por extenso a quem ouve. */}
+      <summary>
+        <span>Filtrar</span>
         {activeCount > 0 ? (
-          <span className="ct-octagon grid size-6 shrink-0 place-items-center bg-accent text-xs font-semibold text-on-accent">
-            {activeCount}
-          </span>
+          <>
+            <span
+              aria-hidden="true"
+              className="ct-octagon grid size-6 shrink-0 place-items-center bg-accent text-xs font-semibold text-on-accent"
+            >
+              {activeCount}
+            </span>
+            <span className="sr-only">
+              {activeCount === 1 ? ', 1 filtro ativo' : `, ${activeCount} filtros ativos`}
+            </span>
+          </>
         ) : null}
       </summary>
 
       <form
+        key={buildHref(filter, 1)}
         method="get"
         action={action}
         role="search"
         aria-label="Filtrar a agenda"
         className="px-4 pt-1 pb-4"
       >
-        {/* O espaço e o ciclo não têm campo próprio, mas quem chega por uma
-          ligação com eles não os pode perder ao carregar em «Filtrar». */}
+        {/* O espaço, o ciclo e a pesquisa não têm campo aqui, mas quem chega
+          por uma ligação com eles não os pode perder ao carregar em
+          «Filtrar». */}
+        {filter.q ? <input type="hidden" name="q" value={filter.q} /> : null}
         {filter.venue ? <input type="hidden" name="venue" value={filter.venue} /> : null}
         {filter.series ? <input type="hidden" name="series" value={filter.series} /> : null}
+        <ReporAoVoltar />
 
         {/* Estava no cabeçalho da página, antes de tudo; aqui é onde faz
             sentido — é sobre isto que fala. */}
@@ -96,21 +125,6 @@ export function FilterBar({
         </p>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="lg:col-span-3">
-            <label htmlFor="filtro-q" className={LABEL_CLASS}>
-              Pesquisar
-            </label>
-            <input
-              type="search"
-              id="filtro-q"
-              name="q"
-              defaultValue={filter.q ?? ''}
-              placeholder="Título, sítio, palavra…"
-              maxLength={120}
-              className={FIELD_CLASS}
-            />
-          </div>
-
           <div>
             <label htmlFor="filtro-de" className={LABEL_CLASS}>
               De
@@ -195,6 +209,21 @@ export function FilterBar({
                 Entrada livre
               </label>
 
+              <label
+                htmlFor="filtro-familia"
+                className="flex min-h-11 items-center gap-2.5 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  id="filtro-familia"
+                  name="familia"
+                  value="1"
+                  defaultChecked={filter.familia === true}
+                  className="size-5 accent-accent"
+                />
+                {FAMILIA.rotulo}
+              </label>
+
               {eixos.map((eixo) => (
                 <label
                   key={eixo.chave}
@@ -207,31 +236,56 @@ export function FilterBar({
                     name={eixo.chave}
                     value="1"
                     defaultChecked={filter[eixo.chave as EixoDeAcessibilidade] === true}
-                    aria-describedby="filtro-acessivel-nota"
+                    aria-describedby={
+                      eixo.chave === 'accessible' ? 'filtro-acessivel-nota' : 'filtro-eixos-nota'
+                    }
                     className="size-5 accent-accent"
                   />
                   {eixo.rotulo}
                 </label>
               ))}
             </div>
-            {/* A caixa dizia o que filtra e não o que isso deixa de fora, e a
-                diferença não é académica: o acesso é uma declaração do evento,
-                e a 7 de setembro de 2026 nenhum dos 128 eventos do Médio Tejo
-                a trazia — a caixa mostrava uma agenda vazia sem dizer porquê.
-                A nota não afirma quantos são, que é contagem que muda de
-                região para região; diz o que o filtro faz, que é igual em
-                todas. Por `aria-describedby` para quem ouve a caixa ouvir
-                também a ressalva. */}
-            {/* A nota vale para os cinco eixos e não só para as cadeiras de
-                rodas: todos filtram pela declaração, e a ausência de
-                declaração não é ausência de acesso. Os eixos que nenhum
-                evento desta agenda declara não aparecem aqui — uma caixa que
-                devolve sempre zero é uma armadilha, e esta já foi uma. */}
-            <p id="filtro-acessivel-nota" className="mt-2 text-sm text-muted">
-              Estas caixas mostram só os eventos que o declaram: sem declaração, o evento fica de
-              fora mesmo que o espaço o ofereça. O que se sabe do espaço está na ficha de cada
-              evento.
-            </p>
+            {/* Uma nota por regra, e cada caixa ligada à sua por
+                `aria-describedby` (C2-011, C3-004). A nota que aqui estava
+                valia para os cinco eixos e dizia «sem declaração, o evento fica
+                de fora mesmo que o espaço o ofereça» — verdade nos quatro que
+                só leem o evento, e o contrário do que faz, desde a 0129, a das
+                cadeiras de rodas: essa lê o evento ou, quando ele se cala, o
+                espaço. Uma frase que contradiz o filtro tira confiança a tudo
+                o resto, e é nesta que quem usa cadeira de rodas confia para
+                decidir. As notas não dizem quantos são, que é contagem que
+                muda de região para região; dizem o que cada caixa faz. */}
+            {eixos.some((eixo) => eixo.chave === 'accessible') ? (
+              <p id="filtro-acessivel-nota" className="mt-2 text-sm text-muted">
+                A caixa das cadeiras de rodas inclui os eventos em espaços que declaram acesso. Se o
+                evento não for no próprio espaço, confirme com quem organiza.
+              </p>
+            ) : null}
+            {outros.length > 0 ? (
+              <p id="filtro-eixos-nota" className="mt-2 text-sm text-muted">
+                {/* Numa cadeia só, para a frase não se partir a meio: o
+                    `check:afirmacoes` procura-a inteira numa linha. */}
+                {`${comInicialMaiuscula(nomesDosEixos(outros, 'conjunction'))}: só os eventos que o declaram — sem declaração, o evento fica de fora.`}
+              </p>
+            ) : null}
+            {/* O que não tem caixa também se diz (C2-010): esconder a caixa
+                evitava o zero, e trocava-o por silêncio. */}
+            {nenhumNaAgenda.length > 0 ? (
+              <p className="mt-2 text-sm text-muted">
+                Por agora, nenhum evento desta agenda declara {nomesDosEixos(nenhumNaAgenda)}. Se
+                organiza um,{' '}
+                <Link href="/submeter" className="underline underline-offset-4">
+                  diga-nos
+                </Link>{' '}
+                — aparece aqui.
+              </p>
+            ) : null}
+            {nenhumNoRecorte.length > 0 ? (
+              <p className="mt-2 text-sm text-muted">
+                Com estes filtros, nenhum evento declara {nomesDosEixos(nenhumNoRecorte)}. Sem eles,
+                há.
+              </p>
+            ) : null}
           </fieldset>
         </div>
 

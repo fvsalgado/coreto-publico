@@ -28,10 +28,20 @@
 #
 #   DATABASE_URL='postgresql://…' ./scripts/migracoes-por-aplicar.sh
 #
-# Sai 0 quando a base está em dia, 1 quando o repositório vai à frente, e 2
-# quando a base vai à frente do repositório — que é outro problema e não o
-# mesmo: quer dizer que alguém aplicou à mão o que não está aqui.
+# Sai 0 quando a base está em dia, 10 quando o repositório vai à frente —
+# falta aplicar —, e 11 quando a base vai à frente do repositório, que é outro
+# problema e não o mesmo: quer dizer que alguém aplicou à mão o que não está
+# aqui. Qualquer outra coisa — sem base, sem registo, o `psql` a falhar — sai
+# 1: não se conseguiu responder.
+#
+# **Os códigos não são 1 e 2 de propósito.** Eram, e o `psql` também sai 1 e 2
+# quando falha (2 é a ligação que caiu). O `deploy.yml` lia o 2 como «falta
+# aplicar» e o 1 como erro, ao contrário do que este guião dizia: com
+# migrações por aplicar o deploy parava em vez de as aplicar, e com a base à
+# frente tentava aplicar. Códigos que o `psql` não usa não se confundem com
+# ele, e o `trap` põe qualquer falha inesperada no 1.
 set -euo pipefail
+trap 'exit 1' ERR
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -81,7 +91,7 @@ if [ -n "$a_mais" ]; then
   echo
   echo "Alguém aplicou à mão o que não está aqui, ou o registo está torto."
   echo "Ver scripts/conciliar-registo.sh."
-  exit 2
+  exit 11
 fi
 
 if [ -z "$por_aplicar" ]; then
@@ -98,4 +108,4 @@ echo "as páginas — e o sítio fica a servir o build anterior sem ninguém dar
 echo "isso. Aplica antes de fundir:"
 echo
 echo "  DATABASE_URL='postgresql://…' ./scripts/aplicar-migracoes.sh"
-exit 1
+exit 10

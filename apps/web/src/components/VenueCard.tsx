@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BandstandMark } from '@/src/components/BandstandMark';
+import { Sinal } from '@/src/components/Sinais';
 import { posterBackground } from '@/src/lib/cartaz';
 import { formatVenueKind, thumbUrl } from '@/src/lib/format';
 import type { Venue } from '@/src/lib/queries/types';
@@ -114,7 +115,10 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
           <p className="mt-1.5 line-clamp-2 text-sm max-sm:hidden">{venue.description}</p>
         ) : null}
 
-        {count > 0 || venue.is_association || porConfirmar ? (
+        {count > 0 ||
+        venue.is_association ||
+        porConfirmar ||
+        venue.wheelchair_accessible === true ? (
           <p className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-sm">
             {count > 0 ? (
               <span className="font-medium text-accent">
@@ -130,6 +134,14 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
               <span className="text-xs font-semibold tracking-wide text-muted uppercase">
                 Por confirmar
               </span>
+            ) : null}
+            {/* O acesso que o espaço declara, com o mesmo sinal dos cartões de
+                evento (C2-012). Só o «sim», como lá: a falta de declaração não
+                é sinal, e o «não tem» verificado fica para a ficha. */}
+            {venue.wheelchair_accessible === true ? (
+              <Sinal icone="acessivel" rotulo="Acesso a cadeiras de rodas">
+                Acessível
+              </Sinal>
             ) : null}
           </p>
         ) : null}

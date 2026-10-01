@@ -37,9 +37,15 @@ export const revalidate = 3600;
 /** O corpo, escrito uma vez para se poder verificar sem servir nada. */
 export interface EstadoEmJson {
   regiao: string;
-  /** `bom`, `atencao` ou `mau` — o mesmo veredito que a página mostra em cima. */
+  /** `bom`, `atencao` ou `mau` — o veredito de quem vigia, e é por ele que a sonda decide. */
   grau: 'bom' | 'atencao' | 'mau';
-  /** A frase do veredito, em português, palavra a palavra igual à da página. */
+  /**
+   * A frase do veredito, escrita para quem administra: é a que a sonda põe no
+   * alarme que abre. A página `/estado` deixou de a mostrar a 1 de outubro de
+   * 2026 — diz o mesmo estado a quem visita, por outra ordem e por outras
+   * palavras (`resumoParaQuemVisita`) — e é por isso que este campo não é, nem
+   * tem de ser, a frase da página.
+   */
   resumo: string;
   recolha: {
     /** Fontes ligadas. As desligadas não entram, como na página. */

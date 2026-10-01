@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { VenueKind } from '@coreto/core';
-import { nomeCasaCom, perfilDoEspaco } from './espaco';
+import { filtrarEspacos, nomeCasaCom, perfilDoEspaco } from './espaco';
 
 const GENEROS: VenueKind[] = [
   'theatre',
@@ -77,5 +77,61 @@ describe('nomeCasaCom', () => {
 
   it('não devolve o que não casa', () => {
     expect(nomeCasaCom('Teatro Virgínia', 'museu')).toBe(false);
+  });
+});
+
+/**
+ * «Um sítio onde se entre de cadeira de rodas» (C2-012). A caixa mostra o que
+ * o espaço declara, e só isso: quem se cala fica de fora, como quem diz que
+ * não — e nada se infere do género do espaço.
+ */
+describe('filtrarEspacos', () => {
+  const ESPACOS = [
+    {
+      name: 'Cine-Teatro da Vila',
+      kind: 'theatre',
+      is_association: false,
+      wheelchair_accessible: true,
+    },
+    {
+      name: 'Teatro do Largo',
+      kind: 'theatre',
+      is_association: false,
+      wheelchair_accessible: null,
+    },
+    {
+      name: 'Coreto do Jardim',
+      kind: 'bandstand',
+      is_association: false,
+      wheelchair_accessible: false,
+    },
+    {
+      name: 'Sociedade Filarmónica',
+      kind: 'association',
+      is_association: true,
+      wheelchair_accessible: true,
+    },
+  ];
+  const SEM_FILTRO = { procura: '', tipo: null, soColetividades: false, soAcessiveis: false };
+  const nomes = (lista: readonly { name: string }[]) => lista.map((espaco) => espaco.name);
+
+  it('só os que declaram acesso — o silêncio e o «não» ficam de fora', () => {
+    expect(nomes(filtrarEspacos(ESPACOS, { ...SEM_FILTRO, soAcessiveis: true }))).toEqual([
+      'Cine-Teatro da Vila',
+      'Sociedade Filarmónica',
+    ]);
+  });
+
+  it('soma-se aos outros filtros', () => {
+    expect(
+      nomes(filtrarEspacos(ESPACOS, { ...SEM_FILTRO, soAcessiveis: true, tipo: 'theatre' })),
+    ).toEqual(['Cine-Teatro da Vila']);
+    expect(
+      nomes(filtrarEspacos(ESPACOS, { ...SEM_FILTRO, soAcessiveis: true, soColetividades: true })),
+    ).toEqual(['Sociedade Filarmónica']);
+  });
+
+  it('sem filtros, passam todos', () => {
+    expect(filtrarEspacos(ESPACOS, SEM_FILTRO)).toHaveLength(ESPACOS.length);
   });
 });

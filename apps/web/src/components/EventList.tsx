@@ -14,6 +14,12 @@ interface Props {
   dayHeadingLevel?: 2 | 3;
   /** Distingue os `id` dos cabeçalhos quando há mais de uma lista na página. */
   idPrefix?: string;
+  /**
+   * Os eventos cujo acesso a cadeiras de rodas é o do espaço — o evento não
+   * declara nada (`eventosComAcessoDoEspaco`). O cartão di-lo (C2-011); sem
+   * isto, diz «Acessível», como dizia.
+   */
+  acessoDoEspaco?: ReadonlySet<string>;
 }
 
 /**
@@ -30,6 +36,7 @@ export function EventList({
   showMunicipality = true,
   dayHeadingLevel = 2,
   idPrefix = 'dia',
+  acessoDoEspaco,
 }: Props) {
   const groups = groupByDay(events, today);
   const headingClass =
@@ -81,6 +88,7 @@ export function EventList({
                   municipalityName={municipalityNames?.[event.municipality_id]}
                   venueName={event.venue_id ? venueNames?.[event.venue_id] : undefined}
                   showMunicipality={showMunicipality}
+                  acessoDoEspaco={acessoDoEspaco?.has(event.id) ?? false}
                 />
               ))}
             </div>

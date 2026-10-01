@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { eventFilterSchema } from '@coreto/core';
 import {
   EIXOS_DE_ACESSIBILIDADE,
+  FAMILIA,
   PATH_DO_MAPA,
+  alargamentos,
   atalhosDeData,
   buildHref,
+  concelhosSemEventos,
   descreverDatas,
+  eixosDoFormulario,
   fichasDosFiltros,
   filtroIndexavel,
   janelaActiva,
+  nomesDosEixos,
   pilulasDeFaceta,
   readFilter,
 } from './agenda';
@@ -104,6 +109,88 @@ describe('os eixos da acessibilidade', () => {
   });
 });
 
+/**
+ * Que caixas o formulário oferece, e o que diz das outras (C2-010).
+ *
+ * As contagens são as do Médio Tejo: acesso a cadeiras de rodas em oito
+ * eventos (todos pelo espaço), e nenhum com Língua Gestual Portuguesa,
+ * audiodescrição, legendagem ou sessão relaxada.
+ */
+describe('eixosDoFormulario', () => {
+  const ZERO = { lgp: 0, audiodescricao: 0, legendas: 0, relaxada: 0 };
+  const AGENDA = { accessible: 8, ...ZERO };
+  const chaves = (eixos: readonly { chave: string }[]) => eixos.map((eixo) => eixo.chave);
+
+  it('esconde a caixa que devolve sempre zero — e diz porquê, em vez de se calar', () => {
+    const { oferecidos, nenhumNaAgenda, nenhumNoRecorte } = eixosDoFormulario(
+      filtro(),
+      AGENDA,
+      AGENDA,
+    );
+    expect(chaves(oferecidos)).toEqual(['accessible']);
+    expect(chaves(nenhumNaAgenda)).toEqual(['lgp', 'audiodescricao', 'legendas', 'relaxada']);
+    expect(nenhumNoRecorte).toEqual([]);
+    expect(nomesDosEixos(nenhumNaAgenda)).toBe(
+      'Língua Gestual Portuguesa, audiodescrição, legendagem ou sessão relaxada',
+    );
+  });
+
+  it('a caixa pedida no endereço fica, para se poder desligar — e o zero diz-se na mesma', () => {
+    const { oferecidos, nenhumNaAgenda } = eixosDoFormulario(
+      filtro({ lgp: '1' }),
+      { accessible: 0, ...ZERO },
+      AGENDA,
+    );
+    expect(chaves(oferecidos)).toEqual(['lgp']);
+    expect(chaves(nenhumNaAgenda)).toContain('lgp');
+  });
+
+  it('distingue o zero do recorte do zero da agenda inteira', () => {
+    // Em Tomar não há audiodescrição; noutro concelho há.
+    const { oferecidos, nenhumNaAgenda, nenhumNoRecorte } = eixosDoFormulario(
+      filtro({ municipality: 'tomar' }),
+      { accessible: 3, ...ZERO },
+      { ...AGENDA, audiodescricao: 2 },
+    );
+    expect(chaves(oferecidos)).toEqual(['accessible']);
+    expect(chaves(nenhumNoRecorte)).toEqual(['audiodescricao']);
+    expect(chaves(nenhumNaAgenda)).toEqual(['lgp', 'legendas', 'relaxada']);
+  });
+
+  it('num recorte vazio não se fala do recorte: o vazio já diz o que tem a dizer', () => {
+    const { nenhumNoRecorte } = eixosDoFormulario(
+      filtro({ lgp: '1' }),
+      { accessible: 0, ...ZERO },
+      AGENDA,
+      0,
+    );
+    expect(nenhumNoRecorte).toEqual([]);
+  });
+
+  it('sem contagem não se afirma nada: oferece as cadeiras de rodas, como antes, e cala-se', () => {
+    const { oferecidos, nenhumNaAgenda, nenhumNoRecorte } = eixosDoFormulario(filtro(), null, null);
+    expect(chaves(oferecidos)).toEqual(['accessible']);
+    expect(nenhumNaAgenda).toEqual([]);
+    expect(nenhumNoRecorte).toEqual([]);
+  });
+
+  it('sem a contagem do recorte, o zero da agenda inteira continua a poder dizer-se', () => {
+    const { nenhumNaAgenda, nenhumNoRecorte } = eixosDoFormulario(filtro(), null, AGENDA);
+    expect(chaves(nenhumNaAgenda)).toEqual(['lgp', 'audiodescricao', 'legendas', 'relaxada']);
+    // O recorte é que não se pode comparar com nada.
+    expect(nenhumNoRecorte).toEqual([]);
+  });
+
+  it('os nomes juntam-se como se diz em português', () => {
+    const [, lgp, ad] = EIXOS_DE_ACESSIBILIDADE;
+    if (!lgp || !ad) throw new Error('faltam eixos');
+    expect(nomesDosEixos([lgp])).toBe('Língua Gestual Portuguesa');
+    expect(nomesDosEixos([lgp, ad], 'conjunction')).toBe(
+      'Língua Gestual Portuguesa e audiodescrição',
+    );
+  });
+});
+
 describe('pilulasDeFaceta', () => {
   const concelhos = [
     { valor: 'tomar', rotulo: 'Tomar' },
@@ -137,6 +224,106 @@ describe('pilulasDeFaceta', () => {
     const pilulas = pilulasDeFaceta(filtro(), 'category', concelhos, null);
     expect(pilulas).toHaveLength(3);
     expect(pilulas.every((p) => p.quantos === null)).toBe(true);
+  });
+});
+
+/**
+ * Os concelhos a zero saem das pílulas e ficam no fim da fila (C2-007): três
+ * dos onze concelhos do Médio Tejo desapareciam da agenda sem uma palavra.
+ */
+/**
+ * «Para crianças e famílias» é um filtro de público e não um atalho para a
+ * categoria (C2-009) — e vive no endereço como os outros.
+ */
+describe('o filtro da família', () => {
+  it('lê-se e escreve-se no endereço', () => {
+    const atual = readFilter({ familia: '1', free: '1' });
+    expect(atual.familia).toBe(true);
+    expect(buildHref(atual, 1)).toBe('/agenda?free=1&familia=1');
+  });
+
+  it('tem ficha própria, que se tira sozinha', () => {
+    const fichas = fichasDosFiltros(filtro({ familia: '1', free: '1' }), QUARTA, {
+      municipalities: {},
+      categories: {},
+      venues: {},
+      series: {},
+    });
+    expect(fichas).toContainEqual({ label: FAMILIA.rotulo, href: '/agenda?free=1' });
+  });
+
+  it('a regra usa a categoria e o público que os eventos já têm, e mais nada', () => {
+    expect(FAMILIA).toMatchObject({
+      categoria: 'infantil',
+      publicos: ['family', 'children'],
+      idadeMaxima: 12,
+    });
+  });
+});
+
+describe('concelhosSemEventos', () => {
+  const concelhos = [
+    { valor: 'tomar', rotulo: 'Tomar' },
+    { valor: 'entroncamento', rotulo: 'Entroncamento' },
+    { valor: 'ferreira-do-zezere', rotulo: 'Ferreira do Zêzere' },
+  ];
+
+  it('dá os que estão a zero, a ligar para a página deles e não para uma lista vazia', () => {
+    expect(concelhosSemEventos(filtro(), concelhos, { tomar: 5 })).toEqual([
+      { valor: 'entroncamento', rotulo: 'Entroncamento', href: '/concelho/entroncamento' },
+      {
+        valor: 'ferreira-do-zezere',
+        rotulo: 'Ferreira do Zêzere',
+        href: '/concelho/ferreira-do-zezere',
+      },
+    ]);
+  });
+
+  it('o concelho escolhido não se repete no fim da fila — tem a sua pílula acesa', () => {
+    const atual = filtro({ municipality: 'entroncamento' });
+    expect(concelhosSemEventos(atual, concelhos, { tomar: 5 }).map((c) => c.valor)).toEqual([
+      'ferreira-do-zezere',
+    ]);
+  });
+
+  it('sem contagem, não se sabe quem está a zero, e não se diz', () => {
+    expect(concelhosSemEventos(filtro(), concelhos, null)).toEqual([]);
+  });
+});
+
+/**
+ * O vazio da agenda propõe tirar um filtro de cada vez (C2-008), com o
+ * endereço já feito — e as datas tiram-se juntas, como a ficha as tira.
+ */
+describe('alargamentos', () => {
+  const nomes = { municipalities: {}, categories: {}, venues: {}, series: {} };
+
+  it('um por filtro a valer, com o filtro sem ele e o endereço canónico', () => {
+    const atual = filtro({
+      from: '2026-10-03',
+      to: '2026-10-03',
+      category: 'infantil',
+      free: '1',
+    });
+    const lista = alargamentos(atual, nomes);
+    expect(lista.map((a) => [a.rotulo, a.href])).toEqual([
+      ['Em qualquer data', '/agenda?category=infantil&free=1'],
+      ['Com ou sem entrada livre', '/agenda?from=2026-10-03&to=2026-10-03&category=infantil'],
+      ['Em todas as categorias', '/agenda?from=2026-10-03&to=2026-10-03&free=1'],
+    ]);
+    expect(lista[0]?.filtro).toMatchObject({
+      from: undefined,
+      to: undefined,
+      category: 'infantil',
+    });
+  });
+
+  it('uma agenda sem filtros não tem nada a tirar', () => {
+    expect(alargamentos(filtro(), nomes)).toEqual([]);
+  });
+
+  it('a pesquisa diz-se pelo que se escreveu', () => {
+    expect(alargamentos(filtro({ q: 'ópera' }), nomes)[0]?.rotulo).toBe('Sem a pesquisa «ópera»');
   });
 });
 

@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import type { EventFilter } from '@coreto/core';
-import { desdeQuandoPorLer, type LeituraDoConcelho } from '@/src/lib/estado';
+import { desdeQuandoPorLer, type FonteComSaude, type LeituraDoConcelho } from '@/src/lib/estado';
+import { joinPt } from '@/src/lib/format';
 import { BandstandMark } from './BandstandMark';
 
 interface Props {
@@ -8,42 +8,14 @@ interface Props {
   /** Só quando há mesmo alguma coisa a acrescentar ao título. */
   description?: string;
   action?: { href: string; label: string };
-}
-
-/**
- * O que se diz a quem filtrou a agenda e ficou sem nada.
- *
- * A frase era uma só — «Alargue o intervalo de datas ou limpe alguns
- * filtros» — e há um caso em que ela aconselha o que não pode resultar. O
- * acesso a cadeiras de rodas é uma declaração do próprio evento, e uma fonte
- * que nunca a escreve deixa o recorte vazio por mais anos de agenda que se
- * peçam: a 7 de setembro de 2026, `?accessible=1` devolvia 0 dos 128 eventos
- * do Médio Tejo. Mandar alargar as datas culpa quem lê por uma lacuna que é
- * do catálogo.
- *
- * O que a segunda frase **não** diz é quantos são: seria uma contagem que
- * esta função não tem e que muda de região para região. Diz o que o filtro
- * faz e onde está o que se sabe, que é verdade em todas.
- *
- * Vive ao lado do componente e não na página porque é a mesma doutrina do
- * comentário abaixo — o vazio explica-se —, e assim tem-se num teste sem
- * montar React.
- */
-export function vazioDaAgenda(filter: Pick<EventFilter, 'accessible'>): {
-  title: string;
-  description: string;
-} {
-  if (filter.accessible === true) {
-    return {
-      title: 'Sem resultados para estes filtros.',
-      description:
-        'Este recorte mostra só os eventos onde o acesso a cadeiras de rodas está declarado: sem essa declaração, o evento fica de fora mesmo que o espaço seja acessível. Alargar o intervalo de datas não muda isso — o acesso ao espaço, quando se sabe, está na ficha de cada evento.',
-    };
-  }
-  return {
-    title: 'Sem resultados para estes filtros.',
-    description: 'Alargue o intervalo de datas ou limpe alguns filtros.',
-  };
+  /**
+   * Uma porta mais pequena, em texto — a de quem organiza, na página de quem
+   * procura: «Organiza alguma coisa? Envie-nos.» O `depois` é o resto da
+   * frase, quando a ligação fica no meio dela.
+   */
+  secundaria?: { texto: string; href: string; label: string; depois?: string };
+  /** As saídas que o vazio propõe, por baixo do texto. */
+  children?: React.ReactNode;
 }
 
 /**
@@ -62,8 +34,8 @@ export function vazioDaAgenda(filter: Pick<EventFilter, 'accessible'>): {
  * verdade; «não há programação» é uma afirmação sobre a vida de um território,
  * e essa só se faz quando as fontes foram todas lidas e não trouxeram nada.
  *
- * Vive aqui e não na página pela razão do `vazioDaAgenda` acima: é doutrina,
- * e assim tem-se num teste sem montar React.
+ * Vive aqui e não na página porque é doutrina, e assim tem-se num teste sem
+ * montar React.
  */
 export function vazioDoConcelho(
   nome: string,
@@ -74,25 +46,19 @@ export function vazioDoConcelho(
     return {
       title: `Não há nada marcado em ${nome}.`,
       description:
-        'Lemos todas as noites as fontes deste concelho, e de momento não trazem nada. ' +
+        'Lemos todos os dias as agendas deste concelho, e de momento não trazem nada. ' +
         'Quem organiza — câmara, coletividade, associação ou junta — pode enviar o que se ' +
         'prepara e fica na agenda da região.',
     };
   }
 
   if (leitura.tipo === 'por-ler') {
-    const quantas = leitura.fontes.length;
-    const desde = desdeQuandoPorLer(leitura.fontes);
-    const quais =
-      quantas === 1 ? 'Há uma fonte deste concelho' : `Há ${quantas} fontes deste concelho`;
-    const quando = desde
-      ? `sem uma leitura com sucesso desde ${formatarData(desde.slice(0, 10))}`
-      : 'que ainda não conseguimos ler uma única vez';
     return {
-      title: `Não conseguimos ler tudo o que se publica em ${nome}.`,
+      title: `Não temos nada marcado em ${nome} — mas pode haver.`,
       description:
-        `${quais} ${quando}. Pode estar a acontecer coisa que não chegou aqui — por isso ` +
-        'não dizemos que não há nada. Se souber de algum evento, pode enviá-lo.',
+        `${quaisAgendasPorLer(leitura.fontes, formatarData)} O que lá se publicar não chega ` +
+        'aqui enquanto isto durar — por isso não dizemos que não há nada. Se souber de algum ' +
+        'evento, pode enviá-lo.',
     };
   }
 
@@ -100,18 +66,39 @@ export function vazioDoConcelho(
     return {
       title: `Não temos nada publicado em ${nome}.`,
       description:
-        'Não há nenhuma fonte deste concelho que leiamos automaticamente — o que aparece aqui ' +
-        'chega por quem o envia. Não quer dizer que não haja programação: quer dizer que ainda ' +
-        'não temos de onde a ler.',
+        'Não lemos automaticamente nenhuma agenda deste concelho — o que aparece aqui chega por ' +
+        'quem o envia. Não quer dizer que não haja programação: quer dizer que ainda não temos ' +
+        'de onde a ler.',
     };
   }
 
   return {
     title: `Não temos nada publicado em ${nome}.`,
     description:
-      'E não conseguimos confirmar, neste momento, o estado das fontes deste concelho — por ' +
+      'E não conseguimos confirmar, neste momento, o estado das agendas deste concelho — por ' +
       'isso não dizemos que não há nada. Dizemos que não sabemos.',
   };
+}
+
+/**
+ * Que agendas não conseguimos ler, e desde quando — com o nome delas.
+ *
+ * Dizia «uma fonte deste concelho está sem uma leitura com sucesso», que é o
+ * vocabulário da equipa (C2-017): quem visita não sabe o que é uma fonte nem
+ * uma leitura. Diz-se o que é — a agenda da câmara, a da junta, a da sala —
+ * pelo nome que ela tem, e o nome vai no fim, depois de um travessão, para a
+ * frase não ter de adivinhar se é «da» ou «do».
+ */
+export function quaisAgendasPorLer(
+  fontes: readonly FonteComSaude[],
+  formatarData: (iso: string) => string,
+): string {
+  const desde = desdeQuandoPorLer(fontes);
+  const quais = fontes.length === 1 ? 'esta agenda' : 'estas agendas';
+  const nomes = joinPt(fontes.map((fonte) => fonte.name));
+  return desde
+    ? `Desde ${formatarData(desde.slice(0, 10))} que não conseguimos ler ${quais} — ${nomes}.`
+    : `Ainda não conseguimos ler ${quais} uma única vez — ${nomes}.`;
 }
 
 /**
@@ -132,14 +119,7 @@ export function avisoDeFontesPorLer(
   formatarData: (iso: string) => string,
 ): string | null {
   if (leitura.tipo !== 'por-ler') return null;
-  const quantas = leitura.fontes.length;
-  const desde = desdeQuandoPorLer(leitura.fontes);
-  const quais =
-    quantas === 1 ? 'uma fonte deste concelho está' : `${quantas} fontes deste concelho estão`;
-  const quando = desde
-    ? `sem uma leitura com sucesso desde ${formatarData(desde.slice(0, 10))}`
-    : 'ainda por ler uma primeira vez';
-  return `O que está aqui pode não ser tudo: ${quais} ${quando}.`;
+  return `Pode faltar programação. ${quaisAgendasPorLer(leitura.fontes, formatarData)}`;
 }
 
 /**
@@ -149,13 +129,23 @@ export function avisoDeFontesPorLer(
  * uma lista vazia diz o que se pode fazer a seguir, não fica a olhar. O
  * coreto vazio é o convite — está ali à espera de quem suba.
  */
-export function EmptyState({ title, description, action }: Props) {
+export function EmptyState({ title, description, action, secundaria, children }: Props) {
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-10 text-center">
       <BandstandMark className="mx-auto size-10 text-accent opacity-80" />
       <p className="font-display mt-3 text-lg font-semibold">{title}</p>
       {description ? (
         <p className="mx-auto mt-1 max-w-md text-sm text-muted">{description}</p>
+      ) : null}
+      {children}
+      {secundaria ? (
+        <p className="mt-5 text-sm text-muted">
+          {secundaria.texto}{' '}
+          <Link href={secundaria.href} className="underline underline-offset-4">
+            {secundaria.label}
+          </Link>
+          {secundaria.depois ? ` ${secundaria.depois}` : null}
+        </p>
       ) : null}
       {action ? (
         <Link

@@ -1,3 +1,5 @@
+import { joinPt } from './format';
+
 /**
  * O estado da casa, em números que se podem publicar.
  *
@@ -75,6 +77,12 @@ export interface FonteVigiada {
   pausada_ate?: string | null;
   /** Porquê. Obrigatório enquanto a pausa durar — o CHECK da 0159 recusa uma sem ele. */
   pausa_motivo?: string | null;
+  /**
+   * O concelho cuja agenda esta fonte alimenta, ou `null` numa fonte regional.
+   * Não decide saúde nenhuma: decide de que concelhos a página diz que a
+   * programação pode estar incompleta.
+   */
+  municipality_id?: string | null;
 }
 
 /** Dias inteiros entre dois instantes. Trunca: meio dia não é um dia. */
@@ -234,9 +242,15 @@ export function fraseDaFonte(fonte: FonteComSaude, formatarData: (iso: string) =
   // O caso que a coluna nova existe para dizer: a fonte é lida e não traz
   // nada. Antes disto, a página escrevia «Lida com sucesso a 2 de setembro» e
   // ficava por aí, semanas a fio, com o concelho sem agenda nenhuma.
-  if (boaEm && lidaEm) return `Lida a ${lidaEm}, mas sem eventos legíveis desde ${boaEm}.`;
-  if (boaEm) return `Sem uma leitura com sucesso desde ${boaEm}.`;
-  if (lidaEm) return `Lida a ${lidaEm}, e ainda sem eventos legíveis.`;
+  //
+  // Escrito para quem lê de fora: «sem eventos legíveis» e «sem uma leitura
+  // com sucesso» eram o vocabulário da equipa (C2-017). Diz-se o que se fez e
+  // o que não se conseguiu, com as mesmas duas datas.
+  if (boaEm && lidaEm) {
+    return `Tentámos lê-la a ${lidaEm}, mas não conseguimos ler eventos desde ${boaEm}.`;
+  }
+  if (boaEm) return `Não a conseguimos ler desde ${boaEm}.`;
+  if (lidaEm) return `Tentámos lê-la a ${lidaEm}, e ainda não conseguimos ler nenhum evento.`;
   return 'Ainda não foi lida.';
 }
 
@@ -449,6 +463,204 @@ export function veredito(recolha: EstadoDaRecolha, agenda: EstadoDaAgenda): Vere
     grau: 'bom',
     frase: 'Todas as fontes ligadas foram lidas com sucesso nas últimas 48 horas.',
   };
+}
+
+/** Uma linha do resumo: o rótulo à esquerda, a frase à direita. */
+export interface LinhaDoResumo {
+  tipo: 'em-dia' | 'por-ler' | 'em-pausa' | 'incompleto' | 'sem-nada' | 'nota';
+  rotulo: string;
+  texto: string;
+}
+
+export interface ResumoParaQuemVisita {
+  /** A frase de cima: quanta programação há — ou o que esta página é. */
+  titulo: string;
+  /** Pela ordem em que se leem: o que está em dia primeiro, depois o que falta. */
+  linhas: LinhaDoResumo[];
+}
+
+function agendas(n: number): string {
+  return n === 1 ? '1 agenda' : `${n} agendas`;
+}
+
+/**
+ * O topo da página `/estado`, para quem a lê de fora.
+ *
+ * **O `veredito` continua a existir, e não é para aqui.** É a resposta a quem
+ * administra — «tenho alguma coisa para arranjar?» — e é o que o `/estado.json`
+ * dá à sonda, que abre um alarme com a frase dele. Foi ele que esteve no topo
+ * desta página até 1 de outubro de 2026, numa caixa de moldura preta: «PARADO —
+ * A pausa de 8 fontes acabou e ninguém as renovou.» Era verdade, e era a frase
+ * certa para um alarme. Para um vereador de outra CIM que carrega em «Estado»
+ * no rodapé, lia-se como abandono — e escondia, três blocos abaixo, que 31 das
+ * 40 agendas estavam em dia e que a região tinha 85 eventos marcados.
+ *
+ * Isto diz a mesma coisa pela ordem de quem visita: **o que há, o que está em
+ * dia, e só depois o que falta** — sem esconder nada, sem a palavra «pausa»
+ * onde ela é mecânica da casa e sem o nome do programa que lê cada agenda. O
+ * que falta diz-se pelo efeito que tem em quem procura programação: de que
+ * concelhos ela pode estar incompleta.
+ *
+ * **Numa demonstração diz o que é verdade numa demonstração.** A região de
+ * montra não tem agendas a ler — os eventos são escritos à mão —, e o
+ * «ATENÇÃO — Não há nenhuma fonte ligada nesta região» que o veredito lhe dava
+ * apresentava como avaria o que é o desenho dela.
+ */
+export function resumoParaQuemVisita(
+  recolha: EstadoDaRecolha,
+  agenda: EstadoDaAgenda,
+  concelhos: ReadonlyArray<{ id: string; name: string }>,
+  opcoes: { demonstracao?: boolean } = {},
+): ResumoParaQuemVisita {
+  const eventos =
+    agenda.total === 1
+      ? 'A agenda tem 1 evento marcado daqui para a frente.'
+      : `A agenda tem ${agenda.total} eventos marcados daqui para a frente.`;
+
+  if (opcoes.demonstracao) {
+    return {
+      titulo:
+        'Esta é uma demonstração: os eventos foram escritos à mão, e não há agendas para ler.',
+      linhas: [
+        {
+          tipo: 'em-dia',
+          rotulo: 'Na agenda',
+          texto:
+            agenda.total === 1
+              ? '1 evento inventado, marcado daqui para a frente.'
+              : `${agenda.total} eventos inventados, marcados daqui para a frente.`,
+        },
+        {
+          tipo: 'nota',
+          rotulo: 'Numa região a funcionar',
+          texto:
+            'esta página diz que agendas lemos todos os dias, quais estão em dia e quais não ' +
+            'conseguimos ler — e desde quando.',
+        },
+      ],
+    };
+  }
+
+  const titulo =
+    agenda.total === 0 ? 'Não temos nenhum evento marcado daqui para a frente.' : eventos;
+  const linhas: LinhaDoResumo[] = [];
+  const total = recolha.vigiadas.length;
+
+  if (total === 0) {
+    linhas.push({
+      tipo: 'nota',
+      rotulo: 'Sem agendas ligadas',
+      texto:
+        'ainda não lemos automaticamente nenhuma agenda desta região: o que aparece aqui ' +
+        'chega por quem o envia.',
+    });
+  }
+
+  if (recolha.emDia.length > 0) {
+    const n = recolha.emDia.length;
+    linhas.push({
+      tipo: 'em-dia',
+      rotulo: 'Em dia',
+      texto:
+        n === total
+          ? n === 1
+            ? 'a agenda que lemos todos os dias.'
+            : `as ${n} agendas que lemos todos os dias.`
+          : `${n} das ${total} agendas que lemos todos os dias.`,
+    });
+  }
+
+  if (recolha.paradas.length > 0) {
+    linhas.push({
+      tipo: 'por-ler',
+      rotulo: 'Por ler há mais de uma semana',
+      texto: `${agendas(recolha.paradas.length)}.`,
+    });
+  }
+  if (recolha.atrasadas.length > 0) {
+    linhas.push({
+      tipo: 'por-ler',
+      rotulo: 'Por ler nos últimos dias',
+      texto: `${agendas(recolha.atrasadas.length)}.`,
+    });
+  }
+  if (recolha.porEstrear.length > 0) {
+    linhas.push({
+      tipo: 'por-ler',
+      rotulo: 'Ainda por ler',
+      texto: `${agendas(recolha.porEstrear.length)}, ligada${
+        recolha.porEstrear.length === 1 ? '' : 's'
+      } há pouco.`,
+    });
+  }
+  if (recolha.emPausa.length > 0) {
+    linhas.push({
+      tipo: 'em-pausa',
+      rotulo: 'Em pausa',
+      texto: `${agendas(recolha.emPausa.length)}, por decisão nossa e com data para rever — o motivo de cada uma está na lista abaixo.`,
+    });
+  }
+
+  /*
+   * O efeito, dito por concelho: é o que quem visita quer saber. As mesmas
+   * quatro cestas que a página de cada concelho já usa para avisar que pode
+   * faltar programação (`leituraDoConcelho`), para as duas páginas não se
+   * contradizerem.
+   */
+  const porLer = [
+    ...recolha.paradas,
+    ...recolha.atrasadas,
+    ...recolha.porEstrear,
+    ...recolha.emPausa,
+  ];
+  const nomeDe = new Map(concelhos.map((concelho) => [concelho.id, concelho.name]));
+  const incompletos = [
+    ...new Set(
+      porLer
+        .map((fonte) => (fonte.municipality_id ? nomeDe.get(fonte.municipality_id) : undefined))
+        .filter((nome): nome is string => Boolean(nome)),
+    ),
+  ].sort((a, b) => a.localeCompare(b, 'pt'));
+  const regionais = porLer
+    .filter((fonte) => !fonte.municipality_id)
+    .map((fonte) => fonte.name)
+    .sort((a, b) => a.localeCompare(b, 'pt'));
+
+  if (incompletos.length > 0 || regionais.length > 0) {
+    const partes: string[] = [];
+    if (incompletos.length > 0) partes.push(`a programação de ${joinPt(incompletos)}`);
+    if (regionais.length > 0) {
+      partes.push(
+        regionais.length === 1
+          ? `a de uma agenda regional: ${regionais[0]}`
+          : `a de ${regionais.length} agendas regionais: ${joinPt(regionais)}`,
+      );
+    }
+    linhas.push({
+      tipo: 'incompleto',
+      rotulo: 'Pode estar incompleta',
+      texto: `${partes.join('; e ')}.`,
+    });
+  }
+
+  if (agenda.vazios.length > 0) {
+    const comFalta = agenda.vazios.filter((nome) => incompletos.includes(nome));
+    const explicacao =
+      comFalta.length === 0
+        ? ''
+        : comFalta.length === agenda.vazios.length
+          ? agenda.vazios.length === 1
+            ? ' Há lá uma agenda que não conseguimos ler: pode haver programação que não chegou aqui.'
+            : ' Em todos há agendas que não conseguimos ler: pode haver programação que não chegou aqui.'
+          : ` Em ${joinPt(comFalta)} há agendas que não conseguimos ler: pode haver programação que não chegou aqui.`;
+    linhas.push({
+      tipo: 'sem-nada',
+      rotulo: 'Sem nada marcado',
+      texto: `${joinPt(agenda.vazios)}.${explicacao}`,
+    });
+  }
+
+  return { titulo, linhas };
 }
 
 /**

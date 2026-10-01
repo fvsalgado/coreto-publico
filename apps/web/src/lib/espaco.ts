@@ -81,6 +81,41 @@ export function nomeCasaCom(nome: string, procura: string): boolean {
   return semAcentos(nome).includes(limpo);
 }
 
+/** Os filtros da lista dos espaços, já lidos do endereço. */
+export interface FiltroDosEspacos {
+  procura: string;
+  /** O género escolhido, ou `null` para todos. */
+  tipo: string | null;
+  soColetividades: boolean;
+  /** Só os que declaram acesso a cadeiras de rodas (C2-012). */
+  soAcessiveis: boolean;
+}
+
+/**
+ * Os espaços que passam os filtros da lista.
+ *
+ * O acesso é **a declaração do espaço e mais nada**: um espaço que não diz
+ * fica de fora, tal como um que diz que não. Não se infere acesso do género —
+ * um coreto ao nível do chão parece acessível e pode ter três degraus —, e a
+ * nota da caixa di-lo a quem a usa.
+ */
+export function filtrarEspacos<
+  T extends {
+    name: string;
+    kind: string;
+    is_association: boolean;
+    wheelchair_accessible: boolean | null;
+  },
+>(espacos: readonly T[], filtro: FiltroDosEspacos): T[] {
+  return espacos.filter((espaco) => {
+    if (!nomeCasaCom(espaco.name, filtro.procura)) return false;
+    if (filtro.tipo && espaco.kind !== filtro.tipo) return false;
+    if (filtro.soColetividades && !espaco.is_association) return false;
+    if (filtro.soAcessiveis && espaco.wheelchair_accessible !== true) return false;
+    return true;
+  });
+}
+
 function semAcentos(texto: string): string {
   return texto
     .toLowerCase()

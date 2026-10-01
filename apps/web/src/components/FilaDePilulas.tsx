@@ -13,6 +13,12 @@ interface Props {
   /** O nome da fila, para quem navega por marcos — «Datas», «Concelhos». */
   nome: string;
   pilulas: readonly PilulaDaFila[];
+  /**
+   * O que ficou sem nada neste recorte, no fim da fila e apagado — com a
+   * ligação para a página própria, e não para uma lista vazia. Ver
+   * `concelhosSemEventos`.
+   */
+  semEventos?: readonly { chave: string; rotulo: string; href: string }[];
   className?: string;
 }
 
@@ -41,37 +47,87 @@ const APAGADA =
  * `aria-hidden` porque quem ouve a página recebe a frase inteira — «Tomar,
  * 4 eventos» — e não «Tomar 4».
  */
-export function FilaDePilulas({ nome, pilulas, className = '' }: Props) {
-  if (pilulas.length === 0) return null;
+const SEM_NADA =
+  'relative inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-border px-4 text-sm whitespace-nowrap text-muted hover:border-accent/40';
 
+export function FilaDePilulas({ nome, pilulas, semEventos = [], className = '' }: Props) {
+  if (pilulas.length === 0 && semEventos.length === 0) return null;
+
+  const ligacoes = pilulas.map((pilula) => {
+    const quantos = pilula.quantos ?? null;
+    return (
+      <li key={pilula.chave} className="flex-none snap-start">
+        <Link
+          href={pilula.href}
+          aria-current={pilula.activa ? 'page' : undefined}
+          className={pilula.activa ? ACESA : APAGADA}
+        >
+          {pilula.rotulo}
+          {quantos !== null ? (
+            <>
+              <span aria-hidden="true" className="ct-numeral text-xs opacity-70">
+                {quantos}
+              </span>
+              <span className="sr-only">
+                {quantos === 1 ? ', 1 evento' : `, ${quantos} eventos`}
+              </span>
+            </>
+          ) : null}
+        </Link>
+      </li>
+    );
+  });
+
+  if (semEventos.length === 0) {
+    return (
+      <nav aria-label={nome} className={className}>
+        <ul className="ct-fila-fichas">{ligacoes}</ul>
+      </nav>
+    );
+  }
+
+  /*
+   * Com concelhos a zero, a fila tem duas partes, e só a primeira é navegação.
+   *
+   * As pílulas filtram a agenda; as dos zeros não filtram nada — levam à
+   * página do concelho, que diz porque é que ali não há nada (C2-007). Numa
+   * navegação só, eram todos os concelhos num nível — onze, no Médio Tejo —,
+   * e o Selo pede no máximo nove
+   * (requisito 3.1 da lista «Conteúdo», que o `check:selo` mede contando as
+   * ligações de cada `<nav>`). Separadas, com o rótulo «Sem eventos:» entre
+   * as duas, são dois grupos — que é como se veem.
+   *
+   * Continuam na mesma fila que desliza no telemóvel: uma linha a mais por
+   * baixo empurrava o primeiro cartão para fora do primeiro ecrã, que é outra
+   * verificação do CI. Pela mesma razão, a partir do tablet o grupo dos zeros
+   * fica na linha das pílulas e embrulha no espaço que sobra (`.ct-fila-resto`,
+   * no `globals.css`).
+   */
   return (
-    <nav aria-label={nome} className={className}>
-      <ul className="ct-fila-fichas">
-        {pilulas.map((pilula) => {
-          const quantos = pilula.quantos ?? null;
-          return (
-            <li key={pilula.chave}>
-              <Link
-                href={pilula.href}
-                aria-current={pilula.activa ? 'page' : undefined}
-                className={pilula.activa ? ACESA : APAGADA}
-              >
-                {pilula.rotulo}
-                {quantos !== null ? (
-                  <>
-                    <span aria-hidden="true" className="ct-numeral text-xs opacity-70">
-                      {quantos}
-                    </span>
-                    <span className="sr-only">
-                      {quantos === 1 ? ', 1 evento' : `, ${quantos} eventos`}
-                    </span>
-                  </>
-                ) : null}
+    <div className={`ct-fila-fichas ${className}`}>
+      {pilulas.length > 0 ? (
+        <nav aria-label={nome} className="sm:max-w-full">
+          <ul className="flex gap-2 sm:flex-wrap">{ligacoes}</ul>
+        </nav>
+      ) : null}
+      <div className="ct-fila-resto flex items-start gap-2">
+        <p className="flex min-h-11 flex-none snap-start items-center text-sm whitespace-nowrap text-muted">
+          Sem eventos:
+        </p>
+        <ul aria-label={`${nome} sem eventos`} className="flex min-w-0 gap-2 sm:flex-wrap">
+          {semEventos.map((item) => (
+            <li key={item.chave} className="flex-none snap-start">
+              <Link href={item.href} className={SEM_NADA}>
+                {item.rotulo}
+                <span aria-hidden="true" className="ct-numeral text-xs">
+                  0
+                </span>
+                <span className="sr-only">, sem eventos aqui — ver a página</span>
               </Link>
             </li>
-          );
-        })}
-      </ul>
-    </nav>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }

@@ -10,7 +10,13 @@ import {
   listAttachments,
   signedAttachmentUrl,
 } from '@/src/lib/admin/queries';
-import { propostoEmCartaz, proposedFromPayload, proposedSessions } from '@/src/lib/admin/fields';
+import {
+  camposRecebidos,
+  formaDoPayload,
+  propostoEmCartaz,
+  proposedFromPayload,
+  proposedSessions,
+} from '@/src/lib/admin/fields';
 import {
   listCategories,
   listMunicipalitiesDeTodas,
@@ -85,6 +91,8 @@ export default async function RevisaoSubmissao({ params }: Props) {
 
   /** A submissão veio da recolha, e não de uma pessoa a escrever. */
   const daRecolha = submission.channel === 'scraper';
+  /** Chegou por programa, já em campos: não há texto nem extração. */
+  const porPrograma = formaDoPayload(payload) === 'programa';
   const raw = (payload.raw ?? {}) as Record<string, unknown>;
 
   const [attachments, municipalities, categories, venues, ciclos, duplicates] = await Promise.all([
@@ -160,7 +168,11 @@ export default async function RevisaoSubmissao({ params }: Props) {
               Quem vem da recolha nunca passa por lá — o adaptador já leu a
               página estruturada — e dizer-lhe «skipped, preenche à mão» era
               mandar reescrever à mão o que já estava lido. */}
-          {!daRecolha && submission.extraction_status !== 'ok' ? (
+          {/* E quem chega por programa também não: os campos vêm escritos por
+              quem envia, e «preenche à mão» mandava reescrever o que já cá
+              está — ao lado de um formulário que, até 1 de outubro de 2026,
+              os deixava cair. */}
+          {!daRecolha && !porPrograma && submission.extraction_status !== 'ok' ? (
             <p className="mt-2 rounded border border-highlight px-3 py-2 text-sm text-highlight">
               Extração: {submission.extraction_status}
               {submission.extraction_error ? ` — ${submission.extraction_error}` : ''}
@@ -230,6 +242,27 @@ export default async function RevisaoSubmissao({ params }: Props) {
                 </div>
               ) : null}
             </dl>
+          ) : porPrograma ? (
+            // Sem prosa, e não é falta: chegou já em campos. A lista é o que a
+            // pessoa enviou, e é contra ela que se confere o formulário ao
+            // lado — era a única maneira de ver o que a aprovação perdia.
+            <>
+              <p className="mt-2 text-sm text-muted">
+                Enviado por programa, já em campos — sem texto para ler.
+              </p>
+              <dl className="mt-3 space-y-2 text-sm">
+                {camposRecebidos(payload, {
+                  municipios: Object.fromEntries(municipalities.map((m) => [m.id, m.name])),
+                  categorias: Object.fromEntries(categories.map((c) => [c.slug, c.name])),
+                  espacos: Object.fromEntries(venues.map((v) => [v.id, v.name])),
+                }).map((campo) => (
+                  <div key={campo.rotulo}>
+                    <dt className="text-muted">{campo.rotulo}</dt>
+                    <dd className="break-words">{campo.valor}</dd>
+                  </div>
+                ))}
+              </dl>
+            </>
           ) : (
             <p className="mt-2 text-sm text-muted">Sem texto.</p>
           )}
@@ -299,7 +332,6 @@ export default async function RevisaoSubmissao({ params }: Props) {
 
           <form action={approveSubmission} className="mt-3 space-y-4">
             <input type="hidden" name="submission_id" value={submission.id} />
-            <input type="hidden" name="proposed" value={JSON.stringify(proposed)} />
 
             <div>
               <label htmlFor="title" className={LABEL}>

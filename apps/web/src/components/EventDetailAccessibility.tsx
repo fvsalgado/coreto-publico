@@ -7,6 +7,11 @@ interface Props {
   /** O que o espaço declara, quando o evento nada diz. */
   venueWheelchairAccessible: boolean | null;
   venueAccessibilityNotes: string | null;
+  /**
+   * O acesso a cadeiras de rodas é o do espaço: o evento não declara nada
+   * (`eventosComAcessoDoEspaco`). É o que a coluna resolvida já não deixa ver.
+   */
+  acessoDoEspaco?: boolean;
 }
 
 /**
@@ -37,6 +42,7 @@ export function EventDetailAccessibility({
   event,
   venueWheelchairAccessible,
   venueAccessibilityNotes,
+  acessoDoEspaco = false,
 }: Props) {
   /*
    * O `??` fica, e passou a ser cinto sobre suspensórios.
@@ -48,10 +54,20 @@ export function EventDetailAccessibility({
    * caso de o evento vir de uma cache mais velha do que a última alteração
    * ao espaço, que é o que se lê do lado direito.
    */
-  const sinais = sinaisDeAcessibilidade({
-    ...event,
-    wheelchair_accessible: event.wheelchair_accessible ?? venueWheelchairAccessible,
-  });
+  /*
+   * De quem é o acesso que se mostra (C2-011). Do espaço quando o evento se
+   * cala — o que a leitura à parte diz, ou o caso do `??` acima, em que a
+   * coluna resolvida ainda vinha a nulo e o «sim» só pode ser do espaço.
+   */
+  const doEspaco =
+    acessoDoEspaco || (event.wheelchair_accessible === null && venueWheelchairAccessible === true);
+  const sinais = sinaisDeAcessibilidade(
+    {
+      ...event,
+      wheelchair_accessible: event.wheelchair_accessible ?? venueWheelchairAccessible,
+    },
+    { acessoDoEspaco: doEspaco },
+  );
 
   if (sinais.length === 0 && !event.accessibility_notes && !venueAccessibilityNotes) return null;
 
@@ -65,6 +81,16 @@ export function EventDetailAccessibility({
             </Sinal>
           ))}
         </Sinais>
+      ) : null}
+
+      {/* A ressalva por extenso, que o cartão não tem onde pôr: o espaço
+          declara o acesso dele, e o evento pode não ser no espaço — um
+          concerto no jardim ao lado, uma caminhada que parte do coreto. */}
+      {doEspaco ? (
+        <p className="text-muted">
+          É o acesso que o espaço declara; o evento não diz nada. Se não for no próprio espaço — no
+          jardim ao lado, na rua, num percurso —, confirme com quem organiza.
+        </p>
       ) : null}
 
       {event.accessibility_notes ? <p>{event.accessibility_notes}</p> : null}

@@ -7,7 +7,7 @@ import {
   avaliarRecolha,
   familiasCaladas,
   fraseDaFonte,
-  veredito,
+  resumoParaQuemVisita,
   type EstadoDaAgenda,
   type EstadoDaRecolha,
   type FonteComSaude,
@@ -25,7 +25,7 @@ import { reportarErro } from '@/src/lib/registo';
 export const metadata: Metadata = {
   title: 'Estado',
   description:
-    'Se a agenda está a ser alimentada: quando é que cada fonte foi lida com sucesso pela última vez, quantos eventos há marcados e que concelhos estão a zero.',
+    'Se a agenda está a ser alimentada: que agendas lemos em dia, quais não conseguimos ler e desde quando, quantos eventos há marcados e que concelhos estão sem nada.',
   alternates: { canonical: '/estado' },
   /*
    * Fora dos motores de busca, e é decisão e não esquecimento.
@@ -89,21 +89,45 @@ function LinhaDaFonte({ fonte }: { fonte: FonteComSaude }) {
 }
 
 /**
- * Um contador, com o rótulo no número certo. Lê-se de seguida — «1 atrasada»,
- * e não «1 atrasadas» —, e é assim que um leitor de ecrã o diz.
+ * Um contador, com o rótulo no número certo. Lê-se de seguida — «1 por ler»,
+ * «31 em dia» —, e é assim que um leitor de ecrã o diz.
+ *
+ * O rótulo era uma sobrancelha em maiúsculas espaçadas, a mesma para os quatro
+ * mosaicos: «31 EM DIA» e «9 PARADAS» com o mesmo desenho, e nada a separar o
+ * que está bem do que falta (C1-024). Em caixa de frase lê-se, e a ordem dos
+ * mosaicos — em dia primeiro — faz o resto sem cor nenhuma.
  */
 function Numero({ valor, rotulo }: { valor: number; rotulo: readonly [string, string] }) {
   return (
     <div className="rounded-lg border border-border bg-surface px-4 py-3">
-      <p className="font-display text-3xl font-semibold tabular-nums">{valor}</p>
-      <p className="ct-eyebrow mt-0.5">{valor === 1 ? rotulo[0] : rotulo[1]}</p>
+      <p className="ct-numeral text-3xl">{valor}</p>
+      <p className="mt-0.5 text-sm text-muted">{valor === 1 ? rotulo[0] : rotulo[1]}</p>
     </div>
+  );
+}
+
+/**
+ * O octógono da planta de um coreto, cheio para o que está em dia e só com o
+ * contorno para o que falta. É enfeite — o rótulo ao lado diz tudo —, e por
+ * isso fica escondido de quem ouve a página.
+ */
+function Marca({ cheia }: { cheia: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 10 10" className="size-2.5 shrink-0 text-accent">
+      <polygon
+        points="3,0.75 7,0.75 9.25,3 9.25,7 7,9.25 3,9.25 0.75,7 0.75,3"
+        fill={cheia ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
   );
 }
 
 interface Lido {
   recolha: EstadoDaRecolha;
   agenda: EstadoDaAgenda;
+  concelhos: Array<{ id: string; name: string }>;
 }
 
 export default async function EstadoPage({ params }: { params: Promise<{ regiao: string }> }) {
@@ -134,7 +158,11 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
       listMunicipalities(regiao.id),
       countEventsByMunicipality(regiao.id),
     ]);
-    lido = { recolha: avaliarRecolha(fontes), agenda: avaliarAgenda(concelhos, contagens) };
+    lido = {
+      recolha: avaliarRecolha(fontes),
+      agenda: avaliarAgenda(concelhos, contagens),
+      concelhos,
+    };
   } catch (causa) {
     reportarErro('EstadoPage', causa, { regiao: regiao.id });
   }
@@ -178,140 +206,169 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
   }
 
   const { recolha, agenda } = lido;
-  const parecer = veredito(recolha, agenda);
-  const porArranjar = [...recolha.paradas, ...recolha.atrasadas];
+  const resumo = resumoParaQuemVisita(recolha, agenda, lido.concelhos, {
+    demonstracao: regiao.tipo === 'montra',
+  });
   /*
-   * Os leitores cujas fontes se calaram quase todas ao mesmo tempo.
+   * Todas as que não estão em dia, e não só as que alguém tem de arranjar.
    *
-   * Isto está acima do «o que está por ler» de propósito, e fala antes de a
-   * saúde individual falar: `DIAS_ATE_ATRASO` tolera duas noites falhadas — e
-   * faz bem, uma noite não é uma avaria —, mas foi essa tolerância que deixou
-   * esta página chamar «em dia» a oito fontes que não respondiam a pedido
-   * nenhum havia duas noites. Oito domínios a calarem-se na mesma noite não são
-   * oito avarias: é uma.
+   * A lista dizia «o que está por ler» e mostrava as paradas e as atrasadas;
+   * as por estrear e as em pausa ficavam de fora, e o motivo de uma pausa —
+   * que é a única coisa que quem lê quer saber dela — não aparecia em lado
+   * nenhum. O resumo de cima manda para aqui, e aqui estão as quatro.
+   */
+  const porLer = [
+    ...recolha.paradas,
+    ...recolha.atrasadas,
+    ...recolha.porEstrear,
+    ...recolha.emPausa,
+  ];
+  /*
+   * As agendas que se calaram quase todas ao mesmo tempo.
+   *
+   * Fala antes da lista de propósito: `DIAS_ATE_ATRASO` tolera duas noites
+   * falhadas — e faz bem, uma noite não é uma avaria —, mas foi essa
+   * tolerância que deixou esta página chamar «em dia» a oito fontes que não
+   * respondiam a pedido nenhum havia duas noites. Oito domínios a calarem-se
+   * na mesma noite não são oito avarias: é uma.
    */
   const familias = familiasCaladas(recolha);
+  const porLerComMarca = new Set(['por-ler', 'incompleto', 'sem-nada', 'em-pausa']);
 
   return (
     <article className="max-w-2xl">
       <PageHeader
         title="Estado"
         eyebrow="O funcionamento"
-        lead={`Se a agenda ${regiao.doNome} está a ser alimentada: quando é que cada fonte foi lida pela última vez, e quanta programação há daqui para a frente.`}
+        lead={`Se a agenda ${regiao.doNome} está a ser alimentada: que agendas lemos em dia, quais não conseguimos ler, e quanta programação há daqui para a frente.`}
         migalhas={migalhas}
       />
 
       {/*
-       * O veredito não se diz só pela cor — nem sequer tem cor. É uma regra de
-       * acessibilidade (WCAG 1.4.1: a cor nunca é o único portador de
-       * significado) e é também o que esta paleta permite: a casa não tem
-       * vermelho nem verde de estado, e inventá-los aqui era abrir um caminho
-       * que o resto do sítio não segue. A palavra em cima diz tudo o que a cor
-       * diria, e a moldura mais grossa marca o que precisa de alguém.
+       * O resumo, por esta ordem: quanta programação há, o que está em dia, e
+       * só depois o que falta — dito pelo efeito em quem procura programação.
+       *
+       * Era uma caixa de moldura preta de dois píxeis com «PARADO» por cima e
+       * a frase do alarme de quem administra («A pausa de 8 fontes acabou e
+       * ninguém as renovou»), a moldura mais forte do sítio para uma frase que
+       * soava a abandono (C4-023, C1-024). O alarme continua no `/estado.json`,
+       * que é para onde a sonda olha; aqui fala-se a quem visita. Sem cor de
+       * estado — a casa não a tem, e a cor nunca é o único portador de
+       * significado (WCAG 1.4.1): o rótulo de cada linha diz o que ela é, e
+       * o que falta leva um marcador ao lado do rótulo.
        */}
-      <div
-        className={`rounded-lg bg-surface p-5 ${parecer.grau === 'bom' ? 'border border-border' : 'border-2 border-ink'}`}
-      >
-        <p className="ct-eyebrow">
-          {parecer.grau === 'bom' ? 'Em ordem' : parecer.grau === 'atencao' ? 'Atenção' : 'Parado'}
-        </p>
-        <p className="font-display mt-1 text-xl leading-relaxed font-semibold">{parecer.frase}</p>
-      </div>
-
-      <section aria-labelledby="recolha" className="mt-10">
-        <h2 id="recolha" className="ct-heading">
-          A recolha
+      <section aria-labelledby="resumo" className="rounded-lg border border-border bg-surface p-5">
+        <h2 id="resumo" className="font-display text-xl leading-snug font-semibold">
+          {resumo.titulo}
         </h2>
-        {/*
-         * A cadência conta-se em dias, e a diferença não é de estilo.
-         *
-         * Aqui prometia-se uma recolha noturna. O cron do `scrape.yml` está às
-         * 03:20 UTC, mas a fila de execuções agendadas do GitHub atrasa-o
-         * horas — as execuções medidas arrancaram às 07:58, 08:26, 10:11 e
-         * 15:28 UTC. Numa página cujo trabalho inteiro é dizer a verdade sobre
-         * o estado da agenda, uma frase que a produção desmente desconta todas
-         * as que estão ao lado. A cadência cumpre-se e escreve-se; a hora não
-         * se promete enquanto o disparo não for nosso (ver `docs/OPERACAO.md`).
-         */}
-        <p className="mt-2 text-muted">
-          A recolha corre uma vez por dia. Uma fonte que falhe {FALHAS_ATE_PAUSA} dias seguidos
-          entra em pausa e volta a ser tentada {HORAS_EM_PAUSA} horas depois — é o que impede um
-          portal em manutenção de se tornar um portal esquecido.
-        </p>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Numero valor={recolha.emDia.length} rotulo={['em dia', 'em dia']} />
-          <Numero valor={recolha.atrasadas.length} rotulo={['atrasada', 'atrasadas']} />
-          <Numero valor={recolha.paradas.length} rotulo={['parada', 'paradas']} />
-          <Numero valor={recolha.porEstrear.length} rotulo={['por estrear', 'por estrear']} />
-        </div>
-
-        {familias.length > 0 ? (
-          <div className="mt-6 rounded-lg border-2 border-ink bg-surface p-5">
-            <p className="ct-eyebrow">Um padrão, e não uma lista</p>
-            {familias.map((familia) => (
-              <p key={familia.adapter} className="mt-2">
-                <span className="font-medium">
-                  {familia.caladas} das {familia.total} fontes lidas por{' '}
-                  <code className="font-mono text-[0.95em]">{familia.adapter}</code> foram tentadas
-                  e não trouxeram nada.
-                </span>{' '}
-                {joinPt(familia.nomes)}. Quando fontes que não têm nada em comum senão o produto que
-                as serve se calam ao mesmo tempo, o mais provável é o problema estar de um lado só —
-                e isso resolve-se a falar com quem as publica, não a insistir daqui.
-              </p>
+        {resumo.linhas.length > 0 ? (
+          <dl className="mt-4 space-y-3 border-t border-border pt-4">
+            {resumo.linhas.map((linha) => (
+              <div key={linha.rotulo} className="sm:grid sm:grid-cols-[13rem_1fr] sm:gap-x-4">
+                <dt className="flex items-baseline gap-2 font-medium">
+                  <Marca cheia={!porLerComMarca.has(linha.tipo)} />
+                  {linha.rotulo}
+                </dt>
+                <dd className="mt-0.5 text-muted sm:mt-0">
+                  {linha.texto.charAt(0).toUpperCase() + linha.texto.slice(1)}
+                </dd>
+              </div>
             ))}
-          </div>
-        ) : null}
-
-        {porArranjar.length > 0 ? (
-          <div className="mt-6">
-            <h3 className="text-base font-semibold">O que está por ler</h3>
-            <ul className="mt-2">
-              {porArranjar.map((fonte) => (
-                <LinhaDaFonte key={fonte.id} fonte={fonte} />
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        {recolha.porEstrear.length > 0 ? (
-          <p className="mt-4 text-sm text-muted">
-            «Por estrear» são fontes ligadas que ainda não tiveram uma leitura boa — normal numa
-            região acabada de nascer, e um sinal se durar. Não são fontes paradas: nunca chegaram a
-            arrancar.
-          </p>
-        ) : null}
-
-        {haFontes ? (
-          <p className="mt-4 text-sm text-muted">
-            A lista completa, com o endereço de cada uma, está em{' '}
-            <Link href="/fontes" className="underline underline-offset-4">
-              de onde vêm os eventos
-            </Link>
-            .
-          </p>
+          </dl>
         ) : null}
       </section>
+
+      {regiao.tipo === 'montra' && recolha.vigiadas.length === 0 ? null : (
+        <section aria-labelledby="recolha" className="mt-10">
+          <h2 id="recolha" className="ct-heading">
+            As agendas que lemos
+          </h2>
+          {/*
+           * A cadência conta-se em dias, e a diferença não é de estilo.
+           *
+           * Aqui prometia-se uma recolha noturna. O cron do `scrape.yml` está
+           * às 03:20 UTC, mas a fila de execuções agendadas do GitHub atrasa-o
+           * horas — as execuções medidas arrancaram às 07:58, 08:26, 10:11 e
+           * 15:28 UTC. Numa página cujo trabalho inteiro é dizer a verdade
+           * sobre o estado da agenda, uma frase que a produção desmente
+           * desconta todas as que estão ao lado. A cadência cumpre-se e
+           * escreve-se; a hora não se promete enquanto o disparo não for nosso
+           * (ver `docs/OPERACAO.md`).
+           */}
+          <p className="mt-2 text-muted">
+            Lemos as agendas das câmaras, das juntas de freguesia e das salas uma vez por dia. Uma
+            agenda que falhe {FALHAS_ATE_PAUSA} dias seguidos descansa {HORAS_EM_PAUSA} horas e
+            volta a ser tentada — é o que impede um sítio em manutenção de ficar esquecido.
+          </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Numero valor={recolha.emDia.length} rotulo={['em dia', 'em dia']} />
+            <Numero
+              valor={recolha.paradas.length + recolha.atrasadas.length + recolha.porEstrear.length}
+              rotulo={['por ler', 'por ler']}
+            />
+            {recolha.emPausa.length > 0 ? (
+              <Numero valor={recolha.emPausa.length} rotulo={['em pausa', 'em pausa']} />
+            ) : null}
+          </div>
+
+          {familias.length > 0 ? (
+            <div className="mt-6 border-l-2 border-highlight pl-4">
+              <h3 className="text-base font-semibold">Uma causa só, e não várias avarias</h3>
+              {familias.map((familia) => (
+                <p key={familia.adapter} className="mt-2">
+                  {familia.caladas === familia.total
+                    ? `As ${familia.total} agendas que usam o mesmo sistema de publicação`
+                    : `${familia.caladas} das ${familia.total} agendas que usam o mesmo sistema de publicação`}{' '}
+                  deixaram de nos dar eventos ao mesmo tempo: {joinPt(familia.nomes)}. Quando
+                  agendas que só têm em comum o sistema em que são publicadas se calam juntas, a
+                  causa costuma ser uma só, do lado de quem as publica — e resolve-se a falar com
+                  quem as gere, não a insistir daqui.
+                </p>
+              ))}
+            </div>
+          ) : null}
+
+          {porLer.length > 0 ? (
+            <div className="mt-6">
+              <h3 className="text-base font-semibold">O que está por ler</h3>
+              <ul className="mt-2">
+                {porLer.map((fonte) => (
+                  <LinhaDaFonte key={fonte.id} fonte={fonte} />
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {haFontes ? (
+            <p className="mt-4 text-sm text-muted">
+              A lista completa, com o endereço de cada uma, está em{' '}
+              <Link href="/fontes" className="underline underline-offset-4">
+                de onde vêm os eventos
+              </Link>
+              .
+            </p>
+          ) : null}
+        </section>
+      )}
 
       <section aria-labelledby="agenda" className="mt-12">
         <h2 id="agenda" className="ct-heading">
           A agenda
         </h2>
         <p className="mt-2 text-muted">
-          É a outra metade da pergunta, e a que apanha o que a primeira deixa passar: uma fonte pode
-          ser lida todos os dias com sucesso e trazer zero eventos porque a página da câmara mudou
-          de forma. A recolha diz «li»; só a contagem diz «li e não veio nada».
+          É a outra metade da pergunta: uma agenda pode ser lida todos os dias e não trazer eventos,
+          porque a página de quem a publica mudou de forma. Por isso contamos também o que está
+          marcado.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <Numero valor={agenda.total} rotulo={['evento por vir', 'eventos por vir']} />
-          <Numero valor={agenda.vazios.length} rotulo={['concelho a zero', 'concelhos a zero']} />
+          <Numero
+            valor={agenda.vazios.length}
+            rotulo={['concelho sem nada marcado', 'concelhos sem nada marcado']}
+          />
         </div>
-
-        {agenda.vazios.length > 0 ? (
-          <p className="mt-4">Sem nada marcado daqui para a frente: {joinPt(agenda.vazios)}.</p>
-        ) : null}
       </section>
 
       <section aria-labelledby="limites" className="mt-12 border-t border-border pt-6">
@@ -330,9 +387,9 @@ export default async function EstadoPage({ params }: { params: Promise<{ regiao:
             instante. Vêm da mesma cache que serve o resto do sítio; recarregar não os aproxima.
           </p>
           <p>
-            <strong className="text-ink">Fontes desligadas não contam.</strong> Uma fonte desligada
-            no painel é uma decisão de quem administra — o portal fechou, o município pediu —, e não
-            uma avaria. Contá-la como parada era encher esta página de alarmes que ninguém vai
+            <strong className="text-ink">Agendas desligadas não contam.</strong> Desligar uma agenda
+            é uma decisão de quem administra — o sítio fechou, o município pediu —, e não uma
+            avaria. Contá-la como por ler era encher esta página de alarmes que ninguém vai
             arranjar.
           </p>
           <p>

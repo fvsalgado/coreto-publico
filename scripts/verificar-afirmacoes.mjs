@@ -865,9 +865,29 @@ presente('apps/web/src/components/FilterBar.tsx', /filtro-acessivel-nota/, {
   porque:
     'o filtro mostra só o que declara, e sem a ressalva um zero lê-se como «não há nada acessível»',
 });
-presente('apps/web/src/components/FilterBar.tsx', /mostram só os eventos que o declaram/, {
+presente('apps/web/src/components/FilterBar.tsx', /só os eventos que o declaram/, {
   afirmacao: 'a ressalva do filtro diz o que o filtro faz',
   porque: 'a mesma cicatriz: ausência de declaração não é ausência de acesso',
+});
+// A nota dividiu-se pelos eixos (C2-011, C3-004). A que valia para os cinco
+// dizia «sem declaração, o evento fica de fora mesmo que o espaço o ofereça» —
+// e desde a 0129 a das cadeiras de rodas faz o contrário: lê o evento ou,
+// quando ele se cala, o espaço. Os outros quatro eixos só leem o evento, e a
+// frase de cima continua a ser deles.
+presente(
+  'apps/web/src/components/FilterBar.tsx',
+  /inclui os eventos em espaços que declaram acesso/,
+  {
+    afirmacao: 'a ressalva das cadeiras de rodas diz que o acesso do espaço conta',
+    porque:
+      'o filtro lê wheelchair_accessible_resolved, que cai para o espaço quando o evento se cala; quem usa cadeira de rodas decide por esta nota, e uma nota que contradiz o filtro tira confiança ao resto',
+  },
+);
+ausente('apps/web/src/components/FilterBar.tsx', /mesmo que o espaço o ofereça/, {
+  afirmacao: 'nenhuma ressalva do formulário diz que o acesso do espaço fica de fora',
+  porque:
+    'era a frase que a 0129 tornou falsa: os 35 resultados do filtro em produção eram todos acesso do espaço',
+  prosa: true,
 });
 // Os cinco eixos saem de uma lista só — o esquema, a consulta, o formulário e
 // as fichas leem a mesma. Acrescentar um eixo em quatro sítios à mão era
@@ -896,27 +916,21 @@ presente('apps/web/app/[regiao]/page.tsx', /comResultados/, {
   porque: 'é a contagem que faz o atalho aparecer e desaparecer sem ninguém se lembrar dele',
 });
 
-{
-  // O par por ligar: a função existe e a agenda ainda não a chama.
-  const agenda = ler('apps/web/app/[regiao]/agenda/page.tsx');
-  if (/vazioDaAgenda/.test(agenda)) {
-    presente(
-      'apps/web/src/components/EmptyState.tsx',
-      /só os eventos onde o acesso a cadeiras de rodas está declarado/,
-      {
-        afirmacao: 'com ?accessible=1 e zero resultados, a agenda não aconselha alargar as datas',
-        porque: 'alargar o intervalo não muda um recorte que só mostra o que declara acesso',
-      },
-    );
-  } else {
-    registar({
-      afirmacao: 'com ?accessible=1 e zero resultados, a agenda não aconselha alargar as datas',
-      onde: `${origem('apps/web/app/[regiao]/agenda/page.tsx', /<EmptyState/)} — a descrição continua cravada`,
-      porque:
-        'vazioDaAgenda existe em EmptyState.tsx e a agenda ainda não a chama; enquanto não chamar, /agenda?accessible=1 aconselha alargar o intervalo de datas a quem isso não ajuda',
-    });
-  }
-}
+// O vazio da agenda deixou de aconselhar a alargar as datas (C2-008): conta
+// as saídas que existem e propõe-nas. O `vazioDaAgenda`, que ficou um ano por
+// ligar, saiu sem nunca ter sido chamado — e dizia, também ele, que o acesso do
+// espaço não contava, o contrário do que a 0129 pôs o filtro a fazer.
+ausente('apps/web/app/[regiao]/agenda/page.tsx', /Alargue o intervalo/, {
+  afirmacao: 'com ?accessible=1 e zero resultados, a agenda não aconselha alargar as datas',
+  porque: 'alargar o intervalo não muda um recorte que só mostra o que declara acesso',
+  prosa: true,
+});
+ausente('apps/web/src/components/EmptyState.tsx', /Alargue o intervalo/, {
+  afirmacao: 'nenhum vazio da agenda aconselha alargar as datas sem contar o que isso daria',
+  porque:
+    'uma proposta que leva a outro zero é o mesmo beco com mais um passo; as saídas contam-se antes de se oferecerem',
+  prosa: true,
+});
 
 // ---- Os cartazes que guardamos ----
 //

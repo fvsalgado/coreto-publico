@@ -2,8 +2,8 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
 import type { AnelDeFronteira } from '../mapa';
-import { EIXOS_DE_ACESSIBILIDADE } from '../agenda';
-import { consultaDePesquisa } from '../pesquisa';
+import { EIXOS_DE_ACESSIBILIDADE, FAMILIA } from '../agenda';
+import { filtroDaPalavra, planoDePesquisa, type PlanoDePesquisa } from '../pesquisa';
 import { publicClient } from '../supabase/server';
 import { reportarErro } from '../registo';
 import { degradarForaDaCache, ehPaginaAlemDoFim, exigirLeitura } from './falhas';
@@ -125,6 +125,8 @@ function filtrarEventos(
   regiao: string,
   filter: EventFilter,
   from: string,
+  /** A pesquisa já resolvida contra o catálogo (`planoDaPesquisa`), ou `null`. */
+  pesquisa: PlanoDePesquisa | null,
 ): ConsultaDeEventos {
   let q = query
     .eq('municipalities.region_id', regiao)
@@ -160,18 +162,55 @@ function filtrarEventos(
   for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
     if (eixo.chave !== 'accessible' && filter[eixo.chave]) q = q.eq(eixo.coluna, true);
   }
-  if (filter.q) {
+  // A regra e o porquê dela estão em `FAMILIA`. Três `or`, que o PostgREST
+  // soma como «e»: a categoria ou o público; sem idade mínima acima do tecto;
+  // e não uma sessão para escolas — o nulo, nos dois últimos, é silêncio da
+  // fonte e não exclui ninguém.
+  if (filter.familia) {
+    q = q
+      .or(`category_slug.eq.${FAMILIA.categoria},audience.in.(${FAMILIA.publicos.join(',')})`)
+      .or(`min_age.is.null,min_age.lte.${FAMILIA.idadeMaxima}`)
+      .or('audience.is.null,audience.neq.schools');
+  }
+  if (pesquisa) {
     /*
      * Texto integral em português (0116): a coluna gerada `search_vector`
      * junta título, subtítulo, sítio e resumo sem acentos e pelo radical, e a
      * consulta leva prefixos — «fad» encontra «fado» e «fados». A configuração
      * vai sem esquema porque o PostgREST resolve `portugues` pelo
      * `search_path`, que inclui `public`.
+     *
+     * E cada palavra que nomeia uma categoria, um espaço ou um concelho leva
+     * um `or` seu — o texto tem-na, ou o evento é daí. Vários `or` no mesmo
+     * pedido somam-se como «e», que é o que «todas as palavras» quer dizer.
+     * O porquê está em `pesquisa.ts`.
      */
-    const consulta = consultaDePesquisa(filter.q);
-    if (consulta) q = q.textSearch('search_vector', consulta, { config: 'portugues' });
+    if (pesquisa.texto) q = q.textSearch('search_vector', pesquisa.texto, { config: 'portugues' });
+    for (const palavra of pesquisa.alternativas) q = q.or(filtroDaPalavra(palavra));
   }
   return q;
+}
+
+/**
+ * A pesquisa de `filter.q`, resolvida contra o catálogo da região.
+ *
+ * Lê as categorias, os espaços e os concelhos pelas leituras de sempre — já em
+ * cache, e as mesmas que a página da agenda pede para desenhar os filtros — e
+ * **propaga** como elas: a pesquisa sem catálogo era a pesquisa que dizia que
+ * não havia cinema, e uma lista curta por avaria é a mentira que este
+ * ficheiro existe para não servir.
+ */
+async function planoDaPesquisa(
+  regiao: string,
+  q: string | undefined,
+): Promise<PlanoDePesquisa | null> {
+  if (!q) return null;
+  const [categorias, espacos, concelhos] = await Promise.all([
+    listCategories(),
+    listVenues(regiao),
+    listMunicipalities(regiao),
+  ]);
+  return planoDePesquisa(q, { categorias, espacos, concelhos });
 }
 
 async function fetchEventList(regiao: string, filter: EventFilter): Promise<EventListResult> {
@@ -179,7 +218,14 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
   if (!supabase) return { events: [], total: 0 };
 
   const from = filter.from ?? todayInLisbon();
-  const query = filtrarEventos(consultaDeEventos(supabase, 'com-linhas'), regiao, filter, from);
+  const pesquisa = await planoDaPesquisa(regiao, filter.q);
+  const query = filtrarEventos(
+    consultaDeEventos(supabase, 'com-linhas'),
+    regiao,
+    filter,
+    from,
+    pesquisa,
+  );
 
   const offset = (filter.page - 1) * filter.limit;
   // Ordena por `agenda_date` e não por `date_start`: é o próximo dia que
@@ -216,6 +262,7 @@ async function fetchEventList(regiao: string, filter: EventFilter): Promise<Even
       regiao,
       filter,
       from,
+      pesquisa,
     );
     exigirLeitura('listEvents', erroDaContagem);
     return { events: [], total: total ?? 0 };
@@ -261,11 +308,46 @@ export interface ContagemPorFaceta {
 
 const JANELA_DAS_FACETAS = 1000;
 
+/*
+ * Os eixos contam-se numa leitura só, e sem tirar nenhum do filtro.
+ *
+ * Ao contrário do concelho e da categoria — em que a pílula tem de dizer
+ * quantos eventos **teria** se fosse escolhida, e por isso se conta sem ela
+ * —, aqui o que interessa é o contrário: quantos dos que já estão à vista
+ * declaram cada coisa. Com «Tomar» escolhido, a caixa da audiodescrição só
+ * se deve oferecer se houver audiodescrição em Tomar.
+ */
+async function contarEixos(
+  supabase: ClientePublico,
+  regiao: string,
+  filter: EventFilter,
+  from: string,
+  pesquisa: PlanoDePesquisa | null,
+): Promise<Readonly<Record<string, number>> | null> {
+  const colunas = EIXOS_DE_ACESSIBILIDADE.map((eixo) => eixo.coluna).join(', ');
+  const { data, error } = await filtrarEventos(
+    consultaDeEventos(supabase, 'com-linhas', colunas),
+    regiao,
+    filter,
+    from,
+    pesquisa,
+  ).range(0, JANELA_DAS_FACETAS - 1);
+  if (error) return null;
+  const linhas = (data ?? []) as unknown as Array<Record<string, boolean | null>>;
+  if (linhas.length >= JANELA_DAS_FACETAS) return null;
+  const contagem: Record<string, number> = {};
+  for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+    contagem[eixo.chave] = linhas.filter((linha) => linha[eixo.coluna] === true).length;
+  }
+  return contagem;
+}
+
 async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {
   const supabase = publicClient();
   if (!supabase) return { municipality: null, category: null, acessibilidade: null };
 
   const from = filter.from ?? todayInLisbon();
+  const pesquisa = await planoDaPesquisa(regiao, filter.q);
   const contar = async (
     coluna: 'municipality_id' | 'category_slug',
     semEsta: 'municipality' | 'category',
@@ -275,6 +357,7 @@ async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<Co
       regiao,
       { ...filter, [semEsta]: undefined },
       from,
+      pesquisa,
     ).range(0, JANELA_DAS_FACETAS - 1);
     // Degrada em vez de propagar: a contagem das pílulas é um enfeite útil, e
     // uma agenda sem números nas pílulas é melhor do que uma agenda em erro.
@@ -289,39 +372,47 @@ async function fetchFacetCounts(regiao: string, filter: EventFilter): Promise<Co
     return contagem;
   };
 
-  /*
-   * Os eixos contam-se numa leitura só, e sem tirar nenhum do filtro.
-   *
-   * Ao contrário do concelho e da categoria — em que a pílula tem de dizer
-   * quantos eventos **teria** se fosse escolhida, e por isso se conta sem ela
-   * —, aqui o que interessa é o contrário: quantos dos que já estão à vista
-   * declaram cada coisa. Com «Tomar» escolhido, a caixa da audiodescrição só
-   * se deve oferecer se houver audiodescrição em Tomar.
-   */
-  const contarEixos = async (): Promise<Readonly<Record<string, number>> | null> => {
-    const colunas = EIXOS_DE_ACESSIBILIDADE.map((eixo) => eixo.coluna).join(', ');
-    const { data, error } = await filtrarEventos(
-      consultaDeEventos(supabase, 'com-linhas', colunas),
-      regiao,
-      filter,
-      from,
-    ).range(0, JANELA_DAS_FACETAS - 1);
-    if (error) return null;
-    const linhas = (data ?? []) as unknown as Array<Record<string, boolean | null>>;
-    if (linhas.length >= JANELA_DAS_FACETAS) return null;
-    const contagem: Record<string, number> = {};
-    for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
-      contagem[eixo.chave] = linhas.filter((linha) => linha[eixo.coluna] === true).length;
-    }
-    return contagem;
-  };
-
   const [municipality, category, acessibilidade] = await Promise.all([
     contar('municipality_id', 'municipality'),
     contar('category_slug', 'category'),
-    contarEixos(),
+    contarEixos(supabase, regiao, filter, from, pesquisa),
   ]);
   return { municipality, category, acessibilidade };
+}
+
+/**
+ * Quantos eventos da agenda **inteira** declaram cada eixo — de hoje em diante,
+ * sem filtro nenhum.
+ *
+ * As caixas de um eixo que nenhum evento declara não se oferecem, e com razão:
+ * uma caixa que devolve sempre zero é uma armadilha. Mas esconder a caixa
+ * trocava a armadilha por silêncio (C2-010): quem vem perguntar «há alguma
+ * sessão com Língua Gestual Portuguesa?» não recebia nem um sim nem um não.
+ * Esta contagem é a que deixa dizer o não — «nenhum evento desta agenda o
+ * declara» — sem o confundir com o zero de um recorte (em Tomar não há, mas
+ * em Abrantes há).
+ *
+ * O dia entra na chave: «de hoje em diante» muda à meia-noite, e a contagem de
+ * ontem não serve hoje. Devolve `null` quando não se sabe — e aí não se diz
+ * nada.
+ */
+export function contarEixosDaAgenda(
+  regiao: string,
+): Promise<Readonly<Record<string, number>> | null> {
+  const hoje = todayInLisbon();
+  return unstable_cache(fetchEixosDaAgenda, ['events-eixos-da-agenda', regiao, hoje], {
+    tags: [CACHE_TAGS.events],
+    revalidate: REVALIDATE_SECONDS,
+  })(regiao, hoje);
+}
+
+async function fetchEixosDaAgenda(
+  regiao: string,
+  hoje: string,
+): Promise<Readonly<Record<string, number>> | null> {
+  const supabase = publicClient();
+  if (!supabase) return null;
+  return contarEixos(supabase, regiao, { page: 1, limit: 1 }, hoje, null);
 }
 
 export function contarFacetas(regiao: string, filter: EventFilter): Promise<ContagemPorFaceta> {
@@ -511,6 +602,7 @@ async function fetchEventsForMap(regiao: string, filter: EventFilter): Promise<E
     regiao,
     filter,
     from,
+    await planoDaPesquisa(regiao, filter.q),
   )
     .order('agenda_date', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true })
@@ -796,6 +888,65 @@ export const listVenuesDeTodas = unstable_cache(
   ['venues-todas'],
   { tags: [CACHE_TAGS.venues], revalidate: REVALIDATE_SECONDS },
 );
+
+/**
+ * Dos eventos dados, os que mostram o acesso a cadeiras de rodas **do espaço**.
+ *
+ * Desde a 0129, o cartão e o filtro leem a coluna resolvida — a declaração do
+ * evento ou, quando ele se cala, a do espaço — e o sinal dizia «Acessível»
+ * nos dois casos (C2-011). Não é a mesma promessa: um concerto no jardim do
+ * teatro não fica acessível por o teatro o ser. Estes são os eventos em que o
+ * sinal tem de dizer de quem é: o evento não declara nada e a coluna resolvida
+ * diz que sim — isto é, o «sim» é o do espaço.
+ *
+ * **Uma leitura à parte por identificadores, e não uma coluna no cartão**, e
+ * pela razão de `feeds/data.ts`: `CARD_EVENT_FIELDS` é também o que a API
+ * publica, e uma coluna a mais aí era um campo novo no contrato de quem a lê
+ * por causa de uma palavra num cartão. Só se pergunta pelos eventos que o
+ * cartão já dá como acessíveis: os outros não têm sinal para mudar, e numa
+ * página sem nenhum não há leitura nenhuma.
+ *
+ * **Degrada** para nenhum: sem esta leitura o cartão diz «Acessível», como
+ * dizia — o enfeite perde-se, a agenda não.
+ */
+async function fetchAcessoDoEspaco(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const supabase = publicClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('events')
+    .select('id')
+    .in('id', ids)
+    .is('wheelchair_accessible', null)
+    .eq('wheelchair_accessible_resolved', true);
+
+  exigirLeitura('eventosComAcessoDoEspaco', error);
+  // Uma lista e não um `Set`: o que sai de `unstable_cache` passa por JSON, e
+  // um `Set` voltava de lá como um objeto vazio.
+  return ((data ?? []) as unknown as Array<{ id: string }>).map((linha) => linha.id);
+}
+
+const lerAcessoDoEspaco = degradarForaDaCache(
+  'eventosComAcessoDoEspaco',
+  unstable_cache(fetchAcessoDoEspaco, ['acesso-do-espaco'], {
+    // O acesso de um espaço muda a coluna resolvida dos eventos dele (o
+    // gatilho da 0129): a resposta depende das duas tabelas.
+    tags: [CACHE_TAGS.events, CACHE_TAGS.venues],
+    revalidate: REVALIDATE_SECONDS,
+  }),
+  () => [],
+);
+
+export async function eventosComAcessoDoEspaco(
+  eventos: ReadonlyArray<{ id: string; wheelchair_accessible: boolean | null }>,
+): Promise<ReadonlySet<string>> {
+  const ids = eventos
+    .filter((evento) => evento.wheelchair_accessible === true)
+    .map((evento) => evento.id);
+  if (ids.length === 0) return new Set();
+  return new Set(await lerAcessoDoEspaco(ids));
+}
 
 const lerEspaco = unstable_cache(
   async (regiao: string, id: string): Promise<Venue | null> => {

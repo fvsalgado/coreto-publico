@@ -133,6 +133,39 @@ export async function getSubmission(id: string): Promise<SubmissionDetail | null
   return (data as unknown as SubmissionDetail) ?? null;
 }
 
+/**
+ * Só a proposta de uma submissão — o que a aprovação precisa e mais nada.
+ *
+ * Sem o remetente, o texto do email e o hash do IP, e por isso **sem rasto de
+ * leitura**: a regra de `leituras.ts` é registar quem viu dados pessoais, e
+ * estas três colunas não os têm. Quem chega aqui está a aprovar, e a
+ * aprovação deixa a sua própria linha na auditoria.
+ */
+export async function getPropostaDaSubmissao(id: string): Promise<{
+  payload: Record<string, unknown>;
+  municipality_id: string | null;
+  venue_id: string | null;
+} | null> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('payload, municipality_id, venue_id')
+    .eq('id', id)
+    .maybeSingle();
+  exigirLeitura('getPropostaDaSubmissao', error);
+  if (!data) return null;
+  const linha = data as {
+    payload: unknown;
+    municipality_id: string | null;
+    venue_id: string | null;
+  };
+  const payload =
+    typeof linha.payload === 'object' && linha.payload !== null && !Array.isArray(linha.payload)
+      ? (linha.payload as Record<string, unknown>)
+      : {};
+  return { payload, municipality_id: linha.municipality_id, venue_id: linha.venue_id };
+}
+
 export async function listAttachments(submissionId: string): Promise<AttachmentRow[]> {
   const supabase = requireAdminClient();
   const { data, error } = await supabase

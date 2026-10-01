@@ -7,6 +7,7 @@ import {
   todayInLisbon,
   type EventFilter,
 } from '@coreto/core';
+import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
 import { Destaques } from '@/src/components/Destaques';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
@@ -14,6 +15,7 @@ import { MunicipalityGrid } from '@/src/components/MunicipalityGrid';
 import { semAsDesligadas, type Ancora } from '@/src/lib/navegacao';
 import {
   countEventsByMunicipality,
+  eventosComAcessoDoEspaco,
   listDestaquesFixados,
   listEvents,
   listMunicipalities,
@@ -57,7 +59,9 @@ interface AtalhoDaEntrada extends Ancora {
 
 const SHORTCUTS: readonly AtalhoDaEntrada[] = [
   { href: '/agenda?free=1', label: 'Entrada livre' },
-  { href: '/agenda?category=infantil', label: 'Para a família' },
+  // Um público e não uma categoria (C2-009): a regra está em `FAMILIA`, e
+  // conta-se antes de se oferecer, como os outros recortes.
+  { href: '/agenda?familia=1', label: 'Para crianças e famílias', recorte: { familia: true } },
   /*
    * Este conta-se antes de se oferecer, e a cicatriz é medida.
    *
@@ -183,8 +187,11 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
 
   // A hora de cada cartão da semana. A entrada chamava `listEvents` e mais
   // nada, e `listEvents` nunca lê `event_sessions`; as regras estão em
-  // `withCardTimes`.
-  const events = await withCardTimes(week.events, today, listFeedSessions);
+  // `withCardTimes`. E de que eventos o acesso é o do espaço (C2-011).
+  const [events, acessoDoEspaco] = await Promise.all([
+    withCardTimes(week.events, today, listFeedSessions),
+    eventosComAcessoDoEspaco(week.events),
+  ]);
 
   /*
    * A montra: o que foi escolhido primeiro, o resto tirado à sorte da semana.
@@ -252,6 +259,11 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
         </ul>
       </header>
 
+      {/* Quem chega a saber o que quer — «fado», o nome de uma sala, o seu
+          concelho — escreve aqui, sem ir primeiro à agenda abrir a gaveta
+          dos filtros (C3-020). */}
+      <CaixaDePesquisa className="ct-enter mt-6 max-w-xl" />
+
       <Destaques
         events={destaques}
         today={today}
@@ -284,6 +296,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
               today={today}
               municipalityNames={municipalityNames}
               venueNames={venueNames}
+              acessoDoEspaco={acessoDoEspaco}
               dayHeadingLevel={3}
               idPrefix="semana"
             />

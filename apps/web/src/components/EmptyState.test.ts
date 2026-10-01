@@ -39,7 +39,9 @@ describe('vazioDoConcelho', () => {
   it('só afirma que não há nada quando leu tudo o que havia para ler', () => {
     const emDia = vazioDoConcelho('Mação', { tipo: 'em-dia' }, DATA);
     expect(emDia.title).toBe('Não há nada marcado em Mação.');
-    expect(emDia.description).toContain('Lemos todas as noites');
+    // «Todos os dias», e não «todas as noites»: a recolha corre uma vez por
+    // dia a uma hora que o GitHub atrasa, e a página de estado já o diz assim.
+    expect(emDia.description).toContain('Lemos todos os dias');
   });
 
   it('nos outros três casos, o título fala de nós e nunca do concelho', () => {
@@ -52,12 +54,15 @@ describe('vazioDoConcelho', () => {
     }
   });
 
-  it('com uma fonte por ler, diz quantas são e desde quando', () => {
+  it('com uma agenda por ler, diz qual é e desde quando — sem «fonte» nem «leitura»', () => {
     const { title, description } = vazioDoConcelho('Mação', CASOS[2]!, DATA);
-    expect(title).toBe('Não conseguimos ler tudo o que se publica em Mação.');
-    expect(description).toContain('uma fonte deste concelho');
-    expect(description).toContain('11 de 09 de 2026');
+    expect(title).toBe('Não temos nada marcado em Mação — mas pode haver.');
+    expect(description).toContain(
+      'Desde 11 de 09 de 2026 que não conseguimos ler esta agenda — cm-macao.',
+    );
     expect(description).toContain('não dizemos que não há nada');
+    // O vocabulário da equipa não chega a quem visita (C2-017).
+    expect(description).not.toMatch(/fonte|leitura com sucesso/);
   });
 
   it('com duas, o plural sai certo', () => {
@@ -67,15 +72,15 @@ describe('vazioDoConcelho', () => {
     };
     // E a data é a da leitura boa MAIS RECENTE: é até aí que isto foi verdade.
     expect(vazioDoConcelho('Mação', duas, DATA).description).toContain(
-      'Há 2 fontes deste concelho sem uma leitura com sucesso desde 11 de 09 de 2026',
+      'Desde 11 de 09 de 2026 que não conseguimos ler estas agendas — a e b.',
     );
   });
 
   it('uma fonte que nunca foi lida não ganha uma data inventada', () => {
     const nunca: LeituraDoConcelho = { tipo: 'por-ler', fontes: [fonte('nova', null)] };
     const { description } = vazioDoConcelho('Mação', nunca, DATA);
-    expect(description).toContain('ainda não conseguimos ler uma única vez');
-    expect(description).not.toContain('desde');
+    expect(description).toContain('Ainda não conseguimos ler esta agenda uma única vez');
+    expect(description).not.toMatch(/desde/i);
   });
 
   it('sem fontes ligadas, diz que não há de onde ler — e que isso não é o mesmo', () => {
@@ -90,10 +95,9 @@ describe('vazioDoConcelho', () => {
 });
 
 describe('avisoDeFontesPorLer', () => {
-  it('avisa quando a lista tem eventos e há fontes por ler', () => {
+  it('avisa quando a lista tem eventos e há agendas por ler, e diz quais', () => {
     expect(avisoDeFontesPorLer(CASOS[2]!, DATA)).toBe(
-      'O que está aqui pode não ser tudo: uma fonte deste concelho está sem uma leitura com ' +
-        'sucesso desde 11 de 09 de 2026.',
+      'Pode faltar programação. Desde 11 de 09 de 2026 que não conseguimos ler esta agenda — cm-macao.',
     );
   });
 

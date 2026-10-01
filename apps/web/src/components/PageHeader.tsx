@@ -19,16 +19,24 @@ interface Props {
    * era o que o benchmark de 20/09/2026 apontou.
    */
   lado?: React.ReactNode;
-  /** Menos ar por baixo: para as páginas em que o que vem a seguir é a programação. */
+  /**
+   * Menos ar por baixo: para as páginas em que o que vem a seguir é a
+   * programação. E, no telemóvel, sem a sobrancelha: por cima de «Agenda» ou
+   * de «Mapa» repete o título, e a linha que ocupava é a que a caixa de
+   * pesquisa precisou para o primeiro evento continuar a caber inteiro no
+   * primeiro ecrã (C3-020; a medida é do `check-a11y`).
+   */
   compacto?: boolean;
   children?: React.ReactNode;
 }
 
 export function PageHeader({ title, eyebrow, lead, migalhas, lado, compacto, children }: Props) {
   return (
-    <header className={compacto ? 'mb-5' : 'mb-8'}>
+    <header className={compacto ? 'mb-4 sm:mb-5' : 'mb-8'}>
       {migalhas ? <Migalhas trilha={migalhas} /> : null}
-      {eyebrow ? <p className="ct-eyebrow mb-2.5">{eyebrow}</p> : null}
+      {eyebrow ? (
+        <p className={`ct-eyebrow mb-2.5 ${compacto ? 'max-sm:hidden' : ''}`}>{eyebrow}</p>
+      ) : null}
       {lado ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <h1 className="ct-display-sm">{title}</h1>

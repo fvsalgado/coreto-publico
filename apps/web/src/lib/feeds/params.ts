@@ -22,6 +22,7 @@ const BOOLEAN_KEYS = [
   'audiodescricao',
   'legendas',
   'relaxada',
+  'familia',
 ] as const;
 
 const SCALAR_KEYS = [
@@ -101,7 +102,11 @@ export const API_PARAMETERS: readonly ApiParameter[] = [
   {
     name: 'accessible',
     values: '1 ou 0',
-    description: 'A 1, devolve apenas eventos com acesso declarado a cadeiras de rodas.',
+    // Desde a 0129 o filtro lê a coluna resolvida: a declaração do evento ou,
+    // quando ele se cala, a do espaço. A documentação dizia só «declarado», e
+    // quem a lia esperava a declaração do evento (C2-011).
+    description:
+      'A 1, devolve apenas eventos com acesso a cadeiras de rodas: o que o evento declara ou, quando o evento nada diz, o que o espaço declara.',
   },
   {
     name: 'lgp',
@@ -124,6 +129,12 @@ export const API_PARAMETERS: readonly ApiParameter[] = [
     values: '1 ou 0',
     description: 'A 1, devolve apenas eventos declarados como sessão relaxada.',
   },
+  {
+    name: 'familia',
+    values: '1 ou 0',
+    description:
+      'A 1, devolve apenas eventos para crianças e famílias: da categoria «Infantil e família», ou com público declarado infantil ou familiar — sem sessões para escolas nem idade mínima acima dos 12 anos.',
+  },
   { name: 'venue', values: 'identificador do espaço', description: 'Eventos de um espaço.' },
   {
     name: 'series',
@@ -135,7 +146,7 @@ export const API_PARAMETERS: readonly ApiParameter[] = [
     name: 'q',
     values: 'texto',
     description:
-      'Pesquisa no título, no subtítulo, no sítio e no resumo — sem acentos e pelo radical das palavras: «fado» encontra «fados», «virginia» encontra «Virgínia».',
+      'Pesquisa no título, no subtítulo, no sítio e no resumo, e também no nome da categoria, do espaço e do concelho — sem acentos e pelo radical das palavras, no singular e no plural: «fado» encontra «fados», «virginia» encontra o Teatro Virgínia, «exposição» encontra «exposições».',
   },
   { name: 'page', values: '1 a 200', description: 'Página de resultados. Por omissão, 1.' },
   { name: 'limit', values: '1 a 100', description: 'Resultados por página. Por omissão, 24.' },

@@ -15,6 +15,7 @@ import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
 import {
   countEventsByVenue,
+  eventosComAcessoDoEspaco,
   fontesDoConcelhoOuNada,
   listCoretos,
   listEvents,
@@ -97,6 +98,8 @@ export default async function MunicipalityPage({ params }: Props) {
     countEventsByVenue(regiao.id),
     fontesDoConcelhoOuNada(regiao.id),
   ]);
+  // De que eventos o acesso a cadeiras de rodas é o do espaço (C2-011).
+  const acessoDoEspaco = await eventosComAcessoDoEspaco(result.events);
 
   const localCoretos = coretos.filter((coreto) => coreto.municipality_id === municipality.id);
 
@@ -202,6 +205,7 @@ export default async function MunicipalityPage({ params }: Props) {
               events={result.events}
               today={today}
               venueNames={venueNames}
+              acessoDoEspaco={acessoDoEspaco}
               showMunicipality={false}
               dayHeadingLevel={3}
               idPrefix="concelho"

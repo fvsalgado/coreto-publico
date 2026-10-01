@@ -23,8 +23,9 @@
 #      cima não fazem, e a que uma agenda cheia esconde: as fontes de um
 #      concelho podem estar paradas há duas semanas com a agenda ainda cheia
 #      do que se recolheu antes, e o sítio responde a tudo. A resposta vem de
-#      `/estado.json` — o mesmo veredito que a página /estado mostra, num
-#      corpo que é contrato e não redação. Um `grau` de «mau» é uma falha; o
+#      `/estado.json` — o veredito de quem vigia, sobre os mesmos números que
+#      a página /estado conta a quem visita, num corpo que é contrato e não
+#      redação. Um `grau` de «mau» é uma falha; o
 #      de «atenção» fica escrito no relatório e não abre issue, porque uma
 #      fonte que falhou duas rondas resolve-se sozinha na maior parte das
 #      noites.

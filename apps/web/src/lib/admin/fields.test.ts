@@ -1,17 +1,23 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { extractedEventSchema, publicSubmissionSchema } from '@coreto/core';
+import { buildSubmissionRow } from '../submissions/build-row';
 import {
   CAMPOS_DA_REGIAO,
+  camposRecebidos,
   changedFields,
   comAviso,
   destinoDoPainel,
   EDITABLE_FIELDS,
   estadoDaLicenca,
+  eventoParaAprovar,
+  formaDoPayload,
   proposedFromPayload,
   proposedSessions,
   propostoEmCartaz,
   readEvent,
+  readSessions,
 } from './fields';
 
 /**
@@ -414,5 +420,317 @@ describe('destinoDoPainel', () => {
     expect(destinoDoPainel('/agenda')).toBe('/admin/eventos');
     expect(destinoDoPainel('/administracao')).toBe('/admin/eventos');
     expect(destinoDoPainel('', '/admin/fila')).toBe('/admin/fila');
+  });
+});
+
+/**
+ * Aprovar sem mexer em nada não pode perder nada — um caso por canal.
+ *
+ * É o gesto do C4-010: abrir a proposta na fila e carregar em «Aprovar e
+ * publicar». O formulário simula-se como a página o desenha — um campo por
+ * editável, a caixa da entrada livre e a do «em cartaz», as sessões em três
+ * listas — e o que sai da aprovação compara-se com o que entrou, coluna a
+ * coluna.
+ *
+ * As colunas não estão escritas aqui: leem-se da ÚLTIMA migração que define a
+ * `approve_submission`, como o teste da `update_region` lê a dela. Uma coluna
+ * que uma migração futura ponha a função a ler entra neste teste sozinha — e
+ * se o formulário a deixar cair, é aqui que se sabe.
+ */
+const PASTA_DAS_MIGRACOES = fileURLToPath(
+  new URL('../../../../../supabase/migrations/', import.meta.url),
+);
+
+function colunasDaAprovacao(): string[] {
+  const comFuncao = readdirSync(PASTA_DAS_MIGRACOES)
+    .filter((nome) => nome.endsWith('.sql'))
+    .sort()
+    .filter((nome) =>
+      readFileSync(PASTA_DAS_MIGRACOES + nome, 'utf8').includes(
+        'create or replace function public.approve_submission(',
+      ),
+    );
+  const ultima = comFuncao.at(-1);
+  if (!ultima) throw new Error('nenhuma migração define a approve_submission');
+  const sql = readFileSync(PASTA_DAS_MIGRACOES + ultima, 'utf8');
+  const corpo = sql.slice(sql.indexOf('create or replace function public.approve_submission('));
+  return [...new Set([...corpo.matchAll(/p_event\s*->>?\s*'([a-z_]+)'/g)].map((m) => m[1] ?? ''))];
+}
+
+/**
+ * As que a função decide sozinha, e porquê. Não são perdas: são colunas que
+ * não se copiam da proposta.
+ */
+const DECIDIDAS_PELA_FUNCAO = new Set([
+  'id', // um evento novo nasce com identificador novo
+  'slug', // sai do título aprovado
+  'origin', // a função usa o canal da submissão, que é o mesmo
+  'confidence', // a função usa a da submissão
+  'fingerprint', // a função calcula-a do título, data e concelho aprovados
+  'source_key', // a função lê-a do payload da submissão, sem passar por aqui
+]);
+
+function formularioDaPagina(
+  payload: Record<string, unknown>,
+  colunas: { municipality_id?: string | null; venue_id?: string | null } = {},
+): FormData {
+  const proposto = proposedFromPayload(payload, colunas);
+  const dados = new FormData();
+  for (const campo of EDITABLE_FIELDS) {
+    if (campo === 'is_free') {
+      if (proposto.is_free) dados.set('is_free', 'on');
+      continue;
+    }
+    dados.set(campo, proposto[campo]);
+  }
+  if (propostoEmCartaz(payload)) dados.set('is_ongoing', 'on');
+  for (const sessao of proposedSessions(payload)) {
+    dados.append('session_date', sessao.date);
+    dados.append('session_start', sessao.start);
+    dados.append('session_end', sessao.end);
+  }
+  return dados;
+}
+
+function aprovarSemMexer(
+  payload: Record<string, unknown>,
+  colunas: { municipality_id?: string | null; venue_id?: string | null } = {},
+): { evento: Record<string, unknown>; sessoes: Array<Record<string, string>> } {
+  const dados = formularioDaPagina(payload, colunas);
+  const evento = eventoParaAprovar(
+    payload,
+    proposedFromPayload(payload, colunas),
+    readEvent(dados),
+  );
+  const sessoes = readSessions(dados);
+  if (sessoes[0]) evento.date_start = sessoes[0].session_date;
+  return { evento, sessoes };
+}
+
+/** Cada coluna que a aprovação lê e o payload traz chega ao evento igual. */
+function semPerdas(evento: Record<string, unknown>, proposta: Record<string, unknown>): string[] {
+  const perdidas: string[] = [];
+  for (const coluna of colunasDaAprovacao()) {
+    if (DECIDIDAS_PELA_FUNCAO.has(coluna)) continue;
+    const enviado = proposta[coluna];
+    if (enviado === undefined || enviado === null) continue;
+    if (JSON.stringify(evento[coluna]) !== JSON.stringify(enviado)) {
+      perdidas.push(
+        `${coluna}: enviado ${JSON.stringify(enviado)}, aprovado ${JSON.stringify(evento[coluna])}`,
+      );
+    }
+  }
+  return perdidas;
+}
+
+/** O concerto do C4-010, tal como chegou por `POST /api/submissions`. */
+function doPrograma(): Record<string, unknown> {
+  const construido = buildSubmissionRow(
+    publicSubmissionSchema.parse({
+      title: 'Concerto de Outono da Orquestra Ligeira do Vale',
+      description:
+        'Valsas, marchas e bandas sonoras. Cerca de 70 minutos, sem intervalo. Para toda a família, a partir dos 6 anos.',
+      municipalityId: 'vila-da-charamela',
+      venueId: 'cine-teatro-da-charamela',
+      startDate: '2026-10-24',
+      startTime: '21:00',
+      categorySlug: 'musica',
+      priceRaw: '6 €; 3 € até aos 12 anos',
+      ticketingUrl: 'https://bilheteira.example/orquestra',
+      sourceUrl: 'https://orquestra.example/outono',
+      howToArrive: 'Autocarro da carreira 3.',
+      accessibilityNotes:
+        'Plateia com acesso a cadeira de rodas e sessão com interpretação em língua gestual portuguesa.',
+      contactEmail: 'marta@orquestra.example',
+      consent: true,
+    }),
+    { ipHash: null, userAgent: null },
+  );
+  if (construido.outcome !== 'store') throw new Error('o envio devia ser guardado');
+  return construido.row.payload as unknown as Record<string, unknown>;
+}
+
+describe('aprovar sem mexer em nada não perde nada', () => {
+  it('as colunas vêm da função, e não de uma lista escrita à mão', () => {
+    const colunas = colunasDaAprovacao();
+    expect(colunas).toContain('category_slug');
+    expect(colunas).toContain('wheelchair_accessible');
+    expect(colunas).toContain('min_age');
+  });
+
+  it('envio por programa: as colunas do envio chegam todas ao evento', () => {
+    const payload = doPrograma();
+    expect(formaDoPayload(payload)).toBe('programa');
+
+    // O que o C4-010 viu sair a branco, um a um.
+    const proposto = proposedFromPayload(payload);
+    expect(proposto.category_slug).toBe('musica');
+    expect(proposto.price_display).not.toBe('');
+    expect(proposto.ticketing_url).toBe('https://bilheteira.example/orquestra');
+    expect(proposto.accessibility_notes).toContain('cadeira de rodas');
+    expect(proposto.how_to_arrive).toBe('Autocarro da carreira 3.');
+
+    const { evento, sessoes } = aprovarSemMexer(payload);
+    expect(semPerdas(evento, payload)).toEqual([]);
+    expect(evento.wheelchair_accessible).toBe(true);
+    expect(evento.has_sign_language).toBe(true);
+    expect(evento.audience).toBe('family');
+    expect(evento.min_age).toBe(6);
+    expect(sessoes).toEqual([{ session_date: '2026-10-24', start_time: '21:00' }]);
+  });
+
+  it('envio por programa sem espaço do catálogo: o local escrito não se perde', () => {
+    const construido = buildSubmissionRow(
+      publicSubmissionSchema.parse({
+        title: 'Magusto da associação',
+        municipalityId: 'ponte-do-bombo',
+        locationName: 'Largo da Igreja',
+        startDate: '2026-11-08',
+        contactEmail: 'geral@associacao.example',
+        consent: true,
+      }),
+      { ipHash: null, userAgent: null },
+    );
+    if (construido.outcome !== 'store') throw new Error('o envio devia ser guardado');
+    const payload = construido.row.payload as unknown as Record<string, unknown>;
+
+    expect(proposedFromPayload(payload).location_name).toBe('Largo da Igreja');
+    expect(semPerdas(aprovarSemMexer(payload).evento, payload)).toEqual([]);
+  });
+
+  it('recolha: o evento harmonizado chega inteiro, mais o que o formulário não mostra', () => {
+    const payload = {
+      ...DA_RECOLHA,
+      event: {
+        ...DA_RECOLHA.event,
+        location_name: 'Praça do Município',
+        title_raw: 'MERCADOS ECORURAIS',
+        description_short: 'Produtores locais na praça.',
+        latitude: 39.65,
+        longitude: -8.58,
+        audience: 'all_ages',
+        min_age: 3,
+        duration_minutes: 240,
+        price_raw: 'Entrada livre',
+        price_min: 0,
+        wheelchair_accessible: true,
+        has_subtitles: true,
+        image_credit: 'Município de Ourém',
+        image_alt: 'Mercados Ecorurais',
+        source_url: 'https://www.ourem.pt/evento/mercados-ecorurais',
+      },
+    };
+    expect(formaDoPayload(payload)).toBe('recolha');
+
+    const { evento } = aprovarSemMexer(payload, { municipality_id: 'ourem' });
+    expect(semPerdas(evento, payload.event)).toEqual([]);
+  });
+
+  it('extração de email: o que o email dizia chega ao evento, e deduz-se como nos outros canais', () => {
+    const payload = extractedEventSchema.parse({
+      title: 'Hora do conto para famílias',
+      description: 'Histórias para os mais pequenos, dos 3 aos 6 anos.',
+      municipalityId: 'tomar',
+      venueName: 'Sala do Rio',
+      parish: 'Serra',
+      dates: [{ date: '2026-10-10', startTime: '10:30' }],
+      categorySlug: 'infantil',
+      audienceRaw: 'para famílias',
+      isFree: true,
+      priceRaw: 'Entrada livre',
+      ticketingUrl: 'https://biblioteca.example/reservas',
+      accessibilityNotes: 'Sessão com interpretação em Língua Gestual Portuguesa.',
+      confidence: 0.8,
+    }) as unknown as Record<string, unknown>;
+    expect(formaDoPayload(payload)).toBe('extracao');
+
+    // O espaço que o catálogo não reconheceu fica como local, em vez de cair.
+    const { evento, sessoes } = aprovarSemMexer(payload, { municipality_id: 'tomar' });
+    expect(evento.location_name).toBe('Sala do Rio');
+    expect(evento.parish).toBe('Serra');
+    expect(evento.category_slug).toBe('infantil');
+    expect(evento.is_free).toBe(true);
+    expect(evento.price_display).toBe('Entrada livre');
+    expect(evento.price_raw).toBe('Entrada livre');
+    expect(evento.price_min).toBe(0);
+    expect(evento.ticketing_url).toBe('https://biblioteca.example/reservas');
+    expect(evento.has_sign_language).toBe(true);
+    expect(evento.audience).toBe('family');
+    expect(evento.date_start).toBe('2026-10-10');
+    expect(sessoes).toEqual([{ session_date: '2026-10-10', start_time: '10:30' }]);
+  });
+});
+
+describe('o que o editor muda volta a deduzir-se, e só isso', () => {
+  it('trocar o preço refaz os números, em vez de deixar os do preço antigo', () => {
+    const payload = doPrograma();
+    const proposto = proposedFromPayload(payload);
+    const editado = {
+      ...readEvent(formularioDaPagina(payload)),
+      price_display: 'Entrada livre',
+      is_free: true,
+    };
+    const evento = eventoParaAprovar(payload, proposto, editado);
+    expect(evento.price_min).toBe(0);
+    expect(evento.price_max).toBeNull();
+    // O que a fonte escreveu fica como proveniência.
+    expect(evento.price_raw).toBe('6 €; 3 € até aos 12 anos');
+  });
+
+  it('acrescentar a audiodescrição às notas acende o eixo, como a recolha o acenderia', () => {
+    const payload = doPrograma();
+    const proposto = proposedFromPayload(payload);
+    const editado = {
+      ...readEvent(formularioDaPagina(payload)),
+      accessibility_notes: 'Sessão com audiodescrição.',
+    };
+    const evento = eventoParaAprovar(payload, proposto, editado);
+    expect(evento.has_audio_description).toBe(true);
+    expect(evento.has_sign_language).toBe(false);
+  });
+
+  it('mudar o espaço tira as coordenadas do sítio antigo; mudar o cartaz tira o crédito', () => {
+    const payload = {
+      ...DA_RECOLHA,
+      event: { ...DA_RECOLHA.event, latitude: 39.6, longitude: -8.5, image_credit: 'Câmara' },
+    };
+    const proposto = proposedFromPayload(payload, { municipality_id: 'ourem' });
+    const base = readEvent(formularioDaPagina(payload, { municipality_id: 'ourem' }));
+    const evento = eventoParaAprovar(payload, proposto, {
+      ...base,
+      venue_id: 'outro-espaco',
+      image_url: 'https://exemplo.pt/outro.jpg',
+    });
+    expect(evento.latitude).toBeUndefined();
+    expect(evento.longitude).toBeUndefined();
+    expect(evento.image_credit).toBeUndefined();
+    expect(evento.image_alt).toBe('Mercados Ecorurais');
+  });
+
+  it('nenhum herdado passa por cima do que o editor escreveu', () => {
+    const payload = doPrograma();
+    const proposto = proposedFromPayload(payload);
+    const editado = { ...readEvent(formularioDaPagina(payload)), title: 'Outro título' };
+    expect(eventoParaAprovar(payload, proposto, editado).title).toBe('Outro título');
+  });
+});
+
+describe('camposRecebidos', () => {
+  it('mostra o que chegou por programa, com nomes em vez de identificadores', () => {
+    const campos = camposRecebidos(doPrograma(), {
+      municipios: { 'vila-da-charamela': 'Vila da Charamela' },
+      categorias: { musica: 'Música' },
+      espacos: { 'cine-teatro-da-charamela': 'Cine-Teatro da Charamela' },
+    });
+    const valor = (rotulo: string) => campos.find((campo) => campo.rotulo === rotulo)?.valor;
+    expect(valor('Concelho')).toBe('Vila da Charamela');
+    expect(valor('Espaço')).toBe('Cine-Teatro da Charamela');
+    expect(valor('Categoria')).toBe('Música');
+    expect(valor('Datas')).toBe('2026-10-24 às 21:00');
+    expect(valor('Preço, como foi escrito')).toBe('6 €; 3 € até aos 12 anos');
+    expect(valor('Língua Gestual Portuguesa')).toBe('sim');
+    expect(valor('Idade mínima')).toBe('6 anos');
+    // O que não veio não se lista.
+    expect(valor('Local')).toBeUndefined();
   });
 });

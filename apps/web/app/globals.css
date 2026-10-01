@@ -626,6 +626,19 @@
       margin-inline: 0;
       padding-inline: 0;
     }
+
+    /*
+     * O grupo dos concelhos sem eventos, ao lado da navegação dos que têm
+     * (`FilaDePilulas`). Fica na linha das pílulas e embrulha no espaço que
+     * sobra, em vez de saltar inteiro para uma linha nova — e só salta se
+     * sobrarem menos de 16rem, que é quando ficaria uma pílula por linha.
+     * Escrito aqui e não em classes do Tailwind porque o `flex: none` de cima
+     * vem depois das utilidades geradas, na mesma camada, e ganhava-lhes.
+     */
+    .ct-fila-fichas > .ct-fila-resto {
+      flex: 1 1 0%;
+      min-width: 16rem;
+    }
   }
 
   /* Sobrancelha editorial: caixa alta, muito espaçada, no turquesa da CIM. */

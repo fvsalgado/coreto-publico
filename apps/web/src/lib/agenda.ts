@@ -6,6 +6,7 @@ import {
   type EventFilter,
   type JanelaDeDatas,
 } from '@coreto/core';
+import { PATH } from './caminhos';
 import { formatLongDate, formatShortDate, formatWeekdayDate } from './format';
 
 /**
@@ -20,7 +21,9 @@ import { formatLongDate, formatShortDate, formatWeekdayDate } from './format';
  * atalho seja **exactamente** o canónico da vista a que ele leva.
  */
 
-export const PATH = '/agenda';
+// O caminho vive em `caminhos.ts`, sem dependências, para a lupa do toldo o
+// poder ler sem arrastar este módulo para o navegador. Daqui sai igual.
+export { PATH };
 
 /** Os defaults do schema, para não repetir números mágicos por aqui. */
 export const DEFAULTS = eventFilterSchema.parse({});
@@ -36,6 +39,7 @@ export const FILTER_KEYS = [
   'audiodescricao',
   'legendas',
   'relaxada',
+  'familia',
   'venue',
   'series',
   'q',
@@ -53,6 +57,7 @@ export type FilterKey =
   | 'venue'
   | 'series'
   | 'free'
+  | 'familia'
   | EixoDeAcessibilidade;
 
 /**
@@ -68,14 +73,128 @@ export const EIXOS_DE_ACESSIBILIDADE = [
     chave: 'accessible',
     coluna: 'wheelchair_accessible_resolved',
     rotulo: 'Acesso a cadeiras de rodas',
+    nome: 'acesso a cadeiras de rodas',
   },
-  { chave: 'lgp', coluna: 'has_sign_language', rotulo: 'Língua Gestual Portuguesa' },
-  { chave: 'audiodescricao', coluna: 'has_audio_description', rotulo: 'Com audiodescrição' },
-  { chave: 'legendas', coluna: 'has_subtitles', rotulo: 'Com legendagem' },
-  { chave: 'relaxada', coluna: 'is_relaxed_performance', rotulo: 'Sessão relaxada' },
-] as const satisfies readonly { chave: string; coluna: string; rotulo: string }[];
+  {
+    chave: 'lgp',
+    coluna: 'has_sign_language',
+    rotulo: 'Língua Gestual Portuguesa',
+    nome: 'Língua Gestual Portuguesa',
+  },
+  {
+    chave: 'audiodescricao',
+    coluna: 'has_audio_description',
+    rotulo: 'Com audiodescrição',
+    nome: 'audiodescrição',
+  },
+  { chave: 'legendas', coluna: 'has_subtitles', rotulo: 'Com legendagem', nome: 'legendagem' },
+  {
+    chave: 'relaxada',
+    coluna: 'is_relaxed_performance',
+    rotulo: 'Sessão relaxada',
+    nome: 'sessão relaxada',
+  },
+] as const satisfies readonly { chave: string; coluna: string; rotulo: string; nome: string }[];
 
 export type EixoDeAcessibilidade = (typeof EIXOS_DE_ACESSIBILIDADE)[number]['chave'];
+type Eixo = (typeof EIXOS_DE_ACESSIBILIDADE)[number];
+
+/** O que o formulário faz com os eixos da acessibilidade, e o que diz dos que não oferece. */
+export interface EixosDoFormulario {
+  /** As caixas que se oferecem. */
+  oferecidos: Eixo[];
+  /** Os que nenhum evento da agenda inteira declara — com ou sem caixa. */
+  nenhumNaAgenda: Eixo[];
+  /** Os que a agenda tem, mas nenhum dos eventos deste recorte (que não está vazio). */
+  nenhumNoRecorte: Eixo[];
+}
+
+/**
+ * Que caixas de acessibilidade se oferecem, e o que se diz das outras.
+ *
+ * **As caixas.** Sem contagem — um build sem base, ou uma janela grande de
+ * mais para se contar — oferece-se a das cadeiras de rodas e mais nada: é o
+ * que existia antes disto e o único eixo que se sabe estar preenchido em
+ * produção. Com contagem, oferece-se o que tem eventos, mais o que já esteja a
+ * valer no endereço (senão não havia como o desligar). Uma caixa que devolve
+ * sempre zero é uma armadilha, e esta já foi uma.
+ *
+ * **O que se diz das outras (C2-010).** Esconder a caixa trocava a armadilha
+ * por silêncio: quem vinha perguntar «há alguma sessão com Língua Gestual
+ * Portuguesa?» não recebia nem sim nem não. Agora diz-se o não, e de que
+ * tamanho ele é — **a agenda inteira** (`contagemDaAgenda`, sem filtro) não
+ * tem nenhum, ou **este recorte** não tem, e a agenda tem. São frases
+ * diferentes porque mandam fazer coisas diferentes: a primeira é para quem
+ * organiza, a segunda para quem procura, que pode tirar um filtro. Sem uma
+ * das contagens não se afirma nada — calar é melhor do que adivinhar.
+ */
+export function eixosDoFormulario(
+  filter: EventFilter,
+  contagem: Readonly<Record<string, number>> | null,
+  contagemDaAgenda: Readonly<Record<string, number>> | null,
+  /**
+   * Quantos eventos tem o recorte. Num recorte vazio, «nenhum declara X» é
+   * verdade de todos os eixos ao mesmo tempo, e dizê-lo é ruído: o vazio já
+   * diz o que tem a dizer.
+   */
+  totalDoRecorte: number | null = null,
+): EixosDoFormulario {
+  const oferecidos = EIXOS_DE_ACESSIBILIDADE.filter((eixo) => {
+    if (filter[eixo.chave]) return true;
+    if (contagem === null) return eixo.chave === 'accessible';
+    return (contagem[eixo.chave] ?? 0) > 0;
+  });
+  const naAgenda = (eixo: Eixo) => contagemDaAgenda?.[eixo.chave] ?? 0;
+  return {
+    oferecidos,
+    nenhumNaAgenda:
+      contagemDaAgenda === null
+        ? []
+        : EIXOS_DE_ACESSIBILIDADE.filter((eixo) => naAgenda(eixo) === 0),
+    nenhumNoRecorte:
+      contagemDaAgenda === null || contagem === null || totalDoRecorte === 0
+        ? []
+        : EIXOS_DE_ACESSIBILIDADE.filter(
+            (eixo) => !oferecidos.includes(eixo) && naAgenda(eixo) > 0,
+          ),
+  };
+}
+
+/** «a, b ou c» — os nomes dos eixos numa frase, como se diz em português. */
+export function nomesDosEixos(
+  eixos: readonly { nome: string }[],
+  tipo: 'conjunction' | 'disjunction' = 'disjunction',
+): string {
+  return new Intl.ListFormat('pt-PT', { style: 'long', type: tipo }).format(
+    eixos.map((eixo) => eixo.nome),
+  );
+}
+
+/**
+ * «Para crianças e famílias», com o que os eventos já dizem de si (C2-009).
+ *
+ * O atalho «Para a família» levava à categoria «Infantil e família», que no
+ * Médio Tejo tinha dois eventos — e deixava de fora o «Tafiti e os seus
+ * amigos», um filme de animação de domingo de manhã que estava em «Cinema».
+ * Uma categoria é um género; uma família procura um público.
+ *
+ * A regra usa só o que já está na base, sem inventar nada: a categoria
+ * **ou** o público declarado — `family` ou `children`, que é o que o
+ * `parseAudience` escreve quando a fonte fala de famílias, de crianças ou dos
+ * mais novos, ou quando dá uma idade mínima até aos doze. E tira dois casos
+ * que a contradizem: uma idade mínima acima dos doze (o mesmo tecto do
+ * `parseAudience`) e uma sessão para escolas, que é fechada.
+ *
+ * Fica dito o que a regra não sabe: uma classificação «M/6» quer dizer
+ * «permitido a partir dos seis», e entra aqui como família. É o que a fonte
+ * declara, e a moderação corrige o público quando ele não serve.
+ */
+export const FAMILIA = {
+  categoria: 'infantil',
+  publicos: ['family', 'children'],
+  idadeMaxima: 12,
+  rotulo: 'Para crianças e famílias',
+} as const;
 
 export type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -142,6 +261,7 @@ export function buildHref(
   if (filter.venue && keep('venue')) params.set('venue', filter.venue);
   if (filter.series && keep('series')) params.set('series', filter.series);
   if (filter.free && keep('free')) params.set('free', '1');
+  if (filter.familia && keep('familia')) params.set('familia', '1');
   for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
     if (filter[eixo.chave] && keep(eixo.chave)) params.set(eixo.chave, '1');
   }
@@ -199,6 +319,76 @@ export function pilulasDeFaceta(
       return { valor: opcao.valor, rotulo: opcao.rotulo, href, activa, quantos };
     })
     .filter((pilula) => pilula.activa || pilula.quantos === null || pilula.quantos > 0);
+}
+
+/**
+ * Os concelhos que ficaram fora da fila por não terem nada neste recorte.
+ *
+ * As pílulas sem eventos saem — uma pílula que leva a uma lista vazia é um
+ * convite para uma porta fechada —, e saíam em silêncio: três dos onze
+ * concelhos do Médio Tejo desapareciam da agenda da CIM sem uma palavra
+ * (C2-007), e quem procurava Ferreira do Zêzere concluía que não existia.
+ * Continuam fora das pílulas, e passam a estar no fim da fila, com o zero à
+ * vista e a ligação para a página do concelho — que é onde está a explicação
+ * honesta de porque não há nada (a agenda da câmara que não se lê, ou um mês
+ * sem programação). Nenhuma leva a uma lista vazia.
+ *
+ * Sem contagem (`null`), não se sabe quem está a zero, e não se diz nada.
+ */
+export function concelhosSemEventos(
+  filter: EventFilter,
+  opcoes: readonly { valor: string; rotulo: string }[],
+  contagem: Readonly<Record<string, number>> | null,
+): Array<{ valor: string; rotulo: string; href: string }> {
+  if (!contagem) return [];
+  return opcoes
+    .filter((opcao) => opcao.valor !== filter.municipality && (contagem[opcao.valor] ?? 0) === 0)
+    .map((opcao) => ({
+      valor: opcao.valor,
+      rotulo: opcao.rotulo,
+      href: `/concelho/${opcao.valor}`,
+    }));
+}
+
+/** Um filtro a menos: o que o vazio da agenda propõe tirar. */
+export interface Alargamento {
+  rotulo: string;
+  href: string;
+  filtro: EventFilter;
+}
+
+/**
+ * Os filtros a valer, tirados um a um — o que o vazio propõe (C2-008).
+ *
+ * O vazio dizia «Alargue o intervalo de datas ou limpe alguns filtros» e o
+ * único botão era «Enviar um evento»: uma frase que não diz qual alargar, e
+ * um botão para quem programa na página de quem procura. Isto dá a lista do
+ * que se pode tirar, com o endereço já feito; quem chama conta cada uma e
+ * mostra as que têm alguma coisa. As datas tiram-se juntas, como na ficha.
+ */
+export function alargamentos(filter: EventFilter, names: NomesDosFiltros): Alargamento[] {
+  const lista: Alargamento[] = [];
+  const sem = (chaves: FilterKey | readonly FilterKey[], rotulo: string) => {
+    const fora = typeof chaves === 'string' ? [chaves] : chaves;
+    const filtro: EventFilter = { ...filter, page: 1 };
+    for (const chave of fora) filtro[chave] = undefined;
+    lista.push({ rotulo, href: buildHref(filter, 1, chaves), filtro });
+  };
+
+  if (filter.from || filter.to) sem(['from', 'to'], 'Em qualquer data');
+  if (filter.free) sem('free', 'Com ou sem entrada livre');
+  if (filter.familia) sem('familia', 'Para qualquer público');
+  for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
+    if (filter[eixo.chave]) sem(eixo.chave, `Sem o filtro «${eixo.rotulo}»`);
+  }
+  if (filter.category) sem('category', 'Em todas as categorias');
+  if (filter.municipality) sem('municipality', 'Em todos os concelhos');
+  if (filter.venue) sem('venue', 'Em todos os espaços');
+  if (filter.series) {
+    sem('series', `Fora do ciclo «${names.series[filter.series] ?? filter.series}»`);
+  }
+  if (filter.q) sem('q', `Sem a pesquisa «${filter.q}»`);
+  return lista;
 }
 
 /**
@@ -365,6 +555,7 @@ export function fichasDosFiltros(
     if (filter.to) ficha('to', `Até ${formatLongDate(filter.to)}`);
   }
   if (filter.free) ficha('free', 'Entrada livre');
+  if (filter.familia) ficha('familia', FAMILIA.rotulo);
   for (const eixo of EIXOS_DE_ACESSIBILIDADE) {
     if (filter[eixo.chave]) ficha(eixo.chave, eixo.rotulo);
   }

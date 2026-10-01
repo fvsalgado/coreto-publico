@@ -378,6 +378,15 @@ jobs:
           DATABASE_URL: postgres://postgres@localhost:5432/postgres
         run: ./scripts/conciliar-registo.test.sh
 
+      # Os códigos de saída de `migracoes-por-aplicar.sh` são um contrato com o
+      # `deploy.yml`, e esteve trocado: com migrações por aplicar o deploy
+      # parava em vez de as aplicar. Isto prova cada código numa base de
+      # ensaio própria.
+      - name: Ensaiar os códigos do que falta aplicar
+        env:
+          DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: ./scripts/migracoes-por-aplicar.test.sh
+
       # A pergunta que nenhum dos outros portões pode fazer.
       #
       # Tudo o que está acima corre contra uma base **limpa**, e uma base
