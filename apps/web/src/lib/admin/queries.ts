@@ -1,4 +1,4 @@
-import { todayInLisbon } from '@coreto/core/dates';
+import { addDays, todayInLisbon } from '@coreto/core/dates';
 import 'server-only';
 import { ehPaginaAlemDoFim, exigirLeitura } from '../queries/falhas';
 import { reportarErro } from '../registo';
@@ -41,6 +41,76 @@ import { PREFIXO_DE_LEITURA, recorteDaFila, registarLeitura } from './leituras';
  * pré-visualização.
  */
 
+/**
+ * O recorte por região que uma página pede a uma leitura (C4-015).
+ *
+ * `null` nas duas é «sem recorte» — o dono, a ver todas. Uma lista recorta, e
+ * uma lista vazia recorta tudo: uma pessoa sem papel em região nenhuma não vê
+ * nada, e não «tudo, porque não havia filtro». É `ambitoDoPainel()` que o
+ * calcula a partir da sessão; as leituras só o aplicam.
+ */
+export interface Recorte {
+  regioes: readonly string[] | null;
+  concelhos: readonly string[] | null;
+}
+
+/**
+ * Nenhum identificador desta base é isto — são slugs, sem sublinhados: é o
+ * «nada» de um `in` vazio, que o PostgREST não aceita escrito como `()`.
+ */
+const NENHUM = '__nenhum__';
+
+function lista(valores: readonly string[]): string[] {
+  return valores.length > 0 ? [...valores] : [NENHUM];
+}
+
+/** Os valores de um `in` dentro de um `or` do PostgREST, já entre parênteses. */
+function emLista(valores: readonly string[]): string {
+  return `(${lista(valores)
+    .map((valor) => `"${valor.replace(/"/g, '')}"`)
+    .join(',')})`;
+}
+
+/**
+ * O que os três recortes pedem a uma consulta do supabase-js: um `in` e um
+ * `or`, que devolvem a mesma consulta.
+ *
+ * Os recortes recebem a consulta sem restrição de tipo e devolvem-na com o
+ * tipo com que entrou. Com a restrição escrita como genérico (`Q extends
+ * { in(...): Q }`), o TypeScript tentava provar a estrutura inteira do
+ * construtor de consultas do supabase-js e desistia com «type instantiation is
+ * excessively deep» nas consultas de colunas longas. Em tempo de execução é o
+ * mesmo objeto: o `in` e o `or` do construtor devolvem-no a ele.
+ */
+interface Filtravel {
+  in(coluna: string, valores: readonly string[]): Filtravel;
+  or(filtro: string): Filtravel;
+}
+
+/** Recorta pelo concelho — eventos, espaços, cartazes. */
+function porConcelho<Q>(query: Q, recorte: Recorte | undefined, coluna = 'municipality_id'): Q {
+  if (!recorte || recorte.concelhos === null) return query;
+  return (query as unknown as Filtravel).in(coluna, lista(recorte.concelhos)) as unknown as Q;
+}
+
+/** Recorta pela região — as vistas que já a trazem. */
+function porRegiao<Q>(query: Q, recorte: Recorte | undefined): Q {
+  if (!recorte || recorte.regioes === null) return query;
+  return (query as unknown as Filtravel).in('region_id', lista(recorte.regioes)) as unknown as Q;
+}
+
+/**
+ * Recorta pela região declarada **ou** pelo concelho — as submissões e as
+ * fontes, que podem ter uma, a outra, ou as duas. Uma sem nenhuma das duas
+ * fica de fora de qualquer recorte: não é de região nenhuma, e só o dono a vê.
+ */
+function porRegiaoOuConcelho<Q>(query: Q, recorte: Recorte | undefined): Q {
+  if (!recorte || recorte.regioes === null || recorte.concelhos === null) return query;
+  return (query as unknown as Filtravel).or(
+    `region_id.in.${emLista(recorte.regioes)},municipality_id.in.${emLista(recorte.concelhos)}`,
+  ) as unknown as Q;
+}
+
 export interface SubmissionSummary {
   id: string;
   channel: 'scraper' | 'email' | 'form';
@@ -48,9 +118,14 @@ export interface SubmissionSummary {
   sender_email: string | null;
   sender_organisation: string | null;
   municipality_id: string | null;
+  region_id: string | null;
   confidence: number | null;
   extraction_status: string;
   created_at: string;
+  /** Quando foi decidida — numa «à espera de resposta», quando se perguntou. */
+  reviewed_at: string | null;
+  /** Porque é que está na fila, ou o que se pediu. */
+  review_notes: string | null;
   payload: Record<string, unknown>;
   raw_subject: string | null;
 }
@@ -64,7 +139,6 @@ export interface SubmissionDetail extends SubmissionSummary {
   extraction_error: string | null;
   extraction_model: string | null;
   extraction_attempts: number;
-  review_notes: string | null;
   resulting_event_id: string | null;
   duplicate_of_event_id: string | null;
 }
@@ -81,9 +155,9 @@ export interface AttachmentRow {
 }
 
 const SUMMARY_FIELDS =
-  'id, channel, status, sender_email, sender_organisation, municipality_id, confidence, extraction_status, created_at, payload, raw_subject';
+  'id, channel, status, sender_email, sender_organisation, municipality_id, region_id, confidence, extraction_status, created_at, reviewed_at, review_notes, payload, raw_subject';
 
-const DETAIL_FIELDS = `${SUMMARY_FIELDS}, raw_text, sender_name, venue_id, source_id, fingerprint, extraction_error, extraction_model, extraction_attempts, review_notes, resulting_event_id, duplicate_of_event_id`;
+const DETAIL_FIELDS = `${SUMMARY_FIELDS}, raw_text, sender_name, venue_id, source_id, fingerprint, extraction_error, extraction_model, extraction_attempts, resulting_event_id, duplicate_of_event_id`;
 
 /**
  * A fila de moderação, e o registo de quem a foi ver.
@@ -102,10 +176,18 @@ export async function listSubmissions(options: {
   status?: string;
   channel?: string;
   limit?: number;
+  recorte?: Recorte;
 }): Promise<SubmissionSummary[]> {
-  await registarLeitura('fila', 'submission_queue', recorteDaFila(options.status, options.channel));
+  await registarLeitura(
+    'fila',
+    'submission_queue',
+    recorteDaFila(options.status, options.channel, options.recorte?.regioes ?? null),
+  );
   const supabase = requireAdminClient();
-  let query = supabase.from('submissions').select(SUMMARY_FIELDS);
+  let query = porRegiaoOuConcelho(
+    supabase.from('submissions').select(SUMMARY_FIELDS),
+    options.recorte,
+  );
   if (options.status) query = query.eq('status', options.status);
   if (options.channel) query = query.eq('channel', options.channel);
   const { data, error } = await query
@@ -131,6 +213,44 @@ export async function getSubmission(id: string): Promise<SubmissionDetail | null
   // quem moderava para um 404 de uma submissão que existe.
   exigirLeitura('getSubmission', error);
   return (data as unknown as SubmissionDetail) ?? null;
+}
+
+/**
+ * A proposta por rever que vem a seguir a esta, no recorte de quem modera
+ * (C4-013, «Aprovar e abrir a seguinte»).
+ *
+ * Pela ordem da fila — a mais recente primeiro —, a primeira mais antiga do
+ * que esta; e, se esta era a última, a primeira da fila. Só o identificador:
+ * sem remetente nem texto, e por isso sem rasto de leitura (`leituras.ts`) —
+ * quem a abrir a seguir deixa o seu.
+ */
+export async function proximaSubmissao(recorte: Recorte, atual: string): Promise<string | null> {
+  const supabase = requireAdminClient();
+  const { data: esta, error: erroDesta } = await supabase
+    .from('submissions')
+    .select('created_at')
+    .eq('id', atual)
+    .maybeSingle();
+  exigirLeitura('proximaSubmissao', erroDesta);
+
+  const porRever = () =>
+    porRegiaoOuConcelho(supabase.from('submissions').select('id'), recorte)
+      .eq('status', 'pending')
+      .neq('id', atual);
+
+  const criada = (esta as { created_at: string } | null)?.created_at;
+  if (criada) {
+    const { data, error } = await porRever()
+      .lt('created_at', criada)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    exigirLeitura('proximaSubmissao', error);
+    const seguinte = (data as Array<{ id: string }> | null)?.[0];
+    if (seguinte) return seguinte.id;
+  }
+  const { data, error } = await porRever().order('created_at', { ascending: false }).limit(1);
+  exigirLeitura('proximaSubmissao', error);
+  return (data as Array<{ id: string }> | null)?.[0]?.id ?? null;
 }
 
 /**
@@ -225,6 +345,217 @@ export async function findDuplicateCandidates(
   return (data ?? []) as DuplicateCandidate[];
 }
 
+/** Porque é que um evento pode ser o mesmo que uma proposta (0172). */
+export type MotivoDeDuplicado =
+  'mesmo-espaco-dia-e-hora' | 'mesmo-espaco-e-dia' | 'mesmo-dia-e-hora' | 'titulo-parecido';
+
+export interface CandidatoADuplicado {
+  event_id: string;
+  title: string;
+  slug: string | null;
+  status: string | null;
+  date_start: string | null;
+  start_time: string | null;
+  venue_id: string | null;
+  venue_name: string | null;
+  location_name: string | null;
+  similarity: number;
+  motivo: MotivoDeDuplicado;
+}
+
+/**
+ * Os eventos que podem ser o mesmo que uma proposta, com o porquê (0172).
+ *
+ * Procura pelo espaço, pelo dia e pela hora, e não só pelo título: o
+ * duplicado que mais acontece é o mesmo espetáculo anunciado com outro nome
+ * (C4-014). Numa base sem a 0172 — só o dono entra antes da 0170, que vai à
+ * frente — cai na procura antiga, só pelo título.
+ *
+ * **Lança, como a antiga**: a lista vazia diz «não encontrei nada parecido», e
+ * é a frase que autoriza a publicação.
+ */
+export async function candidatosADuplicado(procura: {
+  title: string;
+  date: string | null;
+  municipalityId: string;
+  venueId?: string | null;
+  startTime?: string | null;
+  excluir?: string | null;
+}): Promise<CandidatoADuplicado[]> {
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase.rpc('candidatos_a_duplicado', {
+    p_title: procura.title,
+    p_date: procura.date,
+    p_municipality_id: procura.municipalityId,
+    p_venue_id: procura.venueId || null,
+    p_start_time: procura.startTime || null,
+    p_excluir: procura.excluir || null,
+  });
+  if (error && (error.code === 'PGRST202' || error.code === '42883')) {
+    const antigos = await findDuplicateCandidates(
+      procura.title,
+      procura.date,
+      procura.municipalityId,
+    );
+    return antigos.map((candidato) => ({
+      event_id: candidato.event_id,
+      title: candidato.title,
+      slug: null,
+      status: null,
+      date_start: candidato.date_start,
+      start_time: null,
+      venue_id: null,
+      venue_name: null,
+      location_name: null,
+      similarity: candidato.similarity,
+      motivo: 'titulo-parecido' as const,
+    }));
+  }
+  exigirLeitura('candidatos_a_duplicado', error);
+  return (data ?? []) as CandidatoADuplicado[];
+}
+
+/** Um evento resumido, para dizer de qual se está a falar. */
+export interface EventoResumido {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  municipality_id: string;
+  date_start: string | null;
+  venue_id: string | null;
+  location_name: string | null;
+}
+
+const COLUNAS_DO_RESUMO =
+  'id, slug, title, status, municipality_id, date_start, venue_id, location_name';
+
+/** Um evento pelo identificador, ou `null`. */
+export async function lerEventoResumido(id: string): Promise<EventoResumido | null> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return null;
+  const { data, error } = await requireAdminClient()
+    .from('events')
+    .select(COLUNAS_DO_RESUMO)
+    .eq('id', id)
+    .maybeSingle();
+  exigirLeitura('lerEventoResumido', error);
+  return (data as EventoResumido | null) ?? null;
+}
+
+/** Um evento como a ficha de correção o pergunta (C4-017). */
+export interface EventoParaCorrigir {
+  id: string;
+  slug: string;
+  status: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  municipality_id: string;
+  venue_id: string | null;
+  location_name: string | null;
+  parish: string | null;
+  how_to_arrive: string | null;
+  category_slug: string | null;
+  series_id: string | null;
+  is_free: boolean;
+  price_display: string | null;
+  ticketing_url: string | null;
+  image_url: string | null;
+  accessibility_notes: string | null;
+  is_ongoing: boolean;
+  date_start: string | null;
+  date_end: string | null;
+  origin: string;
+  source_id: string | null;
+  source_url: string | null;
+  submission_id: string | null;
+  updated_at: string;
+}
+
+const COLUNAS_PARA_CORRIGIR =
+  'id, slug, status, title, subtitle, description, municipality_id, venue_id, location_name, parish, how_to_arrive, category_slug, series_id, is_free, price_display, ticketing_url, image_url, accessibility_notes, is_ongoing, date_start, date_end, origin, source_id, source_url, submission_id, updated_at';
+
+export async function lerEventoParaCorrigir(id: string): Promise<EventoParaCorrigir | null> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return null;
+  const { data, error } = await requireAdminClient()
+    .from('events')
+    .select(COLUNAS_PARA_CORRIGIR)
+    .eq('id', id)
+    .maybeSingle();
+  exigirLeitura('lerEventoParaCorrigir', error);
+  return (data as EventoParaCorrigir | null) ?? null;
+}
+
+/** O nome de uma fonte, para dizer de onde veio um evento. */
+export async function nomeDaFonte(id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const { data, error } = await requireAdminClient()
+    .from('sources')
+    .select('name')
+    .eq('id', id)
+    .maybeSingle();
+  exigirLeitura('nomeDaFonte', error);
+  return (data as { name: string } | null)?.name ?? null;
+}
+
+/** Um campo trancado contra a recolha: quem, quando e porquê (0015). */
+export interface CampoTrancado {
+  field: string;
+  actor: string;
+  note: string | null;
+  created_at: string;
+}
+
+export async function camposTrancados(id: string): Promise<CampoTrancado[]> {
+  const { data, error } = await requireAdminClient()
+    .from('manual_overrides')
+    .select('field, actor, note, created_at')
+    .eq('event_id', id)
+    .order('created_at', { ascending: false });
+  exigirLeitura('camposTrancados', error);
+  return (data ?? []) as CampoTrancado[];
+}
+
+/**
+ * O evento de que fala um endereço público — `https://<região>/evento/<slug>`
+ * — ou o próprio slug escrito à mão. É o que se pede a quem modera em vez de
+ * um identificador (C4-029): a ficha pública é o que ele tem aberto no outro
+ * separador.
+ */
+export async function eventoPeloEndereco(texto: string): Promise<EventoResumido | null> {
+  const limpo = texto.trim();
+  const slug = (
+    /\/evento\/([a-z0-9-]+)/.exec(limpo)?.[1] ?? (/^[a-z0-9-]+$/.test(limpo) ? limpo : '')
+  ).slice(0, 200);
+  if (!slug) return null;
+  const { data, error } = await requireAdminClient()
+    .from('events')
+    .select(COLUNAS_DO_RESUMO)
+    .eq('slug', slug)
+    .maybeSingle();
+  exigirLeitura('eventoPeloEndereco', error);
+  return (data as EventoResumido | null) ?? null;
+}
+
+/** Uma sessão de um evento, só com o que a distingue das outras. */
+export interface SessaoResumida {
+  session_date: string;
+  start_time: string | null;
+  end_time: string | null;
+}
+
+/** As sessões de um evento, pela ordem do calendário. */
+export async function sessoesDoEvento(id: string): Promise<SessaoResumida[]> {
+  const { data, error } = await requireAdminClient()
+    .from('event_sessions')
+    .select('session_date, start_time, end_time')
+    .eq('event_id', id)
+    .order('session_date', { ascending: true })
+    .order('start_time', { ascending: true, nullsFirst: true });
+  exigirLeitura('sessoesDoEvento', error);
+  return (data ?? []) as SessaoResumida[];
+}
+
 /** Há quanto tempo uma fonte pode estar calada antes de ser preocupante. */
 export const STALE_SOURCE_HOURS = 48;
 
@@ -232,6 +563,7 @@ export interface SourceHealth {
   id: string;
   name: string;
   municipality_id: string | null;
+  region_id: string | null;
   is_enabled: boolean;
   last_run_at: string | null;
   last_success_at: string | null;
@@ -239,6 +571,9 @@ export interface SourceHealth {
   consecutive_failures: number;
   circuit_open_until: string | null;
   baseline_item_count: number | null;
+  /** A pausa declarada por uma pessoa (0159), e a razão. */
+  pausada_ate: string | null;
+  pausa_motivo: string | null;
   /**
    * Estado derivado, calculado aqui e não na página.
    *
@@ -251,37 +586,73 @@ export interface SourceHealth {
   hours_since_success: number | null;
   /** Ligada e sem sucesso dentro da janela aceitável. */
   is_stale: boolean;
+  /** Calada por decisão até uma data que ainda não passou (0159). */
+  em_pausa: boolean;
 }
 
-type SourceHealthRow = Omit<SourceHealth, 'breaker_open' | 'hours_since_success' | 'is_stale'>;
+type SourceHealthRow = Omit<
+  SourceHealth,
+  'breaker_open' | 'hours_since_success' | 'is_stale' | 'em_pausa'
+>;
 
-export async function listSourceHealth(): Promise<SourceHealth[]> {
+export async function listSourceHealth(recorte?: Recorte): Promise<SourceHealth[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
-    .from('sources')
-    .select(
-      'id, name, municipality_id, is_enabled, last_run_at, last_success_at, last_error, consecutive_failures, circuit_open_until, baseline_item_count',
-    )
-    .order('name');
+  const { data, error } = await porRegiaoOuConcelho(
+    supabase
+      .from('sources')
+      .select(
+        'id, name, municipality_id, region_id, is_enabled, last_run_at, last_success_at, last_error, consecutive_failures, circuit_open_until, baseline_item_count, pausada_ate, pausa_motivo',
+      ),
+    recorte,
+  ).order('name');
   // O painel de entrada conta as fontes avariadas a partir daqui. A lista
   // vazia de um erro escrevia «nenhuma fonte avariada» — a frase mais
   // tranquilizadora do painel, dita quando não se consegue ler a base.
   exigirLeitura('listSourceHealth', error);
 
   const now = Date.now();
-  return ((data ?? []) as unknown as SourceHealthRow[]).map((source) => {
-    const hours =
-      source.last_success_at === null
-        ? null
-        : Math.round((now - Date.parse(source.last_success_at)) / 3_600_000);
-    return {
-      ...source,
-      breaker_open:
-        source.circuit_open_until !== null && Date.parse(source.circuit_open_until) > now,
-      hours_since_success: hours,
-      is_stale: source.is_enabled && (hours === null || hours > STALE_SOURCE_HOURS),
-    };
-  });
+  return ((data ?? []) as unknown as SourceHealthRow[]).map((source) => comEstado(source, now));
+}
+
+/** O estado derivado de uma fonte, ao instante dado — lido uma vez por pedido. */
+function comEstado<T extends SourceHealthRow>(source: T, now: number): T & SourceHealth {
+  const hours =
+    source.last_success_at === null
+      ? null
+      : Math.round((now - Date.parse(source.last_success_at)) / 3_600_000);
+  return {
+    ...source,
+    breaker_open: source.circuit_open_until !== null && Date.parse(source.circuit_open_until) > now,
+    hours_since_success: hours,
+    is_stale: source.is_enabled && (hours === null || hours > STALE_SOURCE_HOURS),
+    em_pausa: source.pausada_ate !== null && Date.parse(source.pausada_ate) > now,
+  };
+}
+
+/** Uma fonte com o que a ficha dela mostra (C4-032). */
+export interface FonteDoPainel extends SourceHealth {
+  url: string | null;
+  kind: string;
+  adapter: string;
+  config: unknown;
+  /** As notas de quem opera — o porquê de uma fonte estar como está. */
+  notes: string | null;
+}
+
+export async function lerFonte(id: string): Promise<FonteDoPainel | null> {
+  const { data, error } = await requireAdminClient()
+    .from('sources')
+    .select(
+      'id, name, municipality_id, region_id, is_enabled, last_run_at, last_success_at, last_error, consecutive_failures, circuit_open_until, baseline_item_count, pausada_ate, pausa_motivo, url, kind, adapter, config, notes',
+    )
+    .eq('id', id)
+    .maybeSingle();
+  exigirLeitura('lerFonte', error);
+  if (!data) return null;
+  return comEstado(
+    data as unknown as SourceHealthRow & Omit<FonteDoPainel, keyof SourceHealth>,
+    Date.now(),
+  );
 }
 
 /** Id e nome de cada fonte, para o selector da lista de eventos. */
@@ -297,9 +668,12 @@ export interface FonteParaFiltro {
  * uma; um `<select>` precisa de duas. Consulta própria, e não uma leitura
  * grande reaproveitada, porque a página dos eventos já faz três.
  */
-export async function listSourcesParaFiltro(): Promise<FonteParaFiltro[]> {
+export async function listSourcesParaFiltro(recorte?: Recorte): Promise<FonteParaFiltro[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase.from('sources').select('id, name').order('name');
+  const { data, error } = await porRegiaoOuConcelho(
+    supabase.from('sources').select('id, name'),
+    recorte,
+  ).order('name');
   // Vazio por erro deixava o selector sem opções e a página a parecer dizer
   // que o catálogo não tem fontes nenhumas — quando o que não se conseguiu
   // foi lê-las.
@@ -322,15 +696,17 @@ export interface RunRow {
   error: string | null;
 }
 
-export async function listRecentRuns(limit = 40): Promise<RunRow[]> {
+export async function listRecentRuns(limit = 40, fontes?: readonly string[]): Promise<RunRow[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('source_runs')
     .select(
       'id, source_id, status, started_at, finished_at, items_found, items_new, items_updated, items_rejected, http_failures, layout_drift, error',
-    )
-    .order('started_at', { ascending: false })
-    .limit(limit);
+    );
+  // As execuções das fontes que a página mostra, e só dessas: as de outra
+  // região são da outra região.
+  if (fontes) query = query.in('source_id', lista(fontes));
+  const { data, error } = await query.order('started_at', { ascending: false }).limit(limit);
   // Sem execuções na lista, a página das fontes lê-se como «a recolha não
   // corre há dias» — que é precisamente o alarme que se vai lá procurar.
   exigirLeitura('listRecentRuns', error);
@@ -405,6 +781,75 @@ function mesSeguinte(mes: string): string {
   return numero === 12
     ? `${(ano ?? 0) + 1}-01-01`
     : `${ano}-${String((numero ?? 0) + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * O nome de cada coisa de que fala uma página da auditoria — o título do
+ * evento, o da proposta, o nome da pessoa —, para a linha dizer «evento
+ * «Concerto de Outono»» em vez de um identificador inteiro (C4-011).
+ *
+ * Das propostas lê-se só o título (`payload->>title`, ou o de `event` na
+ * forma da recolha): o remetente e o texto em bruto não vêm, e por isso não há
+ * leitura de dados pessoais a registar. A chave do mapa é `tipo:id`.
+ */
+export async function nomesDasEntidades(
+  linhas: ReadonlyArray<{ entity_type: string | null; entity_id: string | null }>,
+): Promise<Map<string, string>> {
+  const supabase = requireAdminClient();
+  const ids = (tipo: string) => [
+    ...new Set(
+      linhas
+        .filter(
+          (linha) => linha.entity_type === tipo && /^[0-9a-f-]{36}$/.test(linha.entity_id ?? ''),
+        )
+        .map((linha) => linha.entity_id as string),
+    ),
+  ];
+  const nomes = new Map<string, string>();
+  const eventos = ids('event');
+  const propostas = ids('submission');
+  const pessoas = ids('pessoa');
+
+  const [deEventos, dePropostas, dePessoas] = await Promise.all([
+    eventos.length > 0
+      ? supabase.from('events').select('id, title').in('id', eventos)
+      : Promise.resolve({ data: [], error: null }),
+    propostas.length > 0
+      ? supabase
+          .from('submissions')
+          .select('id, titulo:payload->>title, daRecolha:payload->event->>title')
+          .in('id', propostas)
+      : Promise.resolve({ data: [], error: null }),
+    pessoas.length > 0
+      ? supabase.from('admin_pessoas').select('id, nome').in('id', pessoas)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  exigirLeitura('nomesDasEntidades:eventos', deEventos.error);
+  exigirLeitura('nomesDasEntidades:propostas', dePropostas.error);
+  // Sem a 0170, não há pessoas: a linha fica com o identificador, e a página abre.
+  if (dePessoas.error && !faltaNoEsquemaDasPessoas(dePessoas.error)) {
+    exigirLeitura('nomesDasEntidades:pessoas', dePessoas.error);
+  }
+  for (const linha of (deEventos.data ?? []) as Array<{ id: string; title: string }>) {
+    nomes.set(`event:${linha.id}`, linha.title);
+  }
+  for (const linha of (dePropostas.data ?? []) as Array<{
+    id: string;
+    titulo: string | null;
+    daRecolha: string | null;
+  }>) {
+    const titulo = linha.titulo ?? linha.daRecolha;
+    if (titulo) nomes.set(`submission:${linha.id}`, titulo);
+  }
+  for (const linha of (dePessoas.data ?? []) as Array<{ id: string; nome: string }>) {
+    nomes.set(`pessoa:${linha.id}`, linha.nome);
+  }
+  return nomes;
+}
+
+/** As tabelas das pessoas ainda não existem (antes da 0170). */
+function faltaNoEsquemaDasPessoas(erro: { code?: string }): boolean {
+  return ['42P01', 'PGRST205', 'PGRST200'].includes(erro.code ?? '');
 }
 
 export async function listAdminActions(
@@ -554,11 +999,14 @@ const EVENT_COLUMNS =
  * recolha manda-os para a fila em vez de os gravar — e não merecem abrir a
  * lista de quem vem trabalhar.
  */
-export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> {
+export async function listEvents(filter: EventFilter, recorte?: Recorte): Promise<AdminEventRow[]> {
   const supabase = requireAdminClient();
   const futuros = filter.janela === 'futuros';
 
   let query = supabase.from('events').select(EVENT_COLUMNS).eq('is_canonical', true);
+  // À mão e não pelo `porConcelho`: com a lista de colunas desta consulta, a
+  // inferência de tipos do supabase-js não chega ao fim de um genérico.
+  if (recorte?.concelhos) query = query.in('municipality_id', lista(recorte.concelhos));
 
   if (filter.q) query = query.ilike('title', `%${filter.q}%`);
   if (filter.municipality) query = query.eq('municipality_id', filter.municipality);
@@ -572,7 +1020,7 @@ export async function listEvents(filter: EventFilter): Promise<AdminEventRow[]> 
     // A hora não é uma coluna de `events` — vive nas sessões — e o filtro
     // antigo (`date_start is null`) listava os sem data, que são outra coisa.
     // Ver `idsSemHora`.
-    const ids = await idsSemHora(filter);
+    const ids = await idsSemHora(filter, recorte);
     if (ids.length === 0) return [];
     query = query.in('id', ids);
     // Não há ramo para «sem sítio nenhum», e é de propósito: a restrição
@@ -718,14 +1166,42 @@ export async function listCandidatosADestaque(
   return (data ?? []) as unknown as CandidatoADestaque[];
 }
 
-/** Quantos há em cada estado, para os atalhos no topo da página. */
-export async function countEventsByStatus(): Promise<Record<string, number>> {
+/** Os estados de um evento, pela ordem em que o painel os conta. */
+const ESTADOS_DO_EVENTO = [
+  'published',
+  'draft',
+  'hidden',
+  'cancelled',
+  'postponed',
+  'archived',
+] as const;
+
+/**
+ * Quantos há em cada estado, para os atalhos no topo da página.
+ *
+ * Uma contagem por estado, feita pela base: trazia as linhas todas e contava
+ * aqui, e o PostgREST corta às mil — o cabeçalho passava a mentir sem aviso no
+ * dia em que o catálogo passasse disso (`docs/plano/07-painel.md` §1).
+ */
+export async function countEventsByStatus(recorte?: Recorte): Promise<Record<string, number>> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase.from('events').select('status').eq('is_canonical', true);
-  exigirLeitura('countEventsByStatus', error);
+  const respostas = await Promise.all(
+    ESTADOS_DO_EVENTO.map((estado) =>
+      porConcelho(
+        supabase
+          .from('events')
+          .select('id', { count: 'exact', head: true })
+          .eq('is_canonical', true)
+          .eq('status', estado),
+        recorte,
+      ),
+    ),
+  );
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as Array<{ status: string }>) {
-    counts[row.status] = (counts[row.status] ?? 0) + 1;
+  for (const [indice, resposta] of respostas.entries()) {
+    exigirLeitura('countEventsByStatus', resposta.error);
+    const estado = ESTADOS_DO_EVENTO[indice];
+    if (estado && resposta.count) counts[estado] = resposta.count;
   }
   return counts;
 }
@@ -770,6 +1246,31 @@ export async function listUnknownTags(): Promise<UnknownTag[]> {
   return (data ?? []) as unknown as UnknownTag[];
 }
 
+/**
+ * As etiquetas por mapear da região escolhida, contadas nos eventos dela
+ * (0171). Sem recorte — o dono em «todas» —, a fila do produto inteiro.
+ *
+ * `recortada: false` é o caso de uma base sem a 0171 com o dono numa região:
+ * mostra-se a fila toda, e a página di-lo, em vez de fingir um recorte que não
+ * fez. Uma pessoa com papel numa região só existe depois da 0170, que vai à
+ * frente da 0171 — a ela nunca chega este caso.
+ */
+export async function etiquetasPorMapear(
+  recorte: Recorte | undefined,
+): Promise<{ linhas: UnknownTag[]; recortada: boolean }> {
+  if (!recorte || recorte.regioes === null)
+    return { linhas: await listUnknownTags(), recortada: true };
+  const supabase = requireAdminClient();
+  const { data, error } = await supabase.rpc('etiquetas_por_mapear_nas_regioes', {
+    p_regioes: [...recorte.regioes],
+  });
+  if (error && (error.code === 'PGRST202' || error.code === '42883')) {
+    return { linhas: await listUnknownTags(), recortada: false };
+  }
+  exigirLeitura('etiquetasPorMapear', error);
+  return { linhas: (data ?? []) as unknown as UnknownTag[], recortada: true };
+}
+
 export interface UnresolvedVenue {
   normalized: string;
   name: string;
@@ -796,13 +1297,18 @@ export interface UnresolvedVenue {
  * trabalho já feito. A vista aplica a mesma regra de resolução que a recolha
  * aplica, e a linha sai da fila no instante em que deixa de ser um problema.
  */
-export async function listUnresolvedVenues(): Promise<UnresolvedVenue[]> {
+export async function listUnresolvedVenues(recorte?: Recorte): Promise<UnresolvedVenue[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
-    .from('unresolved_venues_pendentes')
-    .select(
-      'normalized, name, municipality_id, hits, last_seen, example_url, eventos_por_acontecer',
-    )
+  // Pelo concelho do nome. Um nome sem concelho não é de região nenhuma, e um
+  // recorte deixa-o de fora: é o dono que o resolve.
+  const { data, error } = await porConcelho(
+    supabase
+      .from('unresolved_venues_pendentes')
+      .select(
+        'normalized, name, municipality_id, hits, last_seen, example_url, eventos_por_acontecer',
+      ),
+    recorte,
+  )
     // Primeiro o que tem eventos publicados à espera — um nome visto três
     // vezes no sábado que vem vale mais do que um visto cem vezes em eventos
     // que já passaram —, e só depois o que aparece mais.
@@ -832,12 +1338,12 @@ export interface LinkableVenue {
  * hora é um botão que não funciona sem dizer porquê. Como tudo o resto neste
  * ficheiro — chave de serviço, sem cache.
  */
-export async function listVenuesForLinking(): Promise<LinkableVenue[]> {
+export async function listVenuesForLinking(recorte?: Recorte): Promise<LinkableVenue[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
-    .from('venues')
-    .select('id, name, municipality_id')
-    .neq('status', 'closed')
+  const { data, error } = await porConcelho(
+    supabase.from('venues').select('id, name, municipality_id').neq('status', 'closed'),
+    recorte,
+  )
     .order('municipality_id')
     .order('name');
   // A lista de destinos do botão «ligar a este espaço». Vazia, o botão fica
@@ -876,14 +1382,16 @@ export interface QualityRow {
  * publicado media as escolhas de quem modera — e, na primeira recolha a
  * sério, media treze zeros com sessenta e sete eventos gravados.
  */
-export async function qualityByMunicipality(): Promise<QualityRow[]> {
+export async function qualityByMunicipality(recorte?: Recorte): Promise<QualityRow[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
-    .from('event_quality_by_municipality')
-    .select(
-      'municipality_id, municipality_name, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
-    )
-    .order('municipality_name');
+  const { data, error } = await porRegiao(
+    supabase
+      .from('event_quality_by_municipality')
+      .select(
+        'municipality_id, municipality_name, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
+      ),
+    recorte,
+  ).order('municipality_name');
   // Zeros por erro de leitura são a pior forma de mentir num painel de
   // qualidade: não parecem uma falha, parecem um mês mau.
   exigirLeitura('qualityByMunicipality', error);
@@ -898,14 +1406,17 @@ export async function qualityByMunicipality(): Promise<QualityRow[]> {
   }));
 }
 
-export async function qualityBySource(): Promise<QualityRow[]> {
+export async function qualityBySource(fontes?: readonly string[]): Promise<QualityRow[]> {
   const supabase = requireAdminClient();
-  const { data, error } = await supabase
+  // A vista não traz a região; recorta-se pelas fontes que a página já leu
+  // com recorte.
+  let query = supabase
     .from('event_quality_by_source')
     .select(
       'source_id, source_name, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
-    )
-    .order('source_name');
+    );
+  if (fontes) query = query.in('source_id', lista(fontes));
+  const { data, error } = await query.order('source_name');
   exigirLeitura('qualityBySource', error);
 
   const rows = (data ?? []) as unknown as Array<
@@ -937,7 +1448,10 @@ export interface QualitySnapshotRow extends QualityRow {
  * anteriores à 0144, que ficam sem memória para sempre. «Não há» e «não
  * consegui saber» continuam a ser duas respostas diferentes: o erro atira.
  */
-export async function qualitySnapshotAte(ate: string): Promise<QualitySnapshotRow[]> {
+export async function qualitySnapshotAte(
+  ate: string,
+  recorte?: Recorte,
+): Promise<QualitySnapshotRow[]> {
   const supabase = requireAdminClient();
   const { data: dia, error: erroDia } = await supabase
     .from('event_quality_snapshots')
@@ -950,12 +1464,15 @@ export async function qualitySnapshotAte(ate: string): Promise<QualitySnapshotRo
   const taken_on = (dia as { taken_on: string } | null)?.taken_on;
   if (!taken_on) return [];
 
-  const { data, error } = await supabase
-    .from('event_quality_snapshots')
-    .select(
-      'municipality_id, taken_on, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
-    )
-    .eq('taken_on', taken_on);
+  const { data, error } = await porConcelho(
+    supabase
+      .from('event_quality_snapshots')
+      .select(
+        'municipality_id, taken_on, published, pending, in_catalogue, with_time, with_venue, with_image, with_description, with_price, with_coordinates',
+      )
+      .eq('taken_on', taken_on),
+    recorte,
+  );
   // Uma memória vazia por erro de leitura lê-se como «não houve mudança
   // nenhuma» — a frase mais tranquilizadora que um painel de qualidade pode
   // dizer, e dita no instante em que não se consegue ler a base.
@@ -1032,53 +1549,139 @@ export async function listSegredosDeBalanco(): Promise<SegredoDeBalanco[]> {
   return (data ?? []) as unknown as SegredoDeBalanco[];
 }
 
-export interface DashboardCounts {
-  pendingByChannel: Record<string, number>;
-  publishedByMunicipality: Record<string, number>;
-  brokenSources: SourceHealth[];
+/**
+ * O que a entrada do painel diz, de uma vez: o que há para fazer na região de
+ * quem entra (C4-018, a proposta `mock-painel-*` do C4).
+ *
+ * Abria com os interruptores das secções e com SQL; o que alguém procura de
+ * manhã é outra coisa — quantas propostas estão por rever, quais acontecem
+ * já, que fontes pararam, e o que a agenda tem para a semana.
+ */
+export interface ResumoDaEntrada {
+  porRever: number;
+  /** Das por rever, as que têm uma data nos próximos sete dias. */
+  proximos7: number;
+  aEsperaDeResposta: number;
+  /** Por rever noutras regiões — só para o dono, a ver uma região só. */
+  noutrasRegioes: number | null;
+  fontes: SourceHealth[];
+  fontesParadas: SourceHealth[];
+  publicadosPorConcelho: Record<string, number>;
+  /** Eventos publicados que acontecem nos próximos sete dias, por concelho. */
+  semanaPorConcelho: Record<string, number>;
 }
 
-export async function dashboardCounts(): Promise<DashboardCounts> {
+/** As datas propostas de uma submissão, venham elas de que canal vierem. */
+function datasDaProposta(linha: { sessoes: unknown; datas: unknown }): string[] {
+  const daLista = (lista: unknown, chave: string): string[] =>
+    Array.isArray(lista)
+      ? lista
+          .map((item) =>
+            item && typeof item === 'object' ? (item as Record<string, unknown>)[chave] : null,
+          )
+          .filter((data): data is string => typeof data === 'string')
+      : [];
+  return [...daLista(linha.sessoes, 'session_date'), ...daLista(linha.datas, 'date')];
+}
+
+export async function resumoDaEntrada(
+  recorte: Recorte | undefined,
+  opcoes: { contarOutrasRegioes?: boolean; concelhos?: readonly string[] } = {},
+): Promise<ResumoDaEntrada> {
   const supabase = requireAdminClient();
+  const hoje = todayInLisbon();
+  const daquiAUmaSemana = addDays(hoje, 7);
 
-  const [pending, sources] = await Promise.all([
-    supabase.from('submissions').select('channel').eq('status', 'pending').limit(1000),
-    listSourceHealth(),
+  const [abertas, fontes, todasPorRever, semana] = await Promise.all([
+    porRegiaoOuConcelho(
+      supabase
+        .from('submissions')
+        .select('status, sessoes:payload->sessions, datas:payload->dates')
+        .in('status', ['pending', 'needs_info']),
+      recorte,
+    ).limit(2000),
+    listSourceHealth(recorte),
+    opcoes.contarOutrasRegioes
+      ? supabase
+          .from('submissions')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+      : Promise.resolve(null),
+    porConcelho(
+      supabase
+        .from('events')
+        .select('municipality_id')
+        .eq('status', 'published')
+        .eq('is_canonical', true)
+        .lte('date_start', daquiAUmaSemana)
+        .or(`date_end.gte.${hoje},and(date_end.is.null,date_start.gte.${hoje})`),
+      recorte,
+    ).limit(5000),
   ]);
-  // Esta é a página de entrada do painel: as três contagens que aqui estão
-  // são a primeira coisa que alguém lê de manhã, e um zero por erro dizia «a
-  // fila está limpa».
-  exigirLeitura('dashboardCounts (fila)', pending.error);
+  // Esta é a página de entrada do painel: as contagens que aqui estão são a
+  // primeira coisa que alguém lê de manhã, e um zero por erro dizia «a fila
+  // está limpa».
+  exigirLeitura('resumoDaEntrada (fila)', abertas.error);
+  exigirLeitura('resumoDaEntrada (semana)', semana.error);
+  if (todasPorRever) exigirLeitura('resumoDaEntrada (outras regiões)', todasPorRever.error);
 
-  const pendingByChannel: Record<string, number> = {};
-  for (const row of (pending.data ?? []) as Array<{ channel: string }>) {
-    pendingByChannel[row.channel] = (pendingByChannel[row.channel] ?? 0) + 1;
+  const linhas = (abertas.data ?? []) as unknown as Array<{
+    status: string;
+    sessoes: unknown;
+    datas: unknown;
+  }>;
+  const porRever = linhas.filter((linha) => linha.status === 'pending');
+  const proximos7 = porRever.filter((linha) =>
+    datasDaProposta(linha).some((dia) => dia >= hoje && dia <= daquiAUmaSemana),
+  ).length;
+
+  const semanaPorConcelho: Record<string, number> = {};
+  for (const { municipality_id: id } of (semana.data ?? []) as Array<{ municipality_id: string }>) {
+    semanaPorConcelho[id] = (semanaPorConcelho[id] ?? 0) + 1;
   }
 
-  const { data: municipalities, error: erroDosConcelhos } = await supabase
-    .from('municipalities')
-    .select('id');
-  exigirLeitura('dashboardCounts (concelhos)', erroDosConcelhos);
-  const publishedByMunicipality: Record<string, number> = {};
+  // Uma contagem exata por concelho, do lado da base, e só dos concelhos do
+  // recorte: trazer as linhas e contar aqui cortava às mil.
+  let concelhos: readonly string[];
+  if (opcoes.concelhos) concelhos = opcoes.concelhos;
+  else if (recorte?.concelhos) concelhos = recorte.concelhos;
+  else {
+    const { data, error } = await supabase.from('municipalities').select('id');
+    exigirLeitura('resumoDaEntrada (concelhos)', error);
+    concelhos = ((data ?? []) as Array<{ id: string }>).map((linha) => linha.id);
+  }
+  const publicadosPorConcelho: Record<string, number> = {};
   await Promise.all(
-    ((municipalities ?? []) as Array<{ id: string }>).map(async ({ id }) => {
-      const { count, error: erroDaContagem } = await supabase
+    concelhos.map(async (id) => {
+      const { count, error } = await supabase
         .from('events')
         .select('id', { count: 'exact', head: true })
         .eq('municipality_id', id)
         .eq('status', 'published');
-      exigirLeitura(`dashboardCounts (${id})`, erroDaContagem);
-      publishedByMunicipality[id] = count ?? 0;
+      exigirLeitura(`resumoDaEntrada (${id})`, error);
+      publicadosPorConcelho[id] = count ?? 0;
     }),
   );
 
-  const brokenSources = sources.filter(
-    (source) =>
-      source.is_enabled &&
-      (source.consecutive_failures > 0 || source.breaker_open || source.is_stale),
+  const fontesParadas = fontes.filter(
+    (fonte) =>
+      fonte.is_enabled &&
+      !fonte.em_pausa &&
+      (fonte.consecutive_failures > 0 || fonte.breaker_open || fonte.is_stale),
   );
 
-  return { pendingByChannel, publishedByMunicipality, brokenSources };
+  return {
+    porRever: porRever.length,
+    proximos7,
+    aEsperaDeResposta: linhas.length - porRever.length,
+    noutrasRegioes: todasPorRever
+      ? Math.max(0, (todasPorRever.count ?? 0) - porRever.length)
+      : null,
+    fontes,
+    fontesParadas,
+    publicadosPorConcelho,
+    semanaPorConcelho,
+  };
 }
 
 export interface SiteSectionRow {
@@ -1323,17 +1926,15 @@ const SEM_HORA_COLUMNS =
  * `regiao` recorta pelo concelho do evento, como a 0103 fez às vistas de
  * qualidade; sem ela vem a base toda, que é o que o painel mostra hoje.
  */
-export async function listEventsWithoutTime(regiao?: string): Promise<EventWithoutTimeRow[]> {
+export async function listEventsWithoutTime(recorte?: Recorte): Promise<EventWithoutTimeRow[]> {
   const supabase = requireAdminClient();
-  let query = supabase
-    .from('events_without_time')
-    .select(SEM_HORA_COLUMNS)
+  const { data, error } = await porRegiao(
+    supabase.from('events_without_time').select(SEM_HORA_COLUMNS),
+    recorte,
+  )
     .order('date_start', { ascending: true, nullsFirst: false })
     .order('id')
     .limit(SEM_HORA_MAX);
-  if (regiao) query = query.eq('region_id', regiao);
-
-  const { data, error } = await query;
   // A lista de trabalho por fazer. Vazia por erro, diz «não falta hora a
   // nenhum evento» — e o trabalho fica por fazer sem ninguém saber que existe.
   exigirLeitura('listEventsWithoutTime', error);
@@ -1358,11 +1959,10 @@ const IDS_SEM_HORA_MAX = 200;
  */
 async function idsSemHora(
   filter: Pick<EventFilter, 'municipality' | 'fonte' | 'status'>,
+  recorte?: Recorte,
 ): Promise<string[]> {
   const supabase = requireAdminClient();
-  let query = supabase
-    .from('events_without_time')
-    .select('id')
+  let query = porRegiao(supabase.from('events_without_time').select('id'), recorte)
     .order('date_start', { ascending: true, nullsFirst: false })
     .order('id')
     .limit(IDS_SEM_HORA_MAX);
@@ -1433,9 +2033,13 @@ export interface FiltroDeCartazes {
 export async function listCartazes(
   filtro: FiltroDeCartazes = {},
   limite = CARTAZES_PAGE_SIZE,
+  recorte?: Recorte,
 ): Promise<CartazDoPainel[]> {
   const supabase = requireAdminClient();
-  let query = supabase.from('events').select(COLUNAS_DO_CARTAZ).eq('is_canonical', true);
+  let query = porConcelho(
+    supabase.from('events').select(COLUNAS_DO_CARTAZ).eq('is_canonical', true),
+    recorte,
+  );
 
   if (filtro.estado === 'retirados') {
     query = query.not('image_retirado_em', 'is', null);
@@ -1462,29 +2066,21 @@ export async function listCartazes(
 }
 
 /** Quantos há de cada, para os atalhos no topo e para a conta do espaço. */
-export async function contarCartazes(): Promise<{
+export async function contarCartazes(recorte?: Recorte): Promise<{
   nossos: number;
   daOrigem: number;
   retirados: number;
 }> {
   const supabase = requireAdminClient();
+  const contar = () =>
+    porConcelho(
+      supabase.from('events').select('id', { count: 'exact', head: true }).eq('is_canonical', true),
+      recorte,
+    );
   const [nossos, daOrigem, retirados] = await Promise.all([
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_canonical', true)
-      .not('image_miniatura', 'is', null),
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_canonical', true)
-      .is('image_miniatura', null)
-      .not('image_url', 'is', null),
-    supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_canonical', true)
-      .not('image_retirado_em', 'is', null),
+    contar().not('image_miniatura', 'is', null),
+    contar().is('image_miniatura', null).not('image_url', 'is', null),
+    contar().not('image_retirado_em', 'is', null),
   ]);
 
   exigirLeitura('contarCartazes', nossos.error ?? daOrigem.error ?? retirados.error);

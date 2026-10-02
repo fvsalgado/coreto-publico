@@ -1,8 +1,10 @@
 import { todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
+import { BotaoDeImprimir } from '@/src/components/BotaoDeImprimir';
 import { PageHeader } from '@/src/components/PageHeader';
 import { StatTable, type StatColumn } from '@/src/components/StatTable';
-import { listRegionsAdmin, monthlyReport } from '@/src/lib/admin/queries';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
+import { monthlyReport } from '@/src/lib/admin/queries';
 import {
   CANAIS,
   DESFECHOS,
@@ -11,9 +13,10 @@ import {
   escolherRegiao,
   lerMes,
   mesAnterior,
-  nomeDoFicheiro,
   nomeDoMes,
   porqueSemHistorico,
+  quandoEmLisboa,
+  tabelasDoRelatorio,
   variacao,
   type RelatorioMensal,
 } from '@/src/lib/admin/relatorio';
@@ -40,9 +43,13 @@ function percentagem(parte: number, total: number): string {
   return `${Math.round((parte / total) * 100)}%`;
 }
 
-/** `2026-09-01T03:21:07.12+00:00` → `2026-09-01 03:21`, como na página das fontes. */
+/**
+ * «1 de setembro de 2026, 04h21», na hora de Lisboa (C4-033). Dizia
+ * «2026-09-01 03:21 (UTC)» — o relógio de um servidor, num documento que se
+ * entrega a quem financia.
+ */
 function quando(iso: string | null): string {
-  return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
+  return iso ? quandoEmLisboa(iso) : '—';
 }
 
 type Publicado = RelatorioMensal['events']['published_in_month'][number];
@@ -63,7 +70,8 @@ const A_DECORRER: Array<StatColumn<ADecorrer>> = [
   { key: 'eventos', label: 'Eventos', isNumeric: true, render: (l) => contar(l.count) },
 ];
 
-const FONTES: Array<StatColumn<Fonte>> = [
+/** As colunas das fontes, com o concelho pelo nome (C4-033) — dizia `ferreira-do-zezere`. */
+const colunasDasFontes = (nomes: ReadonlyMap<string, string>): Array<StatColumn<Fonte>> => [
   {
     key: 'fonte',
     label: 'Fonte',
@@ -75,8 +83,13 @@ const FONTES: Array<StatColumn<Fonte>> = [
       </>
     ),
   },
-  { key: 'concelho', label: 'Concelho', render: (f) => f.municipality_id ?? 'toda a região' },
-  { key: 'execucoes', label: 'Execuções', isNumeric: true, render: (f) => contar(f.runs) },
+  {
+    key: 'concelho',
+    label: 'Concelho',
+    render: (f) =>
+      f.municipality_id ? (nomes.get(f.municipality_id) ?? f.municipality_id) : 'toda a região',
+  },
+  { key: 'execucoes', label: 'Leituras', isNumeric: true, render: (f) => contar(f.runs) },
   { key: 'falhas', label: 'Falhas', isNumeric: true, render: (f) => contar(f.failures) },
   {
     key: 'ultimo-sucesso',
@@ -85,7 +98,7 @@ const FONTES: Array<StatColumn<Fonte>> = [
   },
   {
     key: 'novos',
-    label: 'Itens novos',
+    label: 'Eventos novos',
     isNumeric: true,
     render: (f) => contar(f.items_new_in_month),
   },
@@ -93,12 +106,18 @@ const FONTES: Array<StatColumn<Fonte>> = [
 
 const CONTAGENS: Array<StatColumn<Contagem>> = [
   { key: 'rotulo', label: 'Canal', isRowHeader: true, render: (c) => c.rotulo },
-  { key: 'valor', label: 'Submissões', isNumeric: true, render: (c) => contar(c.valor) },
+  { key: 'valor', label: 'Propostas', isNumeric: true, render: (c) => contar(c.valor) },
+];
+
+/** O território: as mesmas duas colunas, com o rótulo do que se conta. */
+const TERRITORIO: Array<StatColumn<Contagem>> = [
+  { key: 'rotulo', label: 'O quê', isRowHeader: true, render: (c) => c.rotulo },
+  { key: 'valor', label: 'Quantos', isNumeric: true, render: (c) => contar(c.valor) },
 ];
 
 const DESFECHOS_COLUNAS: Array<StatColumn<Contagem>> = [
   { key: 'rotulo', label: 'Desfecho', isRowHeader: true, render: (c) => c.rotulo },
-  { key: 'valor', label: 'Submissões', isNumeric: true, render: (c) => contar(c.valor) },
+  { key: 'valor', label: 'Propostas', isNumeric: true, render: (c) => contar(c.valor) },
 ];
 
 const MEDIDAS = [
@@ -460,8 +479,11 @@ export default async function Relatorios({ searchParams }: Props) {
   }
 
   const params = await searchParams;
-  const regioes = await listRegionsAdmin();
-  const regiao = escolherRegiao(regioes, params.regiao);
+  // O relatório é de quem gere a região (C4-015): a lista são as regiões que
+  // esta sessão gere, e a escolhida no cimo do painel é a de omissão.
+  const ambito = await ambitoDoPainel({ minimo: 'gestor', pedida: params.regiao });
+  const regioes = ambito.disponiveis;
+  const regiao = escolherRegiao(regioes, params.regiao ?? ambito.escolhida?.id);
   const mesPedido = lerMes(params.mes);
   const mes = mesPedido ?? mesAnterior(todayInLisbon());
   const relatorio = regiao ? await monthlyReport(regiao, mes) : null;
@@ -473,7 +495,7 @@ export default async function Relatorios({ searchParams }: Props) {
     <>
       <PageHeader
         title="Relatórios"
-        lead="O mês de uma região, para entregar a quem financia: o que a agenda publicou, se as fontes estiveram vivas, o que chegou por email e pelo formulário, como está o catálogo e quantas vezes foi visitado."
+        lead="O mês de uma região, para entregar a quem financia: o que a agenda publicou, se as fontes estiveram vivas, o que chegou por email, por envio de programa e pela recolha, como está o catálogo e quantas vezes foi visitado."
       />
 
       <form method="get" className="ct-sem-impressao mb-6 flex flex-wrap items-end gap-4">
@@ -485,7 +507,7 @@ export default async function Relatorios({ searchParams }: Props) {
             {regioes.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
-                {r.kind === 'montra' ? ' (montra)' : ''}
+                {r.kind === 'montra' ? ' (demonstração)' : ''}
               </option>
             ))}
           </select>
@@ -509,9 +531,12 @@ export default async function Relatorios({ searchParams }: Props) {
 
       {!regiao || !relatorio ? (
         <p className="text-highlight">
-          {params.regiao ? (
+          {regioes.length === 0 ? (
+            'O relatório é de quem gere uma região, e esta conta não gere nenhuma.'
+          ) : params.regiao ? (
             <>
-              A região <code>{params.regiao}</code> não existe. Escolhe uma da lista.
+              A região <code>{params.regiao}</code> não existe, ou não é desta conta. Escolhe uma da
+              lista.
             </>
           ) : (
             'Não há regiões na base — e sem região não há relatório.'
@@ -519,23 +544,47 @@ export default async function Relatorios({ searchParams }: Props) {
         </p>
       ) : (
         <>
-          <p className="ct-sem-impressao mb-8 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <a
-              href={descarga('csv')}
-              className="inline-flex min-h-11 items-center underline underline-offset-4"
-            >
-              Descarregar CSV
-            </a>
-            <a
-              href={descarga('json')}
-              className="inline-flex min-h-11 items-center underline underline-offset-4"
-            >
-              JSON
-            </a>
-            <span className="text-muted">
-              Para imprimir, Ctrl+P — a barra e o formulário ficam de fora.
-            </span>
-          </p>
+          {/*
+            Os ficheiros (C4-033): uma tabela por CSV, com cabeçalhos em
+            português e os concelhos pelo nome — o que se cola no relatório de
+            atividades —, o JSON para máquinas, e a página para imprimir ou
+            guardar em PDF.
+          */}
+          <section aria-labelledby="ficheiros" className="ct-sem-impressao mb-8 text-sm">
+            <h2 id="ficheiros" className="font-semibold">
+              Levar o relatório
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <BotaoDeImprimir>Imprimir ou guardar em PDF</BotaoDeImprimir>
+              <span className="text-muted">
+                Ou Ctrl+P: a barra e o formulário ficam de fora da folha.
+              </span>
+            </div>
+            <p className="mt-3 text-muted">As tabelas, uma por ficheiro (CSV, abre no Excel):</p>
+            <ul className="mt-1 flex flex-wrap gap-x-4">
+              {tabelasDoRelatorio(relatorio).map((tabela) => (
+                <li key={tabela.chave}>
+                  <a
+                    href={`${descarga('csv')}&tabela=${encodeURIComponent(tabela.chave)}`}
+                    className="inline-flex min-h-11 items-center underline underline-offset-4"
+                  >
+                    {tabela.titulo}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-muted">
+              Para cruzar com outros meses por programa:{' '}
+              <a href={descarga('json')} className="underline underline-offset-4">
+                o relatório inteiro em JSON
+              </a>{' '}
+              (ou{' '}
+              <a href={descarga('csv')} className="underline underline-offset-4">
+                em CSV por blocos
+              </a>
+              , com os nomes de campo da ficha técnica).
+            </p>
+          </section>
 
           <article aria-labelledby="relatorio-titulo">
             <header className="mb-8">
@@ -544,10 +593,8 @@ export default async function Relatorios({ searchParams }: Props) {
                 {relatorio.region.name} — {nomeDoMes(relatorio.month)}
               </h2>
               <p className="mt-2 text-sm text-muted">
-                Produzido a <span className="tabular-nums">{quando(relatorio.generated_at)}</span>{' '}
-                (UTC), a partir da base de dados do Coreto. Ficheiros:{' '}
-                <code>{nomeDoFicheiro(relatorio.region.id, relatorio.month, 'csv')}</code> e{' '}
-                <code>{nomeDoFicheiro(relatorio.region.id, relatorio.month, 'json')}</code>.
+                Produzido a <span className="tabular-nums">{quando(relatorio.generated_at)}</span>,
+                hora de Lisboa, a partir da base de dados do Coreto.
               </p>
             </header>
 
@@ -594,7 +641,7 @@ export default async function Relatorios({ searchParams }: Props) {
 
             <Seccao
               id="compromissos"
-              titulo="O que a casa promete"
+              titulo="Os compromissos do projeto"
               legenda={`Cinco famílias sobre os ${contar(relatorio.promises.total)} eventos programados no mês — canónicos, nem rascunho nem escondidos, arquivados incluídos. Não é o mesmo número que «eventos a decorrer» acima, e os dois não se somam: um conta o que foi programado, o outro o que estava publicado. Tudo isto mede o que a agenda conseguiu recolher, e não o que aconteceu no território.`}
             >
               <Compromissos p={relatorio.promises} />
@@ -603,11 +650,18 @@ export default async function Relatorios({ searchParams }: Props) {
             <Seccao
               id="fontes"
               titulo="Fontes"
-              legenda="As execuções da recolha começadas no mês, fonte a fonte. Uma falha é uma execução que acabou em erro; uma execução parcial — a fonte respondeu, mas com menos do que o costume — não conta como falha."
+              legenda="As leituras da recolha começadas no mês, fonte a fonte. Uma falha é uma leitura que acabou em erro; uma leitura parcial — a fonte respondeu, mas com menos do que o costume — não conta como falha."
             >
               <StatTable
-                caption={`As fontes da região e as suas execuções em ${nomeDoMes(relatorio.month)}.`}
-                columns={FONTES}
+                caption={`As fontes da região e as suas leituras em ${nomeDoMes(relatorio.month)}.`}
+                columns={colunasDasFontes(
+                  new Map(
+                    [...relatorio.quality, ...relatorio.events.happening_in_month].map((linha) => [
+                      linha.municipality_id,
+                      linha.municipality_name,
+                    ]),
+                  ),
+                )}
                 rows={relatorio.sources}
                 rowKey={(f) => f.id}
                 emptyMessage="Esta região não tem fontes de recolha."
@@ -621,7 +675,7 @@ export default async function Relatorios({ searchParams }: Props) {
             >
               <StatTable
                 caption="Concelhos, freguesias e fontes institucionais ligadas."
-                columns={CONTAGENS}
+                columns={TERRITORIO}
                 rows={[
                   {
                     chave: 'concelhos',
@@ -651,7 +705,7 @@ export default async function Relatorios({ searchParams }: Props) {
 
             <Seccao
               id="submissoes"
-              titulo="Submissões"
+              titulo="Propostas"
               legenda="O que entrou na fila de moderação no mês, por canal, e o que foi revisto no mês, pelo desfecho. «Outras» são as fundidas com um evento que já existia, as marcadas como duplicado e as que ficaram à espera de informação."
             >
               <div className="grid gap-8 sm:grid-cols-2">
@@ -660,7 +714,7 @@ export default async function Relatorios({ searchParams }: Props) {
                     Recebidas: {contar(relatorio.submissions.received)}
                   </h3>
                   <StatTable
-                    caption="Submissões recebidas no mês, por canal."
+                    caption="Propostas recebidas no mês, por canal."
                     columns={CONTAGENS}
                     rows={(Object.keys(CANAIS) as Array<keyof typeof CANAIS>).map((canal) => ({
                       chave: canal,
@@ -674,7 +728,7 @@ export default async function Relatorios({ searchParams }: Props) {
                 <div>
                   <h3 className="mt-4 font-semibold">Revistas</h3>
                   <StatTable
-                    caption="Submissões revistas no mês, pelo desfecho."
+                    caption="Propostas revistas no mês, pelo desfecho."
                     columns={DESFECHOS_COLUNAS}
                     rows={(Object.keys(DESFECHOS) as Array<keyof typeof DESFECHOS>).map(
                       (desfecho) => ({
@@ -774,7 +828,7 @@ export default async function Relatorios({ searchParams }: Props) {
                   publicado.
                 </li>
                 <li>
-                  As submissões atribuem-se ao concelho do evento em que resultaram e, enquanto não
+                  As propostas atribuem-se ao concelho do evento em que resultaram e, enquanto não
                   resultam em nenhum, à região a que foram dirigidas.
                 </li>
                 <li>

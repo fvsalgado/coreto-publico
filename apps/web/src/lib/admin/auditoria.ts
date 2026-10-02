@@ -114,5 +114,9 @@ export function volumososOmitidos(before: unknown, after: unknown): string[] {
 export function ondeVerAEntidade(entityType: string, entityId: string): string | null {
   if (entityType === 'submission') return `/admin/fila/${entityId}`;
   if (entityType === 'region') return `/admin/regioes/${entityId}`;
+  // A ficha de correção de um evento (C4-017), e a lista das pessoas.
+  if (entityType === 'event') return `/admin/eventos/${entityId}`;
+  if (entityType === 'pessoa') return '/admin/pessoas';
+  if (entityType === 'source') return `/admin/fontes/${entityId}`;
   return null;
 }

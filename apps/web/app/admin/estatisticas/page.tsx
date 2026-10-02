@@ -8,6 +8,8 @@ import {
   type EventStatRow,
   type MunicipalityStatRow,
 } from '@/src/lib/analytics/queries';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
+import { deNome } from '@/src/lib/artigos';
 import { hasAnalytics, hasServiceRole } from '@/src/lib/env';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Estatísticas' };
 
 interface Props {
-  searchParams: Promise<{ municipality?: string }>;
+  searchParams: Promise<{ municipality?: string; regiao?: string }>;
 }
 
 const numberFormat = new Intl.NumberFormat('pt-PT');
@@ -114,8 +116,16 @@ export default async function Estatisticas({ searchParams }: Props) {
   }
 
   const params = await searchParams;
-  const requested = readMunicipality(params.municipality);
-  const { topByViews, topByClicks, byMunicipality, total } = await eventStatsOverview(requested);
+  // Os concelhos da região escolhida no cimo (C4-015). Um concelho pedido na
+  // barra que não é do recorte não se mostra — nem vazio, nem cheio.
+  const ambito = await ambitoDoPainel({ pedida: params.regiao });
+  const pedido = readMunicipality(params.municipality);
+  const requested =
+    pedido && (ambito.concelhos === null || ambito.concelhos.includes(pedido)) ? pedido : null;
+  const { topByViews, topByClicks, byMunicipality, total } = await eventStatsOverview(
+    requested,
+    ambito.concelhos,
+  );
 
   const municipalityNames = new Map(
     byMunicipality.map((row) => [row.municipalityId, row.municipalityName]),
@@ -164,16 +174,23 @@ export default async function Estatisticas({ searchParams }: Props) {
             aparecem sempre todos os concelhos, incluindo os que estão a zero.
           </li>
           {/*
-            Esteve aqui «aparecem sempre os onze», que eram os do Médio Tejo. A
-            consulta não recorta por região — `event_stats_by_municipality()`
-            devolve os concelhos todos da base —, e por isso a frase contava um
-            número que a tabela não mostra. Enquanto o recorte não existir, o
-            painel diz o que faz; quando existir, é esta nota que sai.
+            Esteve aqui «Nada aqui está recortado por região», e era verdade
+            até as contas por pessoa (C4-015): as consultas juntavam os
+            concelhos de todas as regiões. Agora recortam pela região escolhida
+            no cimo, e a nota diz isso — e o que a última linha soma.
           */}
           <li>
-            <strong>Nada aqui está recortado por região.</strong> As consultas juntam os concelhos
-            de todas as regiões que a base tiver, e a última linha soma tudo o que aparece acima. O
-            recorte por região está por fazer; até lá, estes números não são os de uma região só.
+            {ambito.escolhida ? (
+              <>
+                Os números são {deNome(ambito.escolhida.name, ambito.escolhida.article)}, a região
+                escolhida no cimo do painel; a última linha soma os concelhos dela.
+              </>
+            ) : (
+              <>
+                Os números juntam todas as regiões que esta conta vê; a última linha soma tudo o que
+                aparece acima. Para os de uma região só, escolhe-a no cimo do painel.
+              </>
+            )}
           </li>
         </ul>
       </section>

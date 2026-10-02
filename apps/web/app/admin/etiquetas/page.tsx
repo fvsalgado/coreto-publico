@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
-import { listUnknownTags } from '@/src/lib/admin/queries';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
+import { etiquetasPorMapear } from '@/src/lib/admin/queries';
 import { listCategories } from '@/src/lib/queries/events';
 import { hasServiceRole } from '@/src/lib/env';
 
@@ -9,10 +10,22 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Etiquetas por mapear' };
 
-export default async function Etiquetas() {
+interface Props {
+  searchParams: Promise<{ regiao?: string }>;
+}
+
+export default async function Etiquetas({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Etiquetas por mapear" />;
 
-  const [tags, categories] = await Promise.all([listUnknownTags(), listCategories()]);
+  // As etiquetas que os eventos da região escolhida trazem, contadas nesses
+  // eventos (C4-015, 0171). Mapeá-las continua a ser do produto: é taxonomia,
+  // e entra por migração, pela mão de quem opera o Coreto.
+  const ambito = await ambitoDoPainel({ pedida: (await searchParams).regiao });
+  const dono = ambito.sessao.tipo === 'dono';
+  const [{ linhas: tags, recortada }, categories] = await Promise.all([
+    etiquetasPorMapear(ambito),
+    listCategories(),
+  ]);
 
   return (
     <>
@@ -36,6 +49,13 @@ export default async function Etiquetas() {
         noites a recolha a viu, e serve só para distinguir uma etiqueta que apareceu uma vez de uma
         que a fonte repete todos os dias.
       </p>
+
+      {!recortada ? (
+        <p className="mb-4 max-w-prose rounded border border-border px-3 py-2 text-sm">
+          A base ainda não sabe recortar as etiquetas por região (falta a migração 0171): esta é a
+          lista de todas as regiões.
+        </p>
+      ) : null}
 
       {tags.length === 0 ? (
         <p className="text-muted">Nada por mapear.</p>
@@ -93,31 +113,44 @@ export default async function Etiquetas() {
             fim — foi por aí que a implementação de referência perdeu as
             primeiras noventa e sete migrações.
           */}
-          <section aria-labelledby="como" className="mt-8">
-            <h2 id="como" className="text-lg font-semibold">
-              Como mapear
-            </h2>
-            <p className="mt-1 max-w-prose text-muted">
-              Acrescenta uma migração nova em <code>supabase/migrations/</code> com as linhas
-              abaixo. Fica no repositório, entra no CI, e uma base de dados nova reconstrói-se
-              sozinha.
-            </p>
-            <pre
-              className="mt-3 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
-              tabIndex={0}
-            >
-              {`insert into public.category_aliases (alias, category_slug)
+          {!dono ? (
+            <section aria-labelledby="como" className="mt-8">
+              <h2 id="como" className="text-lg font-semibold">
+                Como se mapeia
+              </h2>
+              <p className="mt-1 max-w-prose text-muted">
+                As categorias são as mesmas em todas as regiões, e por isso mapear uma etiqueta é
+                trabalho de quem opera o Coreto. Se uma etiqueta desta lista aparece em muitos
+                eventos — meia dúzia chega —, diz-lhe qual é a categoria certa.
+              </p>
+            </section>
+          ) : (
+            <section aria-labelledby="como" className="mt-8">
+              <h2 id="como" className="text-lg font-semibold">
+                Como mapear
+              </h2>
+              <p className="mt-1 max-w-prose text-muted">
+                Acrescenta uma migração nova em <code>supabase/migrations/</code> com as linhas
+                abaixo. Fica no repositório, entra no CI, e uma base de dados nova reconstrói-se
+                sozinha.
+              </p>
+              <pre
+                className="mt-3 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
+                tabIndex={0}
+              >
+                {`insert into public.category_aliases (alias, category_slug)
 select distinct on (1) public.normalize_for_hash(alias), category_slug
 from (values
   ('${tags[0]?.tag ?? 'a etiqueta'}', '${categories[0]?.slug ?? 'musica'}')
 ) as t(alias, category_slug)
 order by 1
 on conflict (alias) do update set category_slug = excluded.category_slug;`}
-            </pre>
-            <p className="mt-2 text-sm text-muted">
-              Categorias disponíveis: {categories.map((category) => category.slug).join(', ')}.
-            </p>
-          </section>
+              </pre>
+              <p className="mt-2 text-sm text-muted">
+                Categorias disponíveis: {categories.map((category) => category.slug).join(', ')}.
+              </p>
+            </section>
+          )}
         </>
       )}
     </>

@@ -23,6 +23,7 @@ import {
   reconcileDecision,
   applyManualLocks,
   avaliarContagem,
+  CADEADO_DAS_SESSOES,
   type LeituraDaContagem,
   type EventRow,
   type RawEvent,
@@ -1110,7 +1111,14 @@ async function collectAndWrite(
         continue;
       }
 
-      await writeEvent(writer, merged, harmonized.sessions);
+      // As datas corrigidas à mão ficam também. O cadeado delas não é uma
+      // coluna, e por isso não passa pelo `applyManualLocks`: passa aqui —
+      // sem sessões, a escrita não toca nas que estão guardadas.
+      const sessoes = locked.includes(CADEADO_DAS_SESSOES) ? [] : harmonized.sessions;
+      if (sessoes !== harmonized.sessions && harmonized.sessions.length > 0) {
+        log.info('datas protegidas por correção manual', raw.sourceKey);
+      }
+      await writeEvent(writer, merged, sessoes);
       if (previous) counters.itemsUpdated += 1;
       else counters.itemsNew += 1;
     } catch (error) {

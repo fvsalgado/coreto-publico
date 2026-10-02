@@ -1,19 +1,15 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
 import { PageHeader } from '@/src/components/PageHeader';
-import { currentAdmin, isAdminConfigured, startSession } from '@/src/lib/admin/auth';
-import { LOGIN_ATTEMPT_LIMIT, LOGIN_ATTEMPT_WINDOW_SECONDS } from '@/src/lib/admin/session';
-import { verifyPassword } from '@/src/lib/admin/password';
-import { checkRateLimit } from '@/src/lib/rate-limit';
-import { env } from '@/src/lib/env';
+import { entrar } from '@/src/lib/admin/acoes-das-contas';
+import { currentAdmin } from '@/src/lib/admin/auth';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Entrar no painel' };
 
 interface Props {
-  searchParams: Promise<{ destino?: string; erro?: string }>;
+  searchParams: Promise<{ destino?: string; erro?: string; ate?: string }>;
 }
 
 /** Só caminhos internos. Um `destino` externo virava isto num redirecionador. */
@@ -22,42 +18,30 @@ function safeDestination(destino: string | undefined): string {
   return destino;
 }
 
-async function entrar(formData: FormData): Promise<void> {
-  'use server';
-
-  const destino = safeDestination(String(formData.get('destino') ?? ''));
-  const password = String(formData.get('password') ?? '');
-
-  if (!isAdminConfigured()) redirect('/admin/entrar?erro=configuracao');
-
-  // O limite é por IP e a janela é curta: chega para travar quem tenta às
-  // cegas sem trancar quem se enganou a escrever.
-  const request = new Request('https://coreto.mediotejo.pt/admin/entrar', {
-    headers: await headers(),
-  });
-  const limit = await checkRateLimit(request, {
-    route: 'admin-login',
-    limit: LOGIN_ATTEMPT_LIMIT,
-    windowSeconds: LOGIN_ATTEMPT_WINDOW_SECONDS,
-    // Sem base, conta-se na memória: o login sem trava era o que a falta da
-    // chave de serviço oferecia, e uma palavra-passe única não aguenta isso.
-    falhaFechada: true,
-  });
-  if (!limit.allowed) redirect('/admin/entrar?erro=demasiadas');
-
-  if (!verifyPassword(password, env.ADMIN_PASSWORD_HASH as string)) {
-    redirect('/admin/entrar?erro=credenciais');
+/**
+ * As mensagens de uma entrada recusada.
+ *
+ * **Uma só para qualquer engano**, e é de propósito: «este email não tem
+ * conta» e «a palavra-passe está errada» diziam a quem tenta quais são os
+ * emails das contas. A do limite diz a hora, que é o que quem está do outro
+ * lado precisa de saber, e diz porquê — sem sugerir um ataque a uma equipa que
+ * só se enganou a escrever (C4-016).
+ */
+function mensagem(erro: string | undefined, ate: string | undefined): string | null {
+  if (erro === 'credenciais') return 'O email ou a palavra-passe não estão certos.';
+  if (erro === 'demasiadas') {
+    const hora = ate && /^\d{2}h\d{2}$/.test(ate) ? ate : null;
+    return (
+      'Foram feitas demasiadas tentativas com a palavra-passe errada, a partir desta rede ou ' +
+      `para este email. ${hora ? `Podes voltar a tentar às ${hora}.` : 'Podes voltar a tentar daqui a um quarto de hora.'}`
+    );
   }
-
-  await startSession('gestor');
-  redirect(destino);
+  if (erro === 'configuracao') return 'O painel ainda não está configurado.';
+  return null;
 }
 
-const MESSAGES: Record<string, string> = {
-  credenciais: 'Palavra-passe incorreta.',
-  demasiadas: 'Demasiadas tentativas. Tenta daqui a um quarto de hora.',
-  configuracao: 'O painel ainda não está configurado.',
-};
+const CAMPO =
+  'mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 
 export default async function Entrar({ searchParams }: Props) {
   const gate = await currentAdmin();
@@ -79,7 +63,7 @@ export default async function Entrar({ searchParams }: Props) {
     );
   }
 
-  const erro = params.erro ? MESSAGES[params.erro] : undefined;
+  const erro = mensagem(params.erro, params.ate);
 
   return (
     <>
@@ -88,14 +72,29 @@ export default async function Entrar({ searchParams }: Props) {
       <PageHeader title="Entrar no painel" eyebrow="Coreto" />
 
       {erro ? (
-        <p role="alert" className="mb-4 rounded border border-highlight px-3 py-2 text-highlight">
+        <p
+          role="alert"
+          className="mb-4 max-w-sm rounded border border-highlight px-3 py-2 text-highlight"
+        >
           {erro}
         </p>
       ) : null}
 
       <form action={entrar} className="max-w-sm">
         <input type="hidden" name="destino" value={safeDestination(params.destino)} />
-        <label htmlFor="password" className="block text-sm font-medium">
+        <label htmlFor="email" className="block text-sm font-medium">
+          Email
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          required
+          autoComplete="username"
+          spellCheck={false}
+          className={CAMPO}
+        />
+        <label htmlFor="password" className="mt-4 block text-sm font-medium">
           Palavra-passe
         </label>
         <input
@@ -104,7 +103,7 @@ export default async function Entrar({ searchParams }: Props) {
           type="password"
           required
           autoComplete="current-password"
-          className="mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink"
+          className={CAMPO}
         />
         <button
           type="submit"
@@ -113,6 +112,16 @@ export default async function Entrar({ searchParams }: Props) {
           Entrar
         </button>
       </form>
+
+      {/*
+        Não há «recuperar a palavra-passe» por email, e é de propósito: o
+        painel não envia correio. Quem convidou gera uma ligação nova, e a
+        palavra-passe antiga deixa de valer quando a nova for escolhida.
+      */}
+      <p className="mt-6 max-w-sm text-sm text-muted">
+        Esqueceste-te da palavra-passe? Pede uma ligação nova a quem te convidou para o painel — a
+        antiga deixa de valer quando escolheres a nova.
+      </p>
     </>
   );
 }

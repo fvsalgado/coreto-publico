@@ -96,7 +96,7 @@ export function passosDeArranque(dados: DadosDoArranque): PassoDeArranque[] {
             rotulo: 'Coretos',
             estado: 'por-fazer',
             texto:
-              'O levantamento está vazio e a secção está ligada: quem a abrir encontra uma página por fazer. Desligue-a nas secções até haver coretos.',
+              'O levantamento está vazio e a secção está ligada: quem a abrir encontra uma página por fazer. Desliga-a nas secções até haver coretos.',
           }
         : {
             chave: 'coretos',

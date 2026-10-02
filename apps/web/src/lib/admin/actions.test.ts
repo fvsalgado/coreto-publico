@@ -29,6 +29,12 @@ const revalidateTag = vi.hoisted(() => vi.fn());
 const revalidatePath = vi.hoisted(() => vi.fn());
 const requireAdmin = vi.hoisted(() => vi.fn());
 const rpc = vi.hoisted(() => vi.fn());
+const eventoPeloEndereco = vi.hoisted(() => vi.fn());
+const getPropostaDaSubmissao = vi.hoisted(() => vi.fn());
+const proximaSubmissao = vi.hoisted(() => vi.fn());
+const lerEventoResumido = vi.hoisted(() => vi.fn());
+const listRegionsAdmin = vi.hoisted(() => vi.fn());
+const ambitoDoPainel = vi.hoisted(() => vi.fn());
 const redirect = vi.hoisted(() =>
   vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
@@ -44,12 +50,62 @@ vi.mock('next/cache', () => ({
   unstable_cache: <T>(fn: T) => fn,
 }));
 vi.mock('next/navigation', () => ({ redirect }));
-vi.mock('./auth', () => ({ requireAdmin }));
+/*
+ * As guardas por papel (`exigirDono`, `exigirPapel`, `exigirPapelNas`) são
+ * aqui a sessão do dono, que pode tudo: estes testes são do que cada ação
+ * escreve. O que cada papel pode prova-se em `papeis.test.ts` e em
+ * `auth.test.ts`, e a recusa de uma região alheia no ensaio contra a base.
+ * Sem sessão, todas rebentam — como o `requireAdmin` que já cá estava.
+ */
+vi.mock('./auth', () => {
+  const sessaoDoDono = async () => ({ tipo: 'dono' as const, actor: await requireAdmin() });
+  return {
+    requireAdmin,
+    exigirSessao: sessaoDoDono,
+    exigirDono: sessaoDoDono,
+    exigirPapel: sessaoDoDono,
+    exigirPapelNas: sessaoDoDono,
+  };
+});
 // Da chave de serviço só se usa o `rpc`: é o único caminho de escrita que as
 // ações conhecem, e a regra da casa é que continue a sê-lo.
 vi.mock('../supabase/server', () => ({ requireAdminClient: () => ({ rpc }) }));
+// As duas leituras que a recusa e a fusão fazem antes de escrever: o endereço
+// colado por quem modera e a proposta guardada. O resto do módulo é o real.
+vi.mock('./queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./queries')>()),
+  eventoPeloEndereco,
+  getPropostaDaSubmissao,
+  lerEventoResumido,
+  listRegionsAdmin,
+  proximaSubmissao,
+}));
+// O recorte de quem modera, só para «abrir a seguinte»: o resto do módulo
+// (as perguntas «de que região é isto?») é o real, e as guardas falsas de cima
+// nem chegam a fazê-las.
+vi.mock('./ambito', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./ambito')>()),
+  ambitoDoPainel,
+  regiaoDaSubmissao: async () => 'mirante',
+}));
 
-const { actualizarSitio, criarRegiao, ligarSitio, porSitioDeLado } = await import('./actions');
+const {
+  actualizarSitio,
+  alternarSeccao,
+  approveSubmission,
+  atualizarEvento,
+  atualizarRegiao,
+  criarRegiao,
+  definirRegiaoNoAr,
+  destrancarCampo,
+  fundirSubmissao,
+  ligarFonte,
+  pausarFonte,
+  reabrirFonte,
+  ligarSitio,
+  porSitioDeLado,
+  rejectSubmission,
+} = await import('./actions');
 const { CACHE_TAGS } = await import('../queries/events');
 
 function formulario(campos: Record<string, string>): FormData {
@@ -547,6 +603,468 @@ describe('criarRegiao', () => {
 });
 
 /**
+ * Aprovar diz o que publicou, e pode abrir a seguinte (C4-013).
+ *
+ * Devolvia à fila sem uma palavra. Agora o evento publicado segue na barra
+ * (`publicado=`), e a página que recebe diz «Publicado» com a ligação para o
+ * ver; com «Aprovar e abrir a seguinte», a página que recebe é a próxima
+ * proposta por rever do recorte de quem modera.
+ */
+describe('approveSubmission: o retorno', () => {
+  const SUBMISSAO = '11111111-2222-4333-8444-555555555555';
+  const EVENTO = '66666666-7777-4888-9999-000000000000';
+  const SEGUINTE = '77777777-7777-4777-8777-777777777777';
+
+  function aprovar(extra: Record<string, string> = {}): FormData {
+    return formulario({
+      submission_id: SUBMISSAO,
+      title: 'Concerto de Outono',
+      municipality_id: 'tomar',
+      session_date: '2026-10-10',
+      ...extra,
+    });
+  }
+
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    proximaSubmissao.mockReset();
+    ambitoDoPainel.mockReset();
+    getPropostaDaSubmissao.mockReset();
+    requireAdmin.mockResolvedValue('dono');
+    getPropostaDaSubmissao.mockResolvedValue({
+      payload: { title: 'Concerto de Outono', municipality_id: 'tomar' },
+      municipality_id: 'tomar',
+      venue_id: null,
+    });
+    rpc.mockImplementation((funcao: string) =>
+      Promise.resolve(
+        funcao === 'approve_submission' ? { data: EVENTO, error: null } : { data: 1, error: null },
+      ),
+    );
+    ambitoDoPainel.mockResolvedValue({ regioes: ['medio-tejo'], concelhos: ['tomar'] });
+  });
+
+  it('volta à fila com o evento publicado na barra', async () => {
+    const { caminho } = await destinoDe(approveSubmission(aprovar()));
+    expect(caminho).toBe('/admin/fila');
+    // A fila da região da proposta, e não a escolhida no cimo.
+    expect(redirect).toHaveBeenLastCalledWith(`/admin/fila?regiao=mirante&publicado=${EVENTO}`);
+  });
+
+  it('«abrir a seguinte» abre a próxima do recorte, com o mesmo aviso', async () => {
+    proximaSubmissao.mockResolvedValue(SEGUINTE);
+    await destinoDe(approveSubmission(aprovar({ seguinte: '1' })));
+    // A seguinte é da região da proposta aprovada, e não da escolhida no cimo.
+    expect(ambitoDoPainel).toHaveBeenCalledWith({ pedida: 'mirante' });
+    expect(proximaSubmissao).toHaveBeenCalledWith(
+      { regioes: ['medio-tejo'], concelhos: ['tomar'] },
+      SUBMISSAO,
+    );
+    expect(redirect).toHaveBeenLastCalledWith(`/admin/fila/${SEGUINTE}?publicado=${EVENTO}`);
+  });
+
+  it('e, quando era a última, diz isso na fila', async () => {
+    proximaSubmissao.mockResolvedValue(null);
+    const { caminho, aviso } = await destinoDe(approveSubmission(aprovar({ seguinte: '1' })));
+    expect(caminho).toBe('/admin/fila');
+    expect(aviso).toBe('Era a última proposta por rever.');
+  });
+});
+
+/**
+ * A zona de perigo (C4-035): tirar uma agenda do ar obriga a escrever o nome
+ * da região, e o aviso diz a hora; o interruptor de uma secção diz qual, e o
+ * caminho de volta leva o «desfazer».
+ */
+describe('definirRegiaoNoAr e alternarSeccao', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    requireAdmin.mockResolvedValue('dono');
+    listRegionsAdmin.mockResolvedValue([
+      { id: 'mirante', name: 'Mirante', article: 'o', domain: 'coreto.mirante.example' },
+    ]);
+    rpc.mockResolvedValue({ data: true, error: null });
+  });
+
+  it('sem o nome escrito, nada sai do ar', async () => {
+    const { caminho, aviso } = await destinoDe(
+      definirRegiaoNoAr(formulario({ id: 'mirante', no_ar: '0', confirmacao: 'sim' })),
+    );
+    expect(caminho).toBe('/admin/regioes/mirante');
+    expect(aviso).toMatch(/escreve o nome da região — «Mirante»/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('com o nome escrito (a caixa não conta), sai do ar e diz a hora', async () => {
+    const { aviso } = await destinoDe(
+      definirRegiaoNoAr(formulario({ id: 'mirante', no_ar: '0', confirmacao: ' mirante ' })),
+    );
+    expect(rpc).toHaveBeenCalledWith('update_region', {
+      p_id: 'mirante',
+      p_patch: { is_enabled: false },
+      p_actor: 'dono',
+    });
+    expect(aviso).toMatch(/^A agenda do Mirante saiu do ar às \d{1,2}h(\d{2})?/);
+  });
+
+  it('o interruptor de uma secção diz qual, e leva o «desfazer» na volta', async () => {
+    const destino = await destinoDe(
+      alternarSeccao(formulario({ seccao: 'coretos', ligar: '0', regiao: 'mirante' })),
+    );
+    expect(destino.aviso).toMatch(/^«Coretos» passou a estar desligada/);
+    expect(redirect.mock.calls.at(-1)?.[0]).toMatch(/[?&]desfazer=coretos&estava=1&aviso=/);
+  });
+});
+
+/**
+ * As fontes no painel (C4-032): os gestos chegam à base com o que ela precisa
+ * — a pausa até ao fim do dia escolhido, na hora de Lisboa —, e um engano no
+ * formulário volta em português sem lá chegar.
+ */
+describe('pausarFonte, reabrirFonte e ligarFonte', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    revalidateTag.mockClear();
+    requireAdmin.mockResolvedValue('dono');
+  });
+
+  it('pausa até ao fim do dia escolhido, na hora de Lisboa, e diz até quando', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    const { caminho, aviso } = await destinoDe(
+      pausarFonte(
+        formulario({ fonte: 'cm-tomar', ate: '2026-12-10', motivo: 'À espera de resposta' }),
+      ),
+    );
+    expect(rpc).toHaveBeenCalledWith('pausar_fonte', {
+      p_fonte: 'cm-tomar',
+      p_ate: '2026-12-10T23:59:00+00:00',
+      p_motivo: 'À espera de resposta',
+      p_actor: 'dono',
+    });
+    expect(caminho).toBe('/admin/fontes/cm-tomar');
+    expect(aviso).toMatch(/^Em pausa até 10 de dezembro de 2026\./);
+    expect(revalidateTag).toHaveBeenCalled();
+  });
+
+  it('sem motivo, ou com uma fonte que não é fonte, não chega à base', async () => {
+    const semMotivo = await destinoDe(
+      pausarFonte(formulario({ fonte: 'cm-tomar', ate: '2026-12-10', motivo: ' ' })),
+    );
+    expect(semMotivo.aviso).toMatch(/^Escreve o motivo da pausa/);
+    const forjada = await destinoDe(
+      pausarFonte(formulario({ fonte: '../regioes', ate: '2026-12-10', motivo: 'x' })),
+    );
+    expect(forjada.caminho).toBe('/admin/fontes');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('desligar pede a confirmação; reabrir diz quando não havia nada a reabrir', async () => {
+    const semConfirmar = await destinoDe(
+      ligarFonte(formulario({ fonte: 'cm-tomar', ligar: '0', motivo: 'O município pediu' })),
+    );
+    expect(semConfirmar.aviso).toMatch(/marca a caixa/);
+    expect(rpc).not.toHaveBeenCalled();
+
+    rpc.mockResolvedValue({ data: false, error: null });
+    const reaberta = await destinoDe(reabrirFonte(formulario({ fonte: 'cm-tomar' })));
+    expect(rpc).toHaveBeenCalledWith('reabrir_fonte', { p_fonte: 'cm-tomar', p_actor: 'dono' });
+    expect(reaberta.aviso).toBe('Não havia pausa automática nem falhas para reabrir.');
+  });
+});
+
+/**
+ * O planeador de transportes é do gestor da região, e a recusa fala
+ * português a quem o preenche: a base diz «com https://», e a ação diz também
+ * «sem espaços» — o engano provável de quem cola um endereço.
+ */
+describe('atualizarRegiao: o planeador de transportes', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    requireAdmin.mockResolvedValue('dono');
+    rpc.mockResolvedValue({ data: true, error: null });
+  });
+
+  it('um espaço no meio do endereço volta com o porquê, sem chegar à base', async () => {
+    const { caminho, aviso } = await destinoDe(
+      atualizarRegiao(
+        formulario({
+          id: 'mirante',
+          transit_planner_url: 'https://planeador.exemplo.pt/via gem/',
+        }),
+      ),
+    );
+    expect(caminho).toBe('/admin/regioes/mirante');
+    expect(aviso).toMatch(/não pode ter espaços/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('sem https:// também, e um endereço bom segue para a base', async () => {
+    const semHttps = await destinoDe(
+      atualizarRegiao(formulario({ id: 'mirante', transit_planner_url: 'planeador.exemplo.pt' })),
+    );
+    expect(semHttps.aviso).toMatch(/tem de começar por https:\/\//);
+    expect(rpc).not.toHaveBeenCalled();
+
+    await destinoDe(
+      atualizarRegiao(
+        formulario({ id: 'mirante', transit_planner_url: 'https://planeador.exemplo.pt/viagem/' }),
+      ),
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      'update_region',
+      expect.objectContaining({
+        p_patch: expect.objectContaining({
+          transit_planner_url: 'https://planeador.exemplo.pt/viagem/',
+        }),
+      }),
+    );
+  });
+});
+
+/**
+ * Corrigir um evento publicado (C4-017): o formulário vai inteiro para a
+ * `update_event`, que decide o que mudou; a ação diz o que mudou em português
+ * e nunca chega à base sem uma data.
+ */
+describe('atualizarEvento e destrancarCampo', () => {
+  const EVENTO = '66666666-7777-4888-9999-000000000000';
+  const FICHA = `/admin/eventos/${EVENTO}`;
+
+  function corrigir(extra: Record<string, string> = {}): FormData {
+    const dados = formulario({
+      event_id: EVENTO,
+      title: 'Concerto de Outono',
+      municipality_id: 'tomar',
+      price_display: '5 €',
+      ...extra,
+    });
+    if (!('sem_datas' in extra)) {
+      dados.append('session_date', '2026-10-10');
+      dados.append('session_start', '18:00');
+      dados.append('session_end', '');
+    }
+    return dados;
+  }
+
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    lerEventoResumido.mockReset();
+    requireAdmin.mockResolvedValue('dono');
+    lerEventoResumido.mockResolvedValue({ municipality_id: 'tomar' });
+  });
+
+  it('manda o que o formulário tem, sem o identificador, e diz o que mudou', async () => {
+    rpc.mockResolvedValue({ data: ['price_display', 'sessions'], error: null });
+    const { caminho, aviso } = await destinoDe(atualizarEvento(corrigir()));
+    expect(rpc).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({
+        p_event_id: EVENTO,
+        p_patch: expect.objectContaining({ title: 'Concerto de Outono', price_display: '5 €' }),
+        p_sessions: [{ session_date: '2026-10-10', start_time: '18:00' }],
+        p_actor: 'dono',
+      }),
+    );
+    const patch = (rpc.mock.calls[0]?.[1] as { p_patch: Record<string, unknown> }).p_patch;
+    expect(patch).not.toHaveProperty('id');
+    expect(caminho).toBe(FICHA);
+    expect(aviso).toMatch(/^Guardado\. Mudou o preço e as datas — e fica trancado/);
+  });
+
+  it('sem mudanças, diz isso; sem datas, nem chega à base', async () => {
+    rpc.mockResolvedValue({ data: [], error: null });
+    expect((await destinoDe(atualizarEvento(corrigir()))).aviso).toBe(
+      'Nada mudou: o evento já estava assim.',
+    );
+    rpc.mockReset();
+    const { aviso } = await destinoDe(atualizarEvento(corrigir({ sem_datas: '1' })));
+    expect(aviso).toMatch(/^Um evento sem data nenhuma/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('uma recusa da base volta à ficha em português', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'o título não pode ficar vazio' },
+    });
+    const { caminho, aviso } = await destinoDe(atualizarEvento(corrigir()));
+    expect(caminho).toBe(FICHA);
+    expect(aviso).toBe('O título não pode ficar vazio');
+  });
+
+  it('destranca só os campos que o painel corrige', async () => {
+    rpc.mockResolvedValue({ data: 1, error: null });
+    const { aviso } = await destinoDe(
+      destrancarCampo(formulario({ event_id: EVENTO, campo: 'price_display' })),
+    );
+    expect(rpc).toHaveBeenCalledWith('unlock_event_fields', {
+      p_event_id: EVENTO,
+      p_actor: 'dono',
+      p_fields: ['price_display'],
+    });
+    expect(aviso).toMatch(/o preço na próxima noite/);
+
+    rpc.mockReset();
+    const recusado = await destinoDe(
+      destrancarCampo(formulario({ event_id: EVENTO, campo: 'status' })),
+    );
+    expect(recusado.aviso).toBe('Esse campo não se destranca aqui.');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Recusar como duplicada e fundir: nenhum campo pede um identificador a uma
+ * pessoa, e um engano volta ao formulário em português (C4-014, C4-029).
+ *
+ * O caso que o achado mediu: o nome do evento escrito onde se pedia o
+ * identificador. Dava «Não foi possível falar com a base de dados» e um erro
+ * do React em inglês. A ação tem de o recusar antes de chamar a base.
+ */
+describe('rejectSubmission e fundirSubmissao', () => {
+  const SUBMISSAO = '11111111-2222-4333-8444-555555555555';
+  const EVENTO = '66666666-7777-4888-9999-000000000000';
+  const FICHA = `/admin/fila/${SUBMISSAO}`;
+
+  beforeEach(() => {
+    rpc.mockReset();
+    redirect.mockClear();
+    revalidateTag.mockClear();
+    eventoPeloEndereco.mockReset();
+    getPropostaDaSubmissao.mockReset();
+    requireAdmin.mockResolvedValue('dono');
+    rpc.mockResolvedValue({ data: null, error: null });
+  });
+
+  it('o nome do evento no lugar do identificador volta à ficha, sem tocar na base', async () => {
+    const { caminho, aviso } = await destinoDe(
+      rejectSubmission(
+        formulario({
+          submission_id: SUBMISSAO,
+          status: 'duplicate',
+          duplicate_of: 'Noite de Fados na Filarmónica',
+        }),
+      ),
+    );
+    expect(caminho).toBe(FICHA);
+    expect(aviso).toContain('Pode já cá estar');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('o endereço da ficha pública diz de que evento é duplicada', async () => {
+    eventoPeloEndereco.mockResolvedValue({ id: EVENTO });
+    const { caminho, aviso } = await destinoDe(
+      rejectSubmission(
+        formulario({
+          submission_id: SUBMISSAO,
+          status: 'duplicate',
+          duplicate_url: 'https://mediotejo.coreto.org/evento/noite-de-fados-na-filarmonica-abc123',
+        }),
+      ),
+    );
+    expect(eventoPeloEndereco).toHaveBeenCalledWith(
+      'https://mediotejo.coreto.org/evento/noite-de-fados-na-filarmonica-abc123',
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      'reject_submission',
+      expect.objectContaining({ p_status: 'duplicate', p_duplicate_of: EVENTO }),
+    );
+    expect(caminho).toBe('/admin/fila');
+    expect(aviso).toMatch(/^Marcada como duplicada/);
+  });
+
+  it('um endereço que não é de evento nenhum, ou nenhum, volta a explicar o que se pede', async () => {
+    eventoPeloEndereco.mockResolvedValue(null);
+    const semEvento = await destinoDe(
+      rejectSubmission(
+        formulario({
+          submission_id: SUBMISSAO,
+          status: 'duplicate',
+          duplicate_url: 'Noite de Fados',
+        }),
+      ),
+    );
+    expect(semEvento.caminho).toBe(FICHA);
+    expect(semEvento.aviso).toContain('/evento/');
+
+    const semNada = await destinoDe(
+      rejectSubmission(formulario({ submission_id: SUBMISSAO, status: 'duplicate' })),
+    );
+    expect(semNada.caminho).toBe(FICHA);
+    expect(semNada.aviso).toMatch(/^Para marcar como duplicada, diz de que evento/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('uma recusa da base volta à ficha em português, em vez do ecrã de avaria', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'esta proposta já foi decidida — recarrega a página' },
+    });
+    const { caminho, aviso } = await destinoDe(
+      rejectSubmission(formulario({ submission_id: SUBMISSAO, status: 'rejected' })),
+    );
+    expect(caminho).toBe(FICHA);
+    expect(aviso).toBe('Esta proposta já foi decidida — recarrega a página');
+  });
+
+  it('cada decisão diz o que aconteceu', async () => {
+    const pedir = await destinoDe(
+      rejectSubmission(formulario({ submission_id: SUBMISSAO, status: 'needs_info' })),
+    );
+    expect(pedir.aviso).toMatch(/^Fica à espera de resposta/);
+    const recusar = await destinoDe(
+      rejectSubmission(formulario({ submission_id: SUBMISSAO, status: 'rejected' })),
+    );
+    expect(recusar.aviso).toMatch(/^Não publicada/);
+  });
+
+  it('fundir leva as datas da proposta guardada e diz quantas entraram', async () => {
+    getPropostaDaSubmissao.mockResolvedValue({
+      payload: {
+        sessions: [
+          { session_date: '2026-10-04', start_time: '21:30' },
+          { session_date: '2026-10-05', start_time: '21:30', end_time: '23:00' },
+          { session_date: '', start_time: '10:00' },
+        ],
+      },
+      municipality_id: 'ponte-do-bombo',
+      venue_id: null,
+    });
+    rpc.mockResolvedValue({ data: 1, error: null });
+
+    const { caminho, aviso } = await destinoDe(
+      fundirSubmissao(formulario({ submission_id: SUBMISSAO, evento: EVENTO })),
+    );
+    expect(rpc).toHaveBeenCalledWith('fundir_submissao_no_evento', {
+      p_submission_id: SUBMISSAO,
+      p_event_id: EVENTO,
+      p_sessions: [
+        { session_date: '2026-10-04', start_time: '21:30' },
+        { session_date: '2026-10-05', start_time: '21:30', end_time: '23:00' },
+      ],
+      p_actor: 'dono',
+    });
+    expect(caminho).toBe('/admin/fila');
+    expect(aviso).toBe('Fundida: uma data nova juntou-se ao evento que já existia.');
+    expect(revalidateTag).toHaveBeenCalled();
+  });
+
+  it('fundir sem um evento escolhido da lista não chega à base', async () => {
+    const { caminho } = await destinoDe(
+      fundirSubmissao(formulario({ submission_id: SUBMISSAO, evento: 'Noite de Fados' })),
+    );
+    expect(caminho).toBe(FICHA);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(getPropostaDaSubmissao).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * As ações chamam funções pelo nome, e um nome é uma cadeia que o compilador
  * não verifica. Ler as migrações é o mais perto que se chega, sem base de
  * dados, de garantir que a assinatura que a ação usa é a que a base tem.
@@ -564,6 +1082,24 @@ describe('as funções da base que as ações chamam', () => {
     );
     expect(sql).toMatch(
       /function public\.dismiss_unresolved_venue\(\s*p_normalized\s+text,\s*p_actor\s+text\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.pausar_fonte\(\s*p_fonte\s+text,\s*p_ate\s+timestamptz,\s*p_motivo\s+text,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.reabrir_fonte\(\s*p_fonte\s+text,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.definir_fonte_ligada\(\s*p_fonte\s+text,\s*p_ligada\s+boolean,\s*p_motivo\s+text,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.update_event\(\s*p_event_id\s+uuid,\s*p_patch\s+jsonb,\s*p_sessions\s+jsonb,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.unlock_event_fields\(\s*p_event_id\s+uuid,\s*p_actor\s+text,\s*p_fields\s+text\[\] default null\s*\)/,
+    );
+    expect(sql).toMatch(
+      /function public\.fundir_submissao_no_evento\(\s*p_submission_id\s+uuid,\s*p_event_id\s+uuid,\s*p_sessions\s+jsonb,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,
     );
     expect(sql).toMatch(
       /function public\.create_region\(\s*p_id\s+text,\s*p_name\s+text,\s*p_article\s+text,\s*p_cim_name\s+text,\s*p_cim_url\s+text,\s*p_domain\s+text,\s*p_contact_email\s+text,\s*p_ical_uid_domain\s+text,\s*p_municipalities\s+jsonb,\s*p_actor\s+text,\s*p_ip_hash\s+text default null\s*\)/,

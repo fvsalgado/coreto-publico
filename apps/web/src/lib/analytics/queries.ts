@@ -111,11 +111,20 @@ function toEventStatRow(row: StatsQueryRow): EventStatRow | null {
 async function topEvents(
   column: 'views' | 'clicks',
   municipalityId: string | null,
+  concelhos: readonly string[] | null,
 ): Promise<EventStatRow[]> {
   const supabase = requireAdminClient();
 
   let query = supabase.from('event_stats').select(STATS_FIELDS).gt(column, 0);
   if (municipalityId) query = query.eq('events.municipality_id', municipalityId);
+  // Os concelhos da região escolhida no painel (C4-015): as contagens de uma
+  // região não são de outra.
+  if (concelhos) {
+    query = query.in(
+      'events.municipality_id',
+      concelhos.length > 0 ? [...concelhos] : ['__nenhum__'],
+    );
+  }
 
   const { data, error } = await query.order(column, { ascending: false }).limit(TOP_LIMIT);
 
@@ -171,12 +180,18 @@ function sumTotals(rows: MunicipalityStatRow[]): StatTotals {
  * sempre os onze, para que um concelho a zero continue à vista mesmo quando
  * se está a olhar para outro.
  */
-export async function eventStatsOverview(municipalityId: string | null): Promise<StatsOverview> {
-  const [topByViews, topByClicks, byMunicipality] = await Promise.all([
-    topEvents('views', municipalityId),
-    topEvents('clicks', municipalityId),
+export async function eventStatsOverview(
+  municipalityId: string | null,
+  concelhos: readonly string[] | null = null,
+): Promise<StatsOverview> {
+  const [topByViews, topByClicks, todosOsConcelhos] = await Promise.all([
+    topEvents('views', municipalityId, concelhos),
+    topEvents('clicks', municipalityId, concelhos),
     statsByMunicipality(),
   ]);
+  const byMunicipality = concelhos
+    ? todosOsConcelhos.filter((linha) => concelhos.includes(linha.municipalityId))
+    : todosOsConcelhos;
 
   return { topByViews, topByClicks, byMunicipality, total: sumTotals(byMunicipality) };
 }

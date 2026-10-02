@@ -20,7 +20,12 @@ const monthlyReport = vi.hoisted(() =>
 );
 const servico = vi.hoisted(() => ({ ligado: true }));
 
-vi.mock('@/src/lib/admin/auth', () => ({ requireAdmin }));
+// A sessão é a do dono, que gere todas as regiões: o recorte de quem só gere
+// uma prova-se em `exportar-relatorio.test.ts`.
+vi.mock('@/src/lib/admin/auth', () => ({
+  requireAdmin,
+  exigirSessao: async () => ({ tipo: 'dono' as const, actor: await requireAdmin() }),
+}));
 vi.mock('@/src/lib/admin/queries', () => ({ listRegionsAdmin, monthlyReport }));
 vi.mock('@/src/lib/env', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/src/lib/env')>()),
@@ -180,6 +185,33 @@ describe('GET /admin/relatorios/relatorio.csv', () => {
     expect(resposta.headers.get('Content-Disposition')).toBe(
       'attachment; filename="coreto-medio-tejo-2026-08.csv"',
     );
+  });
+
+  /*
+   * Uma tabela por ficheiro, para quem a abre numa folha de cálculo (C4-033):
+   * o CSV por blocos tinha cinco tabelas com cabeçalhos diferentes no mesmo
+   * ficheiro, e nomes de coluna de máquina.
+   */
+  it('com `tabela`, uma tabela só, com cabeçalhos em português e nomes de concelho', async () => {
+    const resposta = await GET(pedido('?regiao=medio-tejo&mes=2026-08&tabela=eventos-a-decorrer'));
+
+    expect(resposta.status).toBe(200);
+    expect(resposta.headers.get('Content-Disposition')).toBe(
+      'attachment; filename="coreto-medio-tejo-2026-08-eventos-a-decorrer.csv"',
+    );
+    const corpo = new TextDecoder().decode(new Uint8Array(await resposta.arrayBuffer()));
+    const linhas = corpo
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .split('\r\n');
+    expect(linhas[0]).toBe('Concelho;Eventos a decorrer');
+    expect(linhas).toContain('Tomar;3');
+    expect(corpo).not.toMatch(/seccao|concelho_id/);
+  });
+
+  it('uma tabela que não existe responde 404, e não o ficheiro por blocos', async () => {
+    const resposta = await GET(pedido('?regiao=medio-tejo&mes=2026-08&tabela=inventada'));
+    expect(resposta.status).toBe(404);
   });
 
   it('uma leitura falhada rebenta em vez de entregar um ficheiro a zeros', async () => {

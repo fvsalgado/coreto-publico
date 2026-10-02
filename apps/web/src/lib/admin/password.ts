@@ -1,4 +1,4 @@
-import { scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { reportarErro } from '../registo';
 
 /**
@@ -49,4 +49,52 @@ export function verifyPassword(password: string, encoded: string): boolean {
     reportarErro('verifyPassword', error);
     return false;
   }
+}
+
+/**
+ * Os parâmetros do scrypt das contas — os mesmos de `scripts/hash-password.ts`,
+ * que faz o do dono. Uma pessoa e o dono pagam o mesmo por cada tentativa de
+ * quem queira adivinhar, e é a mesma `verifyPassword` que confere os dois.
+ */
+const CUSTO = 32_768;
+const BLOCO = 8;
+const PARALELISMO = 1;
+const COMPRIMENTO = 64;
+const SAL = 16;
+
+/** O mínimo de uma palavra-passe, o mesmo do `hash-password.ts`. */
+export const PALAVRA_PASSE_MINIMA = 12;
+
+/** O hash de uma palavra-passe nova, na forma `scrypt$N$r$p$sal$hash`. */
+export function gerarHashDaSenha(password: string): string {
+  const salt = randomBytes(SAL);
+  const derived = scryptSync(password, salt, COMPRIMENTO, {
+    N: CUSTO,
+    r: BLOCO,
+    p: PARALELISMO,
+    maxmem: 128 * CUSTO * BLOCO * 2,
+  });
+  return [
+    'scrypt',
+    CUSTO,
+    BLOCO,
+    PARALELISMO,
+    salt.toString('base64'),
+    derived.toString('base64'),
+  ].join('$');
+}
+
+/**
+ * Um hash de ninguém, para gastar o mesmo tempo quando o email não existe.
+ *
+ * Sem isto, a entrada respondia mais depressa a um email desconhecido — sem
+ * scrypt nenhum — do que a um conhecido com a palavra-passe errada, e o
+ * relógio dizia a quem tenta quais são os emails das contas. A mensagem já é a
+ * mesma nos dois casos; o tempo passa a ser também.
+ */
+let hashDeNinguem: string | null = null;
+
+export function gastarOMesmoTempo(password: string): void {
+  hashDeNinguem ??= gerarHashDaSenha(randomBytes(18).toString('base64url'));
+  verifyPassword(password, hashDeNinguem);
 }

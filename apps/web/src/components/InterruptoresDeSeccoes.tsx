@@ -50,6 +50,12 @@ function quandoEQuem(linha: { updated_at: string; updated_by: string | null }): 
   return linha.updated_by ? `${dia}, por ${linha.updated_by}` : dia;
 }
 
+/*
+ * O bloco «O SQL que repõe este estado» saiu daqui (C4-018): era a primeira
+ * coisa técnica que o painel punha à frente de quem gere uma região, e a quem
+ * opera serve-lhe melhor uma consulta que o gera a partir da base — está em
+ * `docs/OPERACAO.md`, «Semear numa migração o estado das secções».
+ */
 interface Props {
   regiao: string;
   seccoes: SiteSectionRow[];
@@ -100,32 +106,6 @@ export function InterruptoresDeSeccoes({ regiao, seccoes }: Props) {
           );
         })}
       </ul>
-
-      <details className="mt-3">
-        <summary className="min-h-11 cursor-pointer py-2.5 text-sm underline underline-offset-4">
-          O SQL que repõe este estado
-        </summary>
-        <p className="mt-2 max-w-2xl text-sm text-muted">
-          Para que o repositório volte a nascer com estas escolhas, estas linhas entram numa
-          migração. Que secções existem continua a ser do código; o que estas linhas semeiam é
-          apenas se cada uma nasce ligada.
-        </p>
-        {/* As linhas de SQL rolam num telemóvel; o foco é o que deixa um
-            teclado chegar ao fim delas (2.1.1). */}
-        <pre
-          tabIndex={0}
-          className="mt-2 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
-        >
-          {SECCOES.map(
-            // A chave é composta desde que há regiões: sem o `region_id`,
-            // este update tocava as linhas de todas.
-            (seccao) =>
-              `update public.site_sections set is_enabled = ${
-                (estadoDaSeccao.get(seccao.seccao)?.is_enabled ?? true) ? 'true' : 'false'
-              } where region_id = '${regiao}' and id = '${seccao.seccao}';`,
-          ).join('\n')}
-        </pre>
-      </details>
     </>
   );
 }

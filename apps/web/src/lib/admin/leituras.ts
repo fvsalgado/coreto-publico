@@ -71,9 +71,16 @@ export async function registarLeitura(
  * trabalho, `status=approved&channel=email` é alguém a rever o que já passou —
  * e cabe numa coluna de texto.
  */
-export function recorteDaFila(status: string | undefined, channel: string | undefined): string {
+export function recorteDaFila(
+  status: string | undefined,
+  channel: string | undefined,
+  regioes: readonly string[] | null = null,
+): string {
   const params = new URLSearchParams();
   if (status) params.set('status', status);
   if (channel) params.set('channel', channel);
+  // As regiões entram desde que a fila se recorta por elas (C4-015): «quem viu
+  // o quê» passa a dizer também de que região era o que se viu.
+  if (regioes) params.set('regiao', regioes.join(','));
   return params.toString() || 'tudo';
 }

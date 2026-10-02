@@ -1,6 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { chaveDaSessao, createSessionToken, readSessionToken } from './session';
+import {
+  chaveDaPorta,
+  chaveDaSessao,
+  conferirAssinaturaDaPessoa,
+  createPersonToken,
+  createSessionToken,
+  lerSessaoNaPorta,
+  readSessionToken,
+} from './session';
 
 /**
  * Gerado a cada execução, e não escrito no ficheiro: uma cadeia com ar de
@@ -98,5 +106,102 @@ describe('trocar a palavra-passe fecha as sessões abertas', () => {
     // Sem o `\n`, `('ab', 'cd')` e `('a', 'bcd')` assinavam com a mesma cadeia
     // — e uma troca de palavra-passe podia, por azar, não revogar nada.
     expect(chaveDaSessao('ab', 'cd')).not.toBe(chaveDaSessao('a', 'bcd'));
+  });
+});
+
+/**
+ * A sessão de uma pessoa (0170): três partes, duas assinaturas.
+ *
+ * A porta (o middleware) confere a segunda sem ir à base; o servidor confere
+ * a primeira com o hash da palavra-passe dessa pessoa. As duas metades têm de
+ * valer sozinhas — e nenhuma pode deixar passar um token do dono como de uma
+ * pessoa, nem o contrário.
+ */
+describe('a sessão de uma pessoa', () => {
+  const PESSOA = '0b8e5c2e-4b7a-4c55-9a3f-2f6a1d2b3c4d';
+  const chaves = () => ({
+    daPessoa: chaveDaSessao(SECRET, HASH),
+    daPorta: chaveDaPorta(SECRET),
+  });
+
+  it('passa a porta, e diz de quem é', async () => {
+    const token = await createPersonToken(PESSOA, 'Ana Silva · ana@cim.pt', chaves());
+    const naPorta = await lerSessaoNaPorta(token, {
+      doDono: chaveDaSessao(SECRET, HASH_NOVO),
+      daPorta: chaveDaPorta(SECRET),
+    });
+    expect(naPorta).toMatchObject({ tipo: 'pessoa', pessoaId: PESSOA });
+  });
+
+  it('a assinatura da pessoa confere com o hash dela, e deixa de conferir quando ele muda', async () => {
+    const token = await createPersonToken(PESSOA, 'Ana', chaves());
+    expect(await conferirAssinaturaDaPessoa(token, chaveDaSessao(SECRET, HASH))).toBe(true);
+    expect(await conferirAssinaturaDaPessoa(token, chaveDaSessao(SECRET, HASH_NOVO))).toBe(false);
+  });
+
+  it('recusa à porta uma assinatura da porta feita com outro segredo', async () => {
+    const token = await createPersonToken(PESSOA, 'Ana', {
+      daPessoa: chaveDaSessao(SECRET, HASH),
+      daPorta: chaveDaPorta(randomBytes(32).toString('base64url')),
+    });
+    expect(
+      await lerSessaoNaPorta(token, { doDono: null, daPorta: chaveDaPorta(SECRET) }),
+    ).toBeNull();
+  });
+
+  it('recusa um corpo trocado por baixo das mesmas assinaturas', async () => {
+    const token = await createPersonToken(PESSOA, 'Ana', chaves());
+    const [, daPessoa, daPorta] = token.split('.');
+    const outro = Buffer.from(
+      JSON.stringify({ sub: PESSOA.replace('0b8e', '1b8e'), actor: 'Ana', exp: 9e9, jti: 'x' }),
+    ).toString('base64url');
+    expect(
+      await lerSessaoNaPorta(`${outro}.${daPessoa}.${daPorta}`, {
+        doDono: null,
+        daPorta: chaveDaPorta(SECRET),
+      }),
+    ).toBeNull();
+  });
+
+  it('um token de pessoa nunca é lido como do dono, nem um do dono como de uma pessoa', async () => {
+    const daPessoa = await createPersonToken(PESSOA, 'Ana', chaves());
+    expect(await readSessionToken(daPessoa, chaveDaSessao(SECRET, HASH))).toBeNull();
+
+    // Um token de duas partes com o `sub` de uma pessoa não foi emitido por
+    // este servidor — nem que esteja assinado com a chave do dono.
+    const forjado = await createSessionToken(
+      'Ana',
+      chaveDaSessao(SECRET, HASH),
+      Date.now(),
+      PESSOA,
+    );
+    expect(
+      await lerSessaoNaPorta(forjado, {
+        doDono: chaveDaSessao(SECRET, HASH),
+        daPorta: chaveDaPorta(SECRET),
+      }),
+    ).toBeNull();
+  });
+
+  it('as sessões do dono abertas antes das contas — sem `sub` — continuam a ser do dono', async () => {
+    const antigo = await createSessionToken('gestor', chaveDaSessao(SECRET, HASH));
+    expect(
+      await lerSessaoNaPorta(antigo, {
+        doDono: chaveDaSessao(SECRET, HASH),
+        daPorta: chaveDaPorta(SECRET),
+      }),
+    ).toMatchObject({ tipo: 'dono', payload: { actor: 'gestor' } });
+  });
+
+  it('a chave da porta não é a chave do dono, nem o segredo em bruto da barreira', () => {
+    expect(chaveDaPorta(SECRET)).not.toBe(SECRET);
+    expect(chaveDaPorta(SECRET)).not.toBe(chaveDaSessao(SECRET, HASH));
+  });
+
+  it('uma sessão de pessoa expirada não passa a porta', async () => {
+    const token = await createPersonToken(PESSOA, 'Ana', chaves(), Date.now() - 9 * 60 * 60 * 1000);
+    expect(
+      await lerSessaoNaPorta(token, { doDono: null, daPorta: chaveDaPorta(SECRET) }),
+    ).toBeNull();
   });
 });

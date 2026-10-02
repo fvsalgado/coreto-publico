@@ -97,6 +97,7 @@ corrigida para o número errado por quem só olhe para ela.
 | [`docs/EMAIL.md`](docs/EMAIL.md)                                     | O canal de entrada por email                                                                   |
 | [`docs/DNS.md`](docs/DNS.md)                                         | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)                      |
 | [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                               | Como nasce uma região nova — sem um commit                                                     |
+| [`docs/ENTRADA.md`](docs/ENTRADA.md)                                 | O guia para a CIM: o que nos dá, o que decide, os papéis no painel e os passos                 |
 | [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/)               | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário)                   |
 
 Porque é que a impressão digital tem de ser idêntica dos dois lados, porque é

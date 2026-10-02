@@ -210,7 +210,8 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
     campos: [
       {
         campo: 'submissoes_recebidas.canal',
-        conta: 'Por onde entrou: recolha automática, email ou formulário público.',
+        conta:
+          'Por onde entrou: recolha automática, email, ou envio por programa — o canal que o formulário público deixou quando saiu do sítio.',
       },
       { campo: 'submissoes_recebidas.recebidas', conta: 'Quantas chegaram no mês.' },
     ],

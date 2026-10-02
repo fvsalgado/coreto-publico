@@ -1,15 +1,26 @@
+import { emLisboa } from '@coreto/core/dates';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
+import { SemAcessoNoPainel } from '@/src/components/SemAcessoNoPainel';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
+import { exigirSessao } from '@/src/lib/admin/auth';
 import { diferenca, ondeVerAEntidade, volumososOmitidos } from '@/src/lib/admin/auditoria';
 import {
   listAdminActions,
+  nomesDasEntidades,
   opcoesDaAuditoria,
   type OpcoesDaAuditoria,
   type RecorteDaAuditoria,
 } from '@/src/lib/admin/queries';
+import {
+  acaoDaAuditoria,
+  CAMPO_DO_EVENTO,
+  ENTIDADE_DA_AUDITORIA,
+  rotulo,
+} from '@/src/lib/admin/rotulos';
 import { hasServiceRole } from '@/src/lib/env';
+import { formatLongDate, formatTime } from '@/src/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,7 +96,7 @@ function Recortes({ opcoes, recorte }: { opcoes: OpcoesDaAuditoria; recorte: Rec
           <option value="">Todas</option>
           {opcoes.actions.map((action) => (
             <option key={action} value={action}>
-              {action}
+              {acaoDaAuditoria(action)}
             </option>
           ))}
         </select>
@@ -97,7 +108,7 @@ function Recortes({ opcoes, recorte }: { opcoes: OpcoesDaAuditoria; recorte: Rec
           <option value="">Tudo</option>
           {opcoes.entityTypes.map((tipo) => (
             <option key={tipo} value={tipo}>
-              {tipo}
+              {rotulo(ENTIDADE_DA_AUDITORIA, tipo)}
             </option>
           ))}
         </select>
@@ -158,7 +169,16 @@ function Recortes({ opcoes, recorte }: { opcoes: OpcoesDaAuditoria; recorte: Rec
  * linhas despejadas fazem uma página de centenas de quilobytes para quem
  * normalmente só quer ver quem fez o quê. Quem precisa do detalhe abre a linha.
  */
-function MudancaDaAcao({ before, after }: { before: unknown; after: unknown }) {
+function MudancaDaAcao({
+  before,
+  after,
+  doEvento,
+}: {
+  before: unknown;
+  after: unknown;
+  /** Num evento, os campos dizem-se pelo nome que têm no formulário. */
+  doEvento: boolean;
+}) {
   const linhas = diferenca(before, after);
   const omitidos = volumososOmitidos(before, after);
 
@@ -175,7 +195,9 @@ function MudancaDaAcao({ before, after }: { before: unknown; after: unknown }) {
       <dl className="mt-2 space-y-2 text-xs">
         {linhas.map((linha) => (
           <div key={linha.campo}>
-            <dt className="font-mono font-medium">{linha.campo}</dt>
+            <dt className={doEvento ? 'font-medium' : 'font-mono font-medium'}>
+              {doEvento ? rotulo(CAMPO_DO_EVENTO, linha.campo) : linha.campo}
+            </dt>
             <dd className="mt-0.5 break-words">
               {valor(linha.antes)} <span aria-hidden="true">→</span>
               <span className="sr-only"> passou a </span> {valor(linha.depois)}
@@ -185,7 +207,7 @@ function MudancaDaAcao({ before, after }: { before: unknown; after: unknown }) {
       </dl>
       {omitidos.length > 0 ? (
         <p className="mt-2 text-xs text-muted">
-          Mudou também {omitidos.join(', ')} — texto longo, que não se mostra aqui para a gaveta
+          Mudou também {omitidos.join(', ')} — texto longo, que não se mostra aqui para a linha
           continuar legível.
         </p>
       ) : null}
@@ -195,6 +217,12 @@ function MudancaDaAcao({ before, after }: { before: unknown; after: unknown }) {
 
 export default async function Auditoria({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Auditoria" />;
+  /*
+   * A auditoria é do dono (C4-015). Guarda o que se decidiu e o que se viu em
+   * todas as regiões — incluindo quem abriu a fila de cada uma —, e as linhas
+   * não trazem a região: recortá-la seria adivinhar de quem é cada uma.
+   */
+  if ((await exigirSessao()).tipo !== 'dono') return <SemAcessoNoPainel titulo="Auditoria" />;
 
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? '1') || 1);
@@ -209,6 +237,12 @@ export default async function Auditoria({ searchParams }: Props) {
     listAdminActions(page, PER_PAGE, recorte),
     opcoesDaAuditoria(),
   ]);
+  const nomes = await nomesDasEntidades(actions);
+  /** «2 de outubro de 2026, 18h05», na hora de Lisboa — a base guarda em UTC. */
+  const quando = (instante: string) => {
+    const { date, time } = emLisboa(Date.parse(instante));
+    return `${formatLongDate(date)}, ${formatTime(time) ?? time}`;
+  };
 
   return (
     <>
@@ -249,32 +283,46 @@ export default async function Auditoria({ searchParams }: Props) {
           <tbody>
             {actions.map((action) => (
               <tr key={action.id} className="border-b border-border">
-                <td className="py-2 pr-4 text-muted">
-                  {action.created_at.slice(0, 16).replace('T', ' ')}
-                </td>
+                <td className="py-2 pr-4 text-muted">{quando(action.created_at)}</td>
                 <td className="py-2 pr-4">{action.actor}</td>
-                <td className="py-2 pr-4">{action.action}</td>
+                <td className="py-2 pr-4">{acaoDaAuditoria(action.action)}</td>
                 <td className="py-2 pr-4 text-muted">
-                  {action.entity_type}{' '}
+                  {rotulo(ENTIDADE_DA_AUDITORIA, action.entity_type)}{' '}
                   {/*
-                    O identificador por inteiro, e não cortado aos oito
-                    carateres: cortado não serve nem para procurar. Com ficha
-                    própria no painel, leva ligação; sem ela, mostra-se e
-                    copia-se.
+                    O nome da coisa, e não o identificador (C4-011): «evento
+                    «Concerto de Outono»». Sem nome conhecido, o identificador
+                    por inteiro — cortado não serve nem para procurar. Com ficha
+                    própria no painel, leva ligação.
                   */}
                   {(() => {
                     const href = ondeVerAEntidade(action.entity_type, action.entity_id);
+                    // A entrada do dono regista-se com «dono» no lugar da pessoa:
+                    // não há linha de pessoa para ele, e a ligação não teria onde ir.
+                    if (action.entity_type === 'pessoa' && action.entity_id === 'dono') {
+                      return <span className="text-ink">quem opera o Coreto</span>;
+                    }
+                    const nome = nomes.get(`${action.entity_type}:${action.entity_id}`);
+                    const texto = nome ? `«${nome}»` : action.entity_id;
+                    const classe = nome
+                      ? 'text-ink underline underline-offset-4'
+                      : 'font-mono text-xs underline underline-offset-4';
                     return href ? (
-                      <Link href={href} className="font-mono text-xs underline underline-offset-4">
-                        {action.entity_id}
+                      <Link href={href} className={classe}>
+                        {texto}
                       </Link>
                     ) : (
-                      <span className="font-mono text-xs break-all">{action.entity_id}</span>
+                      <span className={nome ? 'text-ink' : 'font-mono text-xs break-all'}>
+                        {texto}
+                      </span>
                     );
                   })()}
                 </td>
                 <td className="py-2 pr-4">
-                  <MudancaDaAcao before={action.before} after={action.after} />
+                  <MudancaDaAcao
+                    before={action.before}
+                    after={action.after}
+                    doEvento={action.entity_type === 'event'}
+                  />
                 </td>
               </tr>
             ))}

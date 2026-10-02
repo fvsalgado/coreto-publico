@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
@@ -12,14 +13,23 @@ import {
   EVENTS_PAGE_SIZE,
   type AdminEventRow,
 } from '@/src/lib/admin/queries';
-import { listMunicipalitiesDeTodas } from '@/src/lib/queries/events';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
+import { ligacoesPublicas } from '@/src/lib/admin/ligacoes';
+import { pareceInformacaoMunicipal } from '@/src/lib/admin/moderacao';
+import { ESTADO_DO_EVENTO, rotulo } from '@/src/lib/admin/rotulos';
+import { listMunicipalitiesDeTodas, listVenuesDeTodas } from '@/src/lib/queries/events';
 import { hasServiceRole } from '@/src/lib/env';
+import { formatDateRange, formatWeekdayDate } from '@/src/lib/format';
+import { comInicialMaiuscula } from '@/src/lib/regiao';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'Eventos' };
 
-const CAMPO = 'mt-1 min-h-11 rounded border border-field bg-surface px-3 py-2 text-base text-ink';
+// `max-w-full`: o seletor das fontes, com nomes compridos, abria a página para
+// 615 px num ecrã de 390 (C4-019).
+const CAMPO =
+  'mt-1 min-h-11 max-w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 const BOTAO =
   'inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium';
 const ROTULO = 'block text-sm font-medium';
@@ -60,18 +70,18 @@ function Estado({ status }: { status: string }) {
       : status === 'draft'
         ? 'bg-highlight/15 text-highlight'
         : 'bg-border/40 text-muted';
-  const nome = ESTADOS.find((e) => e.value === status)?.label ?? status;
+  // O estado de UM evento, no singular — os rótulos do filtro são plurais.
+  const nome = comInicialMaiuscula(rotulo(ESTADO_DO_EVENTO, status));
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cor}`}>{nome}</span>;
 }
 
+/** «sábado, 28 de novembro», ou «28 nov – 3 dez»: datas por extenso, e não ISO (C4-017). */
 function quando(linha: AdminEventRow): string {
   if (!linha.date_start) return 'sem data';
-  if (!linha.date_end || linha.date_end === linha.date_start) return linha.date_start;
-  return `${linha.date_start} → ${linha.date_end}`;
-}
-
-function onde(linha: AdminEventRow): string {
-  return linha.venue_id ?? linha.location_name ?? '—';
+  if (!linha.date_end || linha.date_end === linha.date_start) {
+    return formatWeekdayDate(linha.date_start);
+  }
+  return formatDateRange(linha.date_start, linha.date_end);
 }
 
 interface Props {
@@ -92,12 +102,31 @@ export default async function Eventos({ searchParams }: Props) {
     antes: params.antes ?? '',
   };
 
-  const [linhas, contagens, concelhos, fontes] = await Promise.all([
-    listEvents(filtro),
-    countEventsByStatus(),
+  // O catálogo da região escolhida no cimo, e só das regiões onde esta sessão
+  // modera (C4-015). Os concelhos e as fontes dos filtros vêm do mesmo recorte:
+  // um filtro que oferece o concelho de outra região é uma porta para lá.
+  const ambito = await ambitoDoPainel({ pedida: params.regiao });
+  const [linhas, contagens, todosOsConcelhos, fontes, espacos] = await Promise.all([
+    listEvents(filtro, ambito),
+    countEventsByStatus(ambito),
     listMunicipalitiesDeTodas(),
-    listSourcesParaFiltro(),
+    listSourcesParaFiltro(ambito),
+    listVenuesDeTodas(),
   ]);
+  // Nomes, e não identificadores (C4-017): a lista dizia
+  // «biblioteca-gustavo-pinto-lopes · torres-novas · cm-torresnovas».
+  const nomeDoEspaco = new Map(espacos.map((espaco) => [espaco.id, espaco.name]));
+  const nomeDaFonte = new Map(fontes.map((fonte) => [fonte.id, fonte.name]));
+  // E a ficha pública no domínio da região do evento: a ligação relativa
+  // resolvia-se no anfitrião do painel, e dava 404 em qualquer outro.
+  const ligacoes = ligacoesPublicas(
+    ambito.disponiveis,
+    ambito.regiaoDoConcelho,
+    (await headers()).get('host'),
+  );
+  const concelhos = ambito.concelhos
+    ? todosOsConcelhos.filter((concelho) => ambito.concelhos?.includes(concelho.id))
+    : todosOsConcelhos;
 
   // O cursor da página seguinte é a última linha desta. Ver `listEvents`: a
   // data sozinha não chega, e o id desempata.
@@ -136,13 +165,13 @@ export default async function Eventos({ searchParams }: Props) {
       ) : null}
 
       <form method="get" className="mb-6 flex flex-wrap items-end gap-4">
-        <div>
+        <div className="min-w-0 max-w-full">
           <label htmlFor="q" className={ROTULO}>
             Título
           </label>
           <input id="q" name="q" defaultValue={filtro.q} className={CAMPO} />
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label htmlFor="estado" className={ROTULO}>
             Estado
           </label>
@@ -154,7 +183,7 @@ export default async function Eventos({ searchParams }: Props) {
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label htmlFor="concelho" className={ROTULO}>
             Concelho
           </label>
@@ -172,7 +201,7 @@ export default async function Eventos({ searchParams }: Props) {
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label htmlFor="fonte" className={ROTULO}>
             Fonte
           </label>
@@ -185,7 +214,7 @@ export default async function Eventos({ searchParams }: Props) {
             ))}
           </select>
         </div>
-        <div>
+        <div className="min-w-0 max-w-full">
           <label htmlFor="falta" className={ROTULO}>
             Falta
           </label>
@@ -247,15 +276,16 @@ export default async function Eventos({ searchParams }: Props) {
             <span className="text-sm text-muted">no máximo {LOTE_MAX} de cada vez</span>
           </div>
 
-          <div
-            className="overflow-x-auto"
-            tabIndex={0}
-            role="region"
-            aria-label="Tabela, deslocável na horizontal"
-          >
-            <table className="w-full text-sm">
+          {/*
+            Uma tabela no ecrã largo e cartões no telemóvel (C4-019), com o
+            mesmo HTML: abaixo de 640 px cada linha passa a bloco, o cabeçalho
+            sai, e cada dado leva o seu rótulo. A tabela de 526 px rolava na
+            horizontal num ecrã de 390.
+          */}
+          <div className="sm:overflow-x-auto">
+            <table className="block w-full text-sm sm:table">
               <caption className="sr-only">Eventos do catálogo, com os filtros aplicados</caption>
-              <thead>
+              <thead className="hidden sm:table-header-group">
                 <tr className="border-b border-border text-left">
                   <th scope="col" className="py-2 pr-3">
                     <span className="sr-only">Escolher</span>
@@ -277,44 +307,91 @@ export default async function Eventos({ searchParams }: Props) {
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {linhas.map((linha) => (
-                  <tr key={linha.id} className="border-b border-border align-top">
-                    <td className="pr-3">
-                      {/* O rótulo sem texto é o alvo: 44 px à volta de uma
-                          caixa de 20; o nome vem do `aria-label`. */}
-                      <label className="flex min-h-11 items-center">
-                        <input
-                          type="checkbox"
-                          name="ids"
-                          value={linha.id}
-                          aria-label={`Escolher ${linha.title}`}
-                          className="size-5 accent-accent"
-                        />
-                      </label>
-                    </td>
-                    <th scope="row" className="py-2 pr-4 text-left font-normal">
-                      <Link
-                        href={`/evento/${linha.slug}`}
-                        className="underline underline-offset-4"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`${linha.title} (abre noutro separador)`}
+              <tbody className="block sm:table-row-group">
+                {linhas.map((linha) => {
+                  const fichaPublica =
+                    linha.status === 'published'
+                      ? ligacoes.doConcelho(linha.municipality_id, `/evento/${linha.slug}`)
+                      : null;
+                  return (
+                    <tr
+                      key={linha.id}
+                      className="relative block border-b border-border py-2 pl-12 align-top sm:table-row sm:p-0"
+                    >
+                      <td className="absolute top-1 left-0 sm:static sm:pr-3">
+                        {/* O rótulo sem texto é o alvo: 44 px à volta de uma
+                            caixa de 20; o nome vem do `aria-label`. */}
+                        <label className="flex min-h-11 min-w-11 items-center">
+                          <input
+                            type="checkbox"
+                            name="ids"
+                            value={linha.id}
+                            aria-label={`Escolher ${linha.title}`}
+                            className="size-5 accent-accent"
+                          />
+                        </label>
+                      </td>
+                      <th
+                        scope="row"
+                        className="block py-1 pr-4 text-left font-normal sm:table-cell sm:py-2"
                       >
-                        {linha.title}
-                      </Link>
-                      {linha.source_id ? (
-                        <span className="block text-xs text-muted">{linha.source_id}</span>
-                      ) : null}
-                    </th>
-                    <td className="py-2 pr-4 tabular-nums">{quando(linha)}</td>
-                    <td className="py-2 pr-4">{onde(linha)}</td>
-                    <td className="py-2 pr-4">{linha.municipality_id}</td>
-                    <td className="py-2 pr-4">
-                      <Estado status={linha.status} />
-                    </td>
-                  </tr>
-                ))}
+                        {/* O título abre a ficha de correção, no painel; a
+                            ficha pública vai ao lado, no domínio certo. */}
+                        <Link
+                          href={`/admin/eventos/${encodeURIComponent(linha.id)}`}
+                          className="font-medium underline underline-offset-4"
+                        >
+                          {linha.title}
+                        </Link>
+                        {/* O que não é programação, à vista na lista (C2-022):
+                            é aqui que se encontra o que já foi publicado. */}
+                        {pareceInformacaoMunicipal(linha.title) ? (
+                          <span className="ml-2 inline-block rounded bg-highlight/15 px-1.5 text-xs font-medium text-highlight">
+                            parece informação municipal
+                          </span>
+                        ) : null}
+                        <span className="block text-xs text-muted">
+                          {linha.source_id
+                            ? (nomeDaFonte.get(linha.source_id) ?? linha.source_id)
+                            : null}
+                          {linha.source_id && fichaPublica ? ' · ' : null}
+                          {fichaPublica ? (
+                            <a
+                              href={fichaPublica}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline underline-offset-4"
+                            >
+                              ver no sítio
+                              <span className="sr-only">
+                                {' '}
+                                «{linha.title}» (abre noutro separador)
+                              </span>
+                            </a>
+                          ) : null}
+                        </span>
+                      </th>
+                      <td className="block sm:table-cell sm:py-2 sm:pr-4">
+                        <span className="text-muted sm:hidden">Quando: </span>
+                        {quando(linha)}
+                      </td>
+                      <td className="block sm:table-cell sm:py-2 sm:pr-4">
+                        <span className="text-muted sm:hidden">Onde: </span>
+                        {(linha.venue_id ? nomeDoEspaco.get(linha.venue_id) : null) ??
+                          linha.location_name ??
+                          linha.venue_id ??
+                          '—'}
+                      </td>
+                      <td className="block sm:table-cell sm:py-2 sm:pr-4">
+                        <span className="text-muted sm:hidden">Concelho: </span>
+                        {ambito.nomeDoConcelho.get(linha.municipality_id) ?? linha.municipality_id}
+                      </td>
+                      <td className="block pt-1 sm:table-cell sm:py-2 sm:pr-4">
+                        <Estado status={linha.status} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

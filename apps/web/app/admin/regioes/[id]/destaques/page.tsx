@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { MINIMO_DE_DESTAQUES } from '@coreto/core';
 import { PageHeader } from '@/src/components/PageHeader';
+import { exigirSessao } from '@/src/lib/admin/auth';
+import { pode } from '@/src/lib/admin/papeis';
 import {
   definirAlvoDeDestaques,
   fixarDestaque,
@@ -19,7 +21,7 @@ import { todayInLisbon } from '@coreto/core';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: 'Montra da entrada' };
+export const metadata: Metadata = { title: 'Destaques da entrada' };
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -51,7 +53,10 @@ export default async function DestaquesDaRegiaoPage({ params, searchParams }: Pr
 
   const regioes = await listRegionsAdmin();
   const regiao = regioes.find((linha) => linha.id === id);
-  if (!regiao) notFound();
+  // Os destaques da entrada são de quem gere a região (C4-015). A de outra
+  // responde como uma que não existe.
+  const sessao = await exigirSessao();
+  if (!regiao || !pode(sessao, regiao.id, 'gestor')) notFound();
 
   const [fixados, candidatos] = await Promise.all([
     listDestaquesDoPainel(id),
@@ -67,13 +72,21 @@ export default async function DestaquesDaRegiaoPage({ params, searchParams }: Pr
   return (
     <>
       <PageHeader
-        title="Montra da entrada"
+        title="Destaques da entrada"
         eyebrow={regiao.name}
-        lead="Os cartazes que abrem a página inicial. O que fixar aqui entra pela ordem que lhe der; o que faltar para chegar ao número é tirado à sorte da semana, e muda sozinho todos os dias."
+        lead="Os cartazes que abrem a página inicial. O que fixares aqui entra pela ordem que lhe deres; o que faltar para chegar ao número é tirado à sorte da semana, e muda sozinho todos os dias."
+        // A trilha leva a própria página no fim (`Migalhas` desenha só os
+        // ascendentes) — sem ela, a ficha da região passava por ser esta
+        // página e não se desenhava. E a lista das regiões é do dono: a um
+        // gestor, a migalha levava a uma página que lhe diz que não é dele.
         migalhas={[
           { href: '/admin', label: 'Painel' },
-          { href: '/admin/regioes', label: 'Regiões' },
+          ...(sessao.tipo === 'dono' ? [{ href: '/admin/regioes', label: 'Regiões' }] : []),
           { href: `/admin/regioes/${encodeURIComponent(id)}`, label: regiao.name },
+          {
+            href: `/admin/regioes/${encodeURIComponent(id)}/destaques`,
+            label: 'Destaques da entrada',
+          },
         ]}
       />
 
@@ -90,7 +103,7 @@ export default async function DestaquesDaRegiaoPage({ params, searchParams }: Pr
         <form action={definirAlvoDeDestaques} className="mt-3 flex flex-wrap items-end gap-3">
           <input type="hidden" name="regiao" value={id} />
           <label htmlFor="alvo" className="text-sm">
-            <span className="block font-medium">Cartazes na montra</span>
+            <span className="block font-medium">Cartazes nos destaques</span>
             <input
               type="number"
               id="alvo"
@@ -106,22 +119,22 @@ export default async function DestaquesDaRegiaoPage({ params, searchParams }: Pr
           </button>
           <p className="max-w-prose text-sm text-muted">
             {alvo === 0
-              ? 'A zero, a entrada não mostra montra nenhuma — fica só a lista por dias.'
-              : `Abaixo de ${MINIMO_DE_DESTAQUES} a fila não se desenha: dois cartazes não são uma montra, e a lista por baixo mostra-os melhor.`}
+              ? 'A zero, a entrada não mostra destaques — fica só a lista por dias.'
+              : `Abaixo de ${MINIMO_DE_DESTAQUES} a fila não se desenha: dois cartazes não fazem destaque, e a lista por baixo mostra-os melhor.`}
           </p>
         </form>
       </section>
 
       <section aria-labelledby="fixados" className="mt-8">
         <h2 id="fixados" className="font-display text-lg font-semibold">
-          Fixados por si
+          Fixados por ti
         </h2>
         <p className="mt-1 max-w-prose text-sm text-muted">
           {aMostrar.length === 0
-            ? `Nenhum. A montra está a ser preenchida inteiramente pela semana, à sorte — ${alvo} de cada vez.`
+            ? `Nenhum. Os destaques estão a ser preenchidos inteiramente pela semana, à sorte — ${alvo} de cada vez.`
             : porEncher > 0
               ? `${aMostrar.length} ${aMostrar.length === 1 ? 'fixado' : 'fixados'}; ${porEncher} ${porEncher === 1 ? 'lugar é preenchido' : 'lugares são preenchidos'} pela semana.`
-              : `${aMostrar.length} fixados, que é o que a montra leva. ${aMostrar.length > alvo ? `Os ${aMostrar.length - alvo} últimos não chegam a aparecer.` : 'Nada é tirado à sorte.'}`}
+              : `${aMostrar.length} fixados, que é o que os destaques levam. ${aMostrar.length > alvo ? `Os ${aMostrar.length - alvo} últimos não chegam a aparecer.` : 'Nada é tirado à sorte.'}`}
         </p>
 
         {fixados.length > 0 ? (
@@ -174,8 +187,12 @@ export default async function DestaquesDaRegiaoPage({ params, searchParams }: Pr
                   <form action={largarDestaque}>
                     <input type="hidden" name="regiao" value={id} />
                     <input type="hidden" name="evento" value={linha.event_id} />
-                    <button type="submit" className={BOTAO}>
-                      Largar
+                    <button
+                      type="submit"
+                      className={BOTAO}
+                      aria-label={`Tirar «${linha.title}» dos destaques`}
+                    >
+                      Tirar
                     </button>
                   </form>
                 </div>

@@ -3,9 +3,11 @@ import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
 import { LACUNAS_COM_COLUNA, listaDeTrabalho } from '@/src/lib/admin/lacunas';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
 import { compararQualidade, fimDoMesPassado, type MedidaComparada } from '@/src/lib/admin/memoria';
 import {
   listEventsWithoutTime,
+  listSourceHealth,
   qualityByMunicipality,
   qualityBySource,
   qualitySnapshotAte,
@@ -305,15 +307,28 @@ function SemHora({ linhas, nomes }: { linhas: EventWithoutTimeRow[]; nomes: Map<
   );
 }
 
-export default async function Qualidade() {
+interface Props {
+  searchParams: Promise<{ regiao?: string }>;
+}
+
+export default async function Qualidade({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Qualidade" />;
 
+  /*
+   * A qualidade da região escolhida, e só dela (C4-015). A linha «Total»
+   * somava o Médio Tejo com a demonstração e com a região de ensaio, e um
+   * instrumento que mistura programação inventada com programação real não
+   * distingue uma melhoria de um artefacto (`docs/plano/07-painel.md` §2).
+   */
+  const ambito = await ambitoDoPainel({ pedida: (await searchParams).regiao });
+  const fontesDoRecorte =
+    ambito.regioes === null ? undefined : (await listSourceHealth(ambito)).map((fonte) => fonte.id);
   const fimDoPassado = fimDoMesPassado(new Date());
   const [porConcelho, porFonte, semHora, fotografia] = await Promise.all([
-    qualityByMunicipality(),
-    qualityBySource(),
-    listEventsWithoutTime(),
-    qualitySnapshotAte(fimDoPassado),
+    qualityByMunicipality(ambito),
+    qualityBySource(fontesDoRecorte),
+    listEventsWithoutTime(ambito),
+    qualitySnapshotAte(fimDoPassado, ambito),
   ]);
 
   // Sem fotografia não há secção. Um mês sem memória escreve-se com a data da
@@ -325,7 +340,7 @@ export default async function Qualidade() {
     <>
       <PageHeader
         title="Qualidade"
-        lead="Não quantos eventos há — quantos deles dizem a que horas, onde e com que imagem. É a diferença entre uma montra e um depósito."
+        lead="Não quantos eventos há — quantos deles dizem a que horas, onde e com que imagem. É a diferença entre uma agenda que se consulta e uma lista que se arquiva."
       />
 
       {/*

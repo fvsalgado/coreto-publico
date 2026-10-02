@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { extractedEventSchema, publicSubmissionSchema } from '@coreto/core';
 import { buildSubmissionRow } from '../submissions/build-row';
 import {
+  avisoDoErroDaBase,
   CAMPOS_DA_REGIAO,
   camposRecebidos,
   changedFields,
@@ -18,6 +19,7 @@ import {
   propostoEmCartaz,
   readEvent,
   readSessions,
+  valoresDoEvento,
 } from './fields';
 
 /**
@@ -391,17 +393,26 @@ describe('propostoEmCartaz', () => {
  * `readEvent` vai procurar. Um teste mais esperto provaria outra coisa.
  */
 describe('o formulário de revisão pergunta por tudo o que se pode editar', () => {
-  const pagina = readFileSync(
-    fileURLToPath(new URL('../../../app/admin/fila/[id]/page.tsx', import.meta.url)),
-    'utf8',
-  );
+  // Os campos vivem num componente, partilhado pela ficha da fila e pela de
+  // um evento publicado (C4-017): é ele que tem de ter as caixas, e são as
+  // duas fichas que têm de o usar.
+  const ler = (caminho: string) =>
+    readFileSync(fileURLToPath(new URL(caminho, import.meta.url)), 'utf8');
+  const campos = ler('../../components/CamposDoEvento.tsx');
   const comCaixa = new Set(
-    [...pagina.matchAll(/name="([a-z_]+)"/g)].map((encontro) => encontro[1]),
+    [...campos.matchAll(/name="([a-z_]+)"/g)].map((encontro) => encontro[1]),
   );
 
   it.each(EDITABLE_FIELDS)('%s tem uma caixa', (campo) => {
     expect(comCaixa.has(campo)).toBe(true);
   });
+
+  it.each(['../../../app/admin/fila/[id]/page.tsx', '../../../app/admin/eventos/[id]/page.tsx'])(
+    '%s pergunta pelos campos do componente',
+    (pagina) => {
+      expect(ler(pagina)).toMatch(/<CamposDoEvento\b/);
+    },
+  );
 });
 
 describe('destinoDoPainel', () => {
@@ -732,5 +743,39 @@ describe('camposRecebidos', () => {
     expect(valor('Idade mínima')).toBe('6 anos');
     // O que não veio não se lista.
     expect(valor('Local')).toBeUndefined();
+  });
+});
+
+describe('valoresDoEvento', () => {
+  it('põe um evento guardado nos termos do formulário: texto vazio onde a base tem nulo', () => {
+    const valores = valoresDoEvento({
+      title: 'Concerto de Outono',
+      venue_id: null,
+      is_free: true,
+      price_display: null,
+    });
+    expect(valores.title).toBe('Concerto de Outono');
+    expect(valores.venue_id).toBe('');
+    expect(valores.price_display).toBe('');
+    expect(valores.is_free).toBe(true);
+    for (const campo of EDITABLE_FIELDS) expect(valores).toHaveProperty(campo);
+  });
+});
+
+describe('avisoDoErroDaBase: as restrições do evento dizem-se pelo que se escolheu', () => {
+  it('sem sítio, e com o espaço de outro concelho', () => {
+    expect(
+      avisoDoErroDaBase({
+        code: '23514',
+        message: 'new row for relation "events" violates check constraint "events_has_location"',
+      }),
+    ).toBe('Um evento tem de dizer onde é: escolhe um espaço, ou escreve o local livre.');
+    expect(
+      avisoDoErroDaBase({
+        code: '23514',
+        message:
+          'o espaço «cine-teatro» é de tomar, e o evento está marcado em abrantes — um evento não pode acontecer num espaço de outro concelho',
+      }),
+    ).toMatch(/^O espaço escolhido é de outro concelho/);
   });
 });

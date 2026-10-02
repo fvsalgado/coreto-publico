@@ -1,13 +1,43 @@
+import { emLisboa, todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { CamposDoEvento } from '@/src/components/CamposDoEvento';
 import { PageHeader } from '@/src/components/PageHeader';
+import { PublicadoAgora } from '@/src/components/PublicadoAgora';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
-import { approveSubmission, mergeEvents, rejectSubmission } from '@/src/lib/admin/actions';
+import { approveSubmission, fundirSubmissao, rejectSubmission } from '@/src/lib/admin/actions';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
 import {
-  findDuplicateCandidates,
+  datasNovas,
+  diaEHora,
+  fraseDoMotivo,
+  motivoForte,
+  resumoDoCandidato,
+} from '@/src/lib/admin/duplicados';
+import { ligacoesPublicas } from '@/src/lib/admin/ligacoes';
+import {
+  pareceInformacaoMunicipal,
+  REGRA_DO_QUE_E_PROGRAMACAO,
+  textoQueARecolhaArrumou,
+} from '@/src/lib/admin/moderacao';
+import { pode } from '@/src/lib/admin/papeis';
+import { enderecoDeEmail, mensagemAPedir, oQueFalta } from '@/src/lib/admin/pedir';
+import {
+  CANAL,
+  confiancaEmPalavras,
+  ESTADO_DA_PROPOSTA,
+  LEITURA_AUTOMATICA,
+  rotulo,
+} from '@/src/lib/admin/rotulos';
+import {
+  candidatosADuplicado,
   getSubmission,
+  lerEventoResumido,
   listAttachments,
+  nomeDaFonte,
+  sessoesDoEvento,
   signedAttachmentUrl,
 } from '@/src/lib/admin/queries';
 import {
@@ -24,51 +54,65 @@ import {
   listVenuesDeTodas,
 } from '@/src/lib/queries/events';
 import { hasServiceRole } from '@/src/lib/env';
+import { formatLongDate } from '@/src/lib/format';
+import { doNomeDaRegiao } from '@/src/lib/regiao';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: 'Submissão' };
+export const metadata: Metadata = { title: 'Proposta' };
 
 interface Props {
   params: Promise<{ id: string }>;
+  /**
+   * `decidir` e `evento` são o segundo passo dos botões de «Pode já cá estar»
+   * (a confirmação); `distinto` são os parecidos que quem modera pôs de lado
+   * como outro evento; `aviso` é a resposta de uma ação recusada.
+   */
+  searchParams: Promise<{
+    aviso?: string;
+    decidir?: string;
+    evento?: string;
+    distinto?: string;
+    /** O evento que a aprovação da proposta anterior publicou (C4-013). */
+    publicado?: string;
+  }>;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Quantas datas novas a confirmação de «Fundir com este» enumera antes de resumir. */
+const DATAS_A_ENUMERAR = 12;
 
 const FIELD =
   'mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 const LABEL = 'block text-sm font-medium';
 
-/**
- * Quantas linhas de sessão o formulário oferece — e é um **chão**, não um tecto.
- *
- * Era um tecto, e o tecto perdia sessões em silêncio: a RPC aceita e grava as
- * que lhe derem — medi dez —, mas a página só desenhava seis, e o que não tem
- * caixa não é submetido. Um candidato com nove sessões ficava gravado com seis,
- * e o `date_end` saía no dia da sexta em vez do da nona.
- *
- * Hoje nenhuma submissão tem mais de duas, por isso isto é profilaxia; mas as
- * fontes que trazem períodos longos existem, e a regra da casa proíbe mostrar
- * menos do que se leu sem o dizer.
- */
-const SESSION_ROWS_MINIMO = 6;
-
-/**
- * E um limite, porque um formulário com trezentas linhas não se modera.
- *
- * Quando o candidato traz mais do que isto, a página **diz quantas leu e
- * quantas está a mostrar** em vez de as deixar cair caladas.
- */
-const SESSION_ROWS_LIMITE = 60;
-
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-export default async function RevisaoSubmissao({ params }: Props) {
-  if (!hasServiceRole) return <SemChaveDeServico titulo="Submissão" />;
+export default async function RevisaoSubmissao({ params, searchParams }: Props) {
+  if (!hasServiceRole) return <SemChaveDeServico titulo="Proposta" />;
 
   const { id } = await params;
+  const query = await searchParams;
+  const ambito = await ambitoDoPainel();
   const submission = await getSubmission(id);
   if (!submission) notFound();
+
+  /*
+   * Uma submissão de uma região que não é desta sessão responde como uma que
+   * não existe (C4-015). Não «sem acesso»: isso dizia a quem experimenta
+   * identificadores que acertou numa. A leitura já ficou registada pelo
+   * `getSubmission`, que regista antes de ler — uma tentativa destas é
+   * exatamente o que esse registo existe para mostrar.
+   */
+  const regiaoDaProposta =
+    submission.region_id ??
+    (submission.municipality_id ? ambito.regiaoDoConcelho.get(submission.municipality_id) : null) ??
+    null;
+  if (!pode(ambito.sessao, regiaoDaProposta, 'editor')) notFound();
+  const regioesDaSessao = new Set(ambito.disponiveis.map((regiao) => regiao.id));
 
   const payload = (submission.payload ?? {}) as Record<string, unknown>;
 
@@ -80,31 +124,97 @@ export default async function RevisaoSubmissao({ params }: Props) {
     venue_id: submission.venue_id,
   });
   const proposedDates = proposedSessions(payload);
-  const linhasDeSessao = Math.min(
-    Math.max(proposedDates.length + 2, SESSION_ROWS_MINIMO),
-    SESSION_ROWS_LIMITE,
-  );
-  const sessoesPorMostrar = proposedDates.length - linhasDeSessao;
 
   const municipalityId = proposed.municipality_id;
   const title = proposed.title;
 
   /** A submissão veio da recolha, e não de uma pessoa a escrever. */
   const daRecolha = submission.channel === 'scraper';
+  /** O texto da fonte, quando a recolha o arrumou antes de o propor (C2-022). */
+  const arrumado = daRecolha ? textoQueARecolhaArrumou(payload) : null;
   /** Chegou por programa, já em campos: não há texto nem extração. */
   const porPrograma = formaDoPayload(payload) === 'programa';
   const raw = (payload.raw ?? {}) as Record<string, unknown>;
 
-  const [attachments, municipalities, categories, venues, ciclos, duplicates] = await Promise.all([
+  /*
+   * Os parecidos procuram-se no concelho da proposta — e só se ele é de uma
+   * região desta sessão: um concelho de outra região, vindo do que a fonte
+   * propôs, punha aqui títulos da agenda da vizinha.
+   *
+   * Pelo espaço, pelo dia e pela hora da primeira data, e não só pelo título
+   * (0172): o duplicado que mais acontece é o mesmo espetáculo com outro nome
+   * (C4-014).
+   */
+  const concelhoDaSessao = Boolean(
+    municipalityId && regioesDaSessao.has(ambito.regiaoDoConcelho.get(municipalityId) ?? ''),
+  );
+  const [
+    attachments,
+    todosOsConcelhos,
+    categories,
+    todosOsEspacos,
+    todosOsCiclos,
+    parecidos,
+    fonte,
+  ] = await Promise.all([
     listAttachments(id),
     listMunicipalitiesDeTodas(),
     listCategories(),
     listVenuesDeTodas(),
     listSeriesDeTodas(),
-    title && municipalityId
-      ? findDuplicateCandidates(title, str(proposedDates[0]?.date) || null, municipalityId)
+    title && municipalityId && concelhoDaSessao
+      ? candidatosADuplicado({
+          title,
+          date: proposedDates[0]?.date || null,
+          municipalityId,
+          venueId: proposed.venue_id || null,
+          startTime: proposedDates[0]?.start || null,
+        })
       : Promise.resolve([]),
+    nomeDaFonte(submission.source_id),
   ]);
+
+  // «Não é — é outro evento» tira o parecido da lista desta página. Não fica
+  // guardado em lado nenhum, e não precisa: o que fica é a decisão que se
+  // tomar a seguir — publicar, recusar ou fundir.
+  const distintos = new Set((query.distinto ?? '').split(',').filter((valor) => UUID.test(valor)));
+  const candidatos = parecidos.filter((candidato) => !distintos.has(candidato.event_id));
+  const decidir =
+    query.decidir === 'duplicada' || query.decidir === 'fundir' ? query.decidir : null;
+  // A confirmação só para um evento que está na lista: um identificador
+  // trazido na barra não escolhe nada que a página não tenha mostrado.
+  const escolhido =
+    decidir && query.evento
+      ? (candidatos.find((candidato) => candidato.event_id === query.evento) ?? null)
+      : null;
+  const novas =
+    escolhido && decidir === 'fundir'
+      ? datasNovas(proposedDates, await sessoesDoEvento(escolhido.event_id))
+      : [];
+  const ligacoes = ligacoesPublicas(
+    ambito.disponiveis,
+    ambito.regiaoDoConcelho,
+    (await headers()).get('host'),
+  );
+  /** Esta ficha, com os parecidos postos de lado e o que mais se pedir. */
+  const estaFicha = (extra: Record<string, string> = {}, ancora = ''): string => {
+    const parametros = new URLSearchParams();
+    if (distintos.size > 0) parametros.set('distinto', [...distintos].join(','));
+    for (const [chave, valor] of Object.entries(extra)) parametros.set(chave, valor);
+    const texto = parametros.toString();
+    return `/admin/fila/${encodeURIComponent(submission.id)}${texto ? `?${texto}` : ''}${ancora}`;
+  };
+
+  // As escolhas do formulário são só das regiões onde esta sessão modera: um
+  // concelho, um espaço ou um ciclo de outra região punham o evento na agenda
+  // da vizinha. A ação volta a verificá-lo do lado dela.
+  const municipalities = todosOsConcelhos.filter((concelho) =>
+    regioesDaSessao.has(concelho.region_id),
+  );
+  const concelhosDaSessao = new Set(municipalities.map((concelho) => concelho.id));
+  const venues = todosOsEspacos.filter((espaco) => concelhosDaSessao.has(espaco.municipality_id));
+  const ciclos = todosOsCiclos.filter((ciclo) => regioesDaSessao.has(ciclo.region_id));
+  const nomeDaRegiao = new Map(ambito.disponiveis.map((regiao) => [regiao.id, regiao.name]));
 
   const attachmentLinks = await Promise.all(
     attachments.map(async (attachment) => ({
@@ -114,41 +224,141 @@ export default async function RevisaoSubmissao({ params }: Props) {
   );
 
   const isResolved = submission.status !== 'pending' && submission.status !== 'needs_info';
+  // Numa proposta resolvida, o evento em que ela deu: o publicado, ou aquele
+  // de que era duplicada. A ligação «evento criado» levava de volta à fila.
+  const eventoDaDecisao = isResolved
+    ? await lerEventoResumido(
+        submission.resulting_event_id ?? submission.duplicate_of_event_id ?? '',
+      )
+    : null;
+  const fichaDaDecisao =
+    eventoDaDecisao?.status === 'published'
+      ? ligacoes.doConcelho(eventoDaDecisao.municipality_id, `/evento/${eventoDaDecisao.slug}`)
+      : null;
+
+  /*
+   * Pedir o que falta (C4-030): o que a ficha pública não vai saber dizer, e a
+   * mensagem a quem enviou, já escrita — no nome da agenda que essa pessoa
+   * conhece, e assinada por quem modera.
+   */
+  const falta = oQueFalta(proposed, proposedDates, propostoEmCartaz(payload));
+  const regiaoDaFicha = ambito.disponiveis.find((regiao) => regiao.id === regiaoDaProposta);
+  const agenda = regiaoDaFicha
+    ? `a agenda ${doNomeDaRegiao(regiaoDaFicha.article, regiaoDaFicha.name)}`
+    : 'a agenda';
+  const mensagem = mensagemAPedir({
+    titulo: title,
+    falta,
+    agenda,
+    assinatura: ambito.sessao.tipo === 'pessoa' ? ambito.sessao.pessoa.nome : `A equipa d${agenda}`,
+  });
+  const escreverA = submission.sender_email
+    ? enderecoDeEmail(submission.sender_email, mensagem.assunto, mensagem.corpo)
+    : null;
+  const chegou = formatLongDate(emLisboa(Date.parse(submission.created_at)).date);
+  const confianca = confiancaEmPalavras(submission.channel, submission.confidence);
 
   return (
     <>
-      <PageHeader title={title || submission.raw_subject || 'Submissão sem título'}>
+      <PageHeader title={title || submission.raw_subject || 'Proposta sem título'}>
+        {/* Na língua de quem modera (C4-011): dizia «form · pending ·
+            confiança 0.6», e o 0,6 era o mesmo para todas as propostas do
+            envio por programa — não distinguia nada. */}
         <p className="mt-1 text-sm text-muted">
-          {submission.channel} · {submission.status}
-          {submission.sender_email ? ` · ${submission.sender_email}` : ''}
-          {submission.confidence !== null ? ` · confiança ${submission.confidence}` : ''}
+          {rotulo(CANAL, submission.channel)} · {rotulo(ESTADO_DA_PROPOSTA, submission.status)}
+          {submission.sender_email && escreverA ? (
+            <>
+              {' · de '}
+              <a href={escreverA} className="underline underline-offset-4">
+                {submission.sender_email}
+              </a>
+            </>
+          ) : null}
+          {` · chegou a ${chegou}`}
+          {confianca ? ` · ${confianca}` : ''}
         </p>
       </PageHeader>
+
+      <PublicadoAgora
+        eventoId={query.publicado}
+        ambito={ambito}
+        ligacoes={ligacoes}
+        voltar={`/admin/fila/${encodeURIComponent(submission.id)}`}
+      />
+
+      {query.aviso ? (
+        <p role="alert" className="mb-6 rounded border border-highlight px-3 py-2 text-sm">
+          {query.aviso}
+        </p>
+      ) : null}
 
       {/* Porque é que isto está na fila. Estava guardado em `review_notes`
           desde o início e nunca aparecia — quem abria a página via o estado e
           a confiança, e tinha de adivinhar o que faltava. */}
       {!isResolved && submission.review_notes ? (
         <p className="mb-6 rounded border border-highlight px-3 py-2 text-sm text-highlight">
-          <strong>Está na fila porque:</strong> {submission.review_notes}
+          <strong>
+            {submission.status === 'needs_info' ? 'À espera de resposta:' : 'Está na fila porque:'}
+          </strong>{' '}
+          {submission.review_notes}
+        </p>
+      ) : null}
+
+      {/* A regra do que é programação (C2-022), onde a decisão se toma. */}
+      {!isResolved && pareceInformacaoMunicipal(title) ? (
+        <p className="mb-6 rounded border border-highlight px-3 py-2 text-sm">
+          <strong>A regra da agenda:</strong> {REGRA_DO_QUE_E_PROGRAMACAO} Se não é, recusa com «Não
+          serve para a agenda».
         </p>
       ) : null}
 
       {isResolved ? (
         <p role="status" className="mb-6 rounded border border-border bg-surface px-3 py-2 text-sm">
-          Esta submissão já foi resolvida como <strong>{submission.status}</strong>
-          {submission.resulting_event_id ? (
+          Esta proposta já foi decidida:{' '}
+          <strong>{rotulo(ESTADO_DA_PROPOSTA, submission.status)}</strong>
+          {eventoDaDecisao ? (
             <>
-              {' '}
-              —{' '}
-              <Link href={`/admin/fila`} className="underline">
-                evento criado
-              </Link>
+              {submission.status === 'approved' ? ' — ' : ', de '}
+              {fichaDaDecisao ? (
+                <a
+                  href={fichaDaDecisao}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  «{eventoDaDecisao.title}»
+                  <span className="sr-only"> (abre a ficha pública noutro separador)</span>
+                </a>
+              ) : (
+                <>«{eventoDaDecisao.title}»</>
+              )}
             </>
           ) : null}
           .
         </p>
-      ) : null}
+      ) : (
+        // O botão de aprovar também no cimo (C4-013): a ficha tem dois ecrãs
+        // de formulário, e numa proposta boa não há nada para mudar. No
+        // telemóvel é a barra fixa do fundo que o faz.
+        <div className="mb-6 hidden flex-wrap gap-2 sm:flex">
+          <button
+            type="submit"
+            form="aprovar"
+            className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent"
+          >
+            Aprovar e publicar
+          </button>
+          <button
+            type="submit"
+            form="aprovar"
+            name="seguinte"
+            value="1"
+            className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+          >
+            Aprovar e abrir a seguinte
+          </button>
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         {/* O material em bruto fica sempre visível ao lado do que se edita:
@@ -174,10 +384,10 @@ export default async function RevisaoSubmissao({ params }: Props) {
               os deixava cair. */}
           {!daRecolha && !porPrograma && submission.extraction_status !== 'ok' ? (
             <p className="mt-2 rounded border border-highlight px-3 py-2 text-sm text-highlight">
-              Extração: {submission.extraction_status}
+              Leitura automática: {rotulo(LEITURA_AUTOMATICA, submission.extraction_status)}
               {submission.extraction_error ? ` — ${submission.extraction_error}` : ''}
               {submission.extraction_status === 'skipped'
-                ? '. O texto está aqui em baixo; preenche à mão.'
+                ? '. O texto está aqui em baixo: preenche à mão.'
                 : ''}
               {/* `unverified` não é uma falha: a proposta está toda no
                   formulário. O que falta é alguém confrontar os campos que a
@@ -188,14 +398,10 @@ export default async function RevisaoSubmissao({ params }: Props) {
             </p>
           ) : null}
 
-          {submission.raw_text ? (
-            <pre
-              tabIndex={0}
-              className="mt-3 max-h-96 overflow-auto rounded border border-border bg-surface p-3 text-sm whitespace-pre-wrap"
-            >
-              {submission.raw_text}
-            </pre>
-          ) : daRecolha ? (
+          {/* A recolha primeiro: numa proposta dela, o `raw_text` é só o
+              endereço da página lida (`saveSubmission`), e mostrava-se um
+              endereço num bloco de texto em vez do que o adaptador leu. */}
+          {daRecolha ? (
             // Não há prosa nenhuma para mostrar, e não é falta: é o que o
             // adaptador leu, ao lado do formulário já preenchido com isso, e
             // com a ligação à página de origem para se confirmar sem sair
@@ -204,7 +410,7 @@ export default async function RevisaoSubmissao({ params }: Props) {
               <div>
                 <dt className="text-muted">Fonte</dt>
                 <dd>
-                  {submission.source_id}
+                  {fonte ?? submission.source_id ?? 'sem fonte'}
                   {str(raw.sourceUrl) ? (
                     <>
                       {' · '}
@@ -236,12 +442,20 @@ export default async function RevisaoSubmissao({ params }: Props) {
                   <dt className="text-muted">Datas lidas</dt>
                   <dd>
                     {proposedDates
-                      .map((s) => (s.start ? `${s.date} às ${s.start}` : s.date))
+                      .filter((sessao) => sessao.date)
+                      .map((sessao) => diaEHora(sessao.date, sessao.start))
                       .join(' · ')}
                   </dd>
                 </div>
               ) : null}
             </dl>
+          ) : submission.raw_text ? (
+            <pre
+              tabIndex={0}
+              className="mt-3 max-h-96 overflow-auto rounded border border-border bg-surface p-3 text-sm whitespace-pre-wrap"
+            >
+              {submission.raw_text}
+            </pre>
           ) : porPrograma ? (
             // Sem prosa, e não é falta: chegou já em campos. A lista é o que a
             // pessoa enviou, e é contra ela que se confere o formulário ao
@@ -305,23 +519,180 @@ export default async function RevisaoSubmissao({ params }: Props) {
             </>
           ) : null}
 
-          {duplicates.length > 0 ? (
-            <section aria-labelledby="duplicados" className="mt-6">
-              <h3 id="duplicados" className="font-medium text-highlight">
+          {candidatos.length > 0 && candidatos[0] ? (
+            <section
+              aria-labelledby="duplicados"
+              className="mt-6 rounded border-2 border-highlight p-4"
+            >
+              <h3 id="duplicados" className="font-semibold text-highlight">
                 Pode já cá estar
+                {motivoForte(candidatos[0]) ? ` — ${fraseDoMotivo(candidatos[0])}` : ''}
               </h3>
-              <p className="text-sm text-muted">Nada é fundido sozinho — decide-se aqui.</p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {duplicates.map((candidate) => (
-                  <li key={candidate.event_id}>
-                    {candidate.title}
-                    {candidate.date_start ? ` · ${candidate.date_start}` : ''} ·{' '}
-                    {Math.round(candidate.similarity * 100)}% semelhante
-                    {candidate.exact_fingerprint ? ' · impressão digital igual' : ''}
-                  </li>
-                ))}
+              <p className="mt-1 text-sm text-muted">
+                Nada se junta sozinho: vê cada um e decide aqui.
+              </p>
+              <ul className="mt-3 space-y-5">
+                {candidatos.map((candidato) => {
+                  const fichaPublica =
+                    candidato.slug && candidato.status === 'published'
+                      ? ligacoes.doConcelho(municipalityId, `/evento/${candidato.slug}`)
+                      : null;
+                  const aDecidir = escolhido?.event_id === candidato.event_id ? decidir : null;
+                  return (
+                    <li key={candidato.event_id}>
+                      <p className="font-medium">
+                        {fichaPublica ? (
+                          <a
+                            href={fichaPublica}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`${candidato.title} (abre a ficha pública noutro separador)`}
+                            className="underline underline-offset-4"
+                          >
+                            {candidato.title}
+                          </a>
+                        ) : (
+                          candidato.title
+                        )}
+                      </p>
+                      <p className="text-sm text-muted">
+                        {resumoDoCandidato(candidato)} · {fraseDoMotivo(candidato)}
+                      </p>
+
+                      {!isResolved && !aDecidir ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Link
+                            href={estaFicha(
+                              { decidir: 'duplicada', evento: candidato.event_id },
+                              '#decidir',
+                            )}
+                            className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent"
+                          >
+                            É este — recusar como duplicada
+                          </Link>
+                          <Link
+                            href={estaFicha(
+                              { decidir: 'fundir', evento: candidato.event_id },
+                              '#decidir',
+                            )}
+                            className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+                          >
+                            Fundir com este
+                          </Link>
+                          <Link
+                            href={estaFicha(
+                              { distinto: [...distintos, candidato.event_id].join(',') },
+                              '#duplicados',
+                            )}
+                            className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+                          >
+                            Não é — é outro evento
+                          </Link>
+                        </div>
+                      ) : null}
+
+                      {/* O segundo passo: o que vai acontecer, dito antes de
+                          acontecer, e o botão que o faz. O identificador vai
+                          num campo escondido — escolhido da lista, nunca
+                          escrito por uma pessoa (C4-029). */}
+                      {aDecidir && !isResolved ? (
+                        <div
+                          id="decidir"
+                          role="group"
+                          aria-labelledby="decidir-titulo"
+                          className="mt-3 rounded border border-border bg-surface p-3"
+                        >
+                          <p id="decidir-titulo" className="font-medium">
+                            {aDecidir === 'fundir'
+                              ? `Fundir esta proposta com «${candidato.title}»?`
+                              : `Recusar esta proposta como duplicada de «${candidato.title}»?`}
+                          </p>
+                          {aDecidir === 'duplicada' ? (
+                            <p className="mt-1 text-sm">
+                              Nada é publicado, e o evento fica como está. A proposta sai da fila
+                              marcada como duplicada.
+                            </p>
+                          ) : novas.length > 0 ? (
+                            <>
+                              <p className="mt-1 text-sm">
+                                {novas.length === 1
+                                  ? 'Junta-se ao evento uma data que ele ainda não tem:'
+                                  : `Juntam-se ao evento ${novas.length} datas que ele ainda não tem:`}
+                              </p>
+                              <ul className="mt-1 list-disc pl-5 text-sm">
+                                {novas.slice(0, DATAS_A_ENUMERAR).map((data) => (
+                                  <li key={`${data.date}|${data.start}`}>
+                                    {diaEHora(data.date, data.start)}
+                                  </li>
+                                ))}
+                              </ul>
+                              {novas.length > DATAS_A_ENUMERAR ? (
+                                <p className="text-sm">e mais {novas.length - DATAS_A_ENUMERAR}.</p>
+                              ) : null}
+                              <p className="mt-1 text-sm text-muted">
+                                Nada do evento é apagado, e a proposta sai da fila marcada como
+                                duplicada.
+                              </p>
+                            </>
+                          ) : (
+                            <p className="mt-1 text-sm">
+                              O evento já tem todas as datas desta proposta: fundir é o mesmo que
+                              recusar como duplicada, e nada do evento muda.
+                            </p>
+                          )}
+                          <form
+                            action={aDecidir === 'fundir' ? fundirSubmissao : rejectSubmission}
+                            className="mt-3 flex flex-wrap gap-2"
+                          >
+                            <input type="hidden" name="submission_id" value={submission.id} />
+                            {aDecidir === 'fundir' ? (
+                              <input type="hidden" name="evento" value={candidato.event_id} />
+                            ) : (
+                              <>
+                                <input type="hidden" name="status" value="duplicate" />
+                                <input
+                                  type="hidden"
+                                  name="duplicate_of"
+                                  value={candidato.event_id}
+                                />
+                              </>
+                            )}
+                            <button
+                              type="submit"
+                              className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent"
+                            >
+                              {aDecidir === 'fundir'
+                                ? 'Confirmar: fundir'
+                                : 'Confirmar: é duplicada'}
+                            </button>
+                            <Link
+                              href={estaFicha({}, '#duplicados')}
+                              className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+                            >
+                              Voltar sem decidir
+                            </Link>
+                          </form>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
+          ) : null}
+
+          {distintos.size > 0 ? (
+            <p className="mt-4 text-sm text-muted">
+              {distintos.size === 1
+                ? 'Puseste de lado um evento parecido, como outro evento.'
+                : `Puseste de lado ${distintos.size} eventos parecidos, como outros eventos.`}{' '}
+              <Link
+                href={`/admin/fila/${encodeURIComponent(submission.id)}#duplicados`}
+                className="underline underline-offset-4"
+              >
+                Voltar a mostrá-los
+              </Link>
+            </p>
           ) : null}
         </section>
 
@@ -330,342 +701,129 @@ export default async function RevisaoSubmissao({ params }: Props) {
             Publicar
           </h2>
 
-          <form action={approveSubmission} className="mt-3 space-y-4">
+          <form id="aprovar" action={approveSubmission} className="mt-3 space-y-4">
             <input type="hidden" name="submission_id" value={submission.id} />
 
-            <div>
-              <label htmlFor="title" className={LABEL}>
-                Título <span className="font-normal text-muted">(obrigatório)</span>
-              </label>
-              <input
-                id="title"
-                name="title"
-                required
-                defaultValue={proposed.title}
-                className={FIELD}
-              />
-            </div>
+            <CamposDoEvento
+              valores={proposed}
+              sessoes={proposedDates}
+              // As duas formas do payload: aninhado quando vem da recolha, liso
+              // quando vem da extração. Isto lia só a forma lisa, e as 49
+              // submissões que este sistema recebeu eram todas da recolha — a
+              // caixa vinha desmarcada mesmo para os períodos.
+              emCartaz={propostoEmCartaz(payload)}
+              concelhos={municipalities}
+              categorias={categories}
+              espacos={venues}
+              ciclos={ciclos}
+              nomeDaRegiao={nomeDaRegiao}
+              contexto="aprovar"
+              notaDaDescricao={
+                arrumado ? (
+                  <div className="mt-2 rounded border border-border p-3 text-sm">
+                    <p>
+                      A recolha arrumou o texto que leu na fonte: tira o título repetido, a tabela
+                      de datas e rótulos soltos. Confirma que não cortou de mais — o que corrigires
+                      aqui fica trancado contra a recolha.
+                    </p>
+                    <details className="mt-1">
+                      <summary className="min-h-11 cursor-pointer py-2.5 font-medium">
+                        Ver o texto como veio da fonte
+                      </summary>
+                      <pre
+                        tabIndex={0}
+                        className="mt-1 max-h-64 overflow-auto rounded bg-surface p-2 whitespace-pre-wrap"
+                      >
+                        {arrumado.lido}
+                      </pre>
+                    </details>
+                  </div>
+                ) : undefined
+              }
+            />
 
-            {/*
-              Os três que faltavam: subtítulo, freguesia e ciclo.
-              O formulário desenhava doze dos quinze campos editáveis, e o
-              `readEvent` percorria os quinze — uma ausência de pergunta saía de
-              lá como um `null`, e o `changedFields` mandava trancá-lo contra a
-              recolha. O `readEvent` deixou de fabricar; estes três fecham a
-              outra metade, que é poder respondê-los.
-            */}
-            <div>
-              <label htmlFor="subtitle" className={LABEL}>
-                Subtítulo
-              </label>
-              <input
-                id="subtitle"
-                name="subtitle"
-                defaultValue={proposed.subtitle}
-                className={FIELD}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="description" className={LABEL}>
-                Descrição
-              </label>
-              <textarea
-                id="description"
-                name="description"
-                rows={5}
-                defaultValue={proposed.description}
-                className={FIELD}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="municipality_id" className={LABEL}>
-                  Concelho <span className="font-normal text-muted">(obrigatório)</span>
-                </label>
-                <select
-                  id="municipality_id"
-                  name="municipality_id"
-                  required
-                  defaultValue={proposed.municipality_id}
-                  className={FIELD}
-                >
-                  <option value="">—</option>
-                  {municipalities.map((municipality) => (
-                    <option key={municipality.id} value={municipality.id}>
-                      {municipality.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="category_slug" className={LABEL}>
-                  Categoria
-                </label>
-                <select
-                  id="category_slug"
-                  name="category_slug"
-                  defaultValue={proposed.category_slug}
-                  className={FIELD}
-                >
-                  <option value="">—</option>
-                  {categories.map((category) => (
-                    <option key={category.slug} value={category.slug}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="venue_id" className={LABEL}>
-                  Espaço
-                </label>
-                <select
-                  id="venue_id"
-                  name="venue_id"
-                  defaultValue={proposed.venue_id}
-                  className={FIELD}
-                >
-                  <option value="">— (local livre)</option>
-                  {venues.map((venue) => (
-                    <option key={venue.id} value={venue.id}>
-                      {venue.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="location_name" className={LABEL}>
-                  Local livre
-                </label>
-                <input
-                  id="location_name"
-                  name="location_name"
-                  defaultValue={proposed.location_name}
-                  className={FIELD}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="parish" className={LABEL}>
-                  Freguesia
-                </label>
-                {/* Texto livre: não há tabela de freguesias, e a coluna é texto
-                    sem restrição. O limite é o do esquema do `RawEvent`, para o
-                    formulário dizer o mesmo que a validação. */}
-                <input
-                  id="parish"
-                  name="parish"
-                  maxLength={120}
-                  defaultValue={proposed.parish}
-                  className={FIELD}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="series_id" className={LABEL}>
-                  Ciclo
-                </label>
-                {/* Um `select` e não texto livre: `events.series_id` tem chave
-                    estrangeira para `series`, e um id escrito à mão rebentava a
-                    aprovação com um erro de Postgres em cima de quem modera.
-                    Agrupado por região porque há catorze ciclos de duas CIM na
-                    mesma lista, e uma lista lisa convida a pôr um evento de
-                    Ourém dentro do ciclo de outra comunidade. */}
-                <select
-                  id="series_id"
-                  name="series_id"
-                  defaultValue={proposed.series_id}
-                  className={FIELD}
-                >
-                  <option value="">— (sem ciclo)</option>
-                  {[...new Set(ciclos.map((ciclo) => ciclo.region_id))].map((regiaoDoCiclo) => (
-                    <optgroup key={regiaoDoCiclo} label={regiaoDoCiclo}>
-                      {ciclos
-                        .filter((ciclo) => ciclo.region_id === regiaoDoCiclo)
-                        .map((ciclo) => (
-                          <option key={ciclo.id} value={ciclo.id}>
-                            {ciclo.name}
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <fieldset aria-describedby="sessoes-ajuda">
-              <legend className={LABEL}>Sessões</legend>
-              <p id="sessoes-ajuda" className="text-sm text-muted">
-                Uma linha por ocorrência. Linhas sem data são ignoradas.
-              </p>
-              {sessoesPorMostrar > 0 ? (
-                <p className="mt-1 text-sm text-highlight">
-                  O candidato traz {proposedDates.length} sessões e há {linhasDeSessao} linhas à
-                  vista: {sessoesPorMostrar} não cabem no formulário e perdem-se se aprovares assim.
-                  Trata este à mão.
-                </p>
-              ) : null}
-              <div className="mt-2 space-y-2">
-                {Array.from({ length: linhasDeSessao }, (_, index) => {
-                  const proposedSession = proposedDates[index];
-                  return (
-                    <div key={index} className="flex flex-wrap gap-2">
-                      <span className="sr-only">Sessão {index + 1}</span>
-                      <input
-                        type="date"
-                        name="session_date"
-                        aria-label={`Data da sessão ${index + 1}`}
-                        defaultValue={proposedSession?.date ?? ''}
-                        className="min-h-11 rounded border border-field bg-surface px-3 py-2 text-base text-ink"
-                      />
-                      <input
-                        type="time"
-                        name="session_start"
-                        aria-label={`Hora de início da sessão ${index + 1}`}
-                        defaultValue={proposedSession?.start ?? ''}
-                        className="min-h-11 rounded border border-field bg-surface px-3 py-2 text-base text-ink"
-                      />
-                      <input
-                        type="time"
-                        name="session_end"
-                        aria-label={`Hora de fim da sessão ${index + 1}`}
-                        defaultValue={proposedSession?.end ?? ''}
-                        className="min-h-11 rounded border border-field bg-surface px-3 py-2 text-base text-ink"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Um período, não sessões. O formulário público guarda «de X a
-                  Y» como os dois extremos mais `is_ongoing` (build-row.ts): as
-                  duas linhas propostas são o dia de abrir e o de fechar, e a
-                  ficha escreve «em cartaz de X a Y». Sem a caixa, a aprovação
-                  deixava cair o `is_ongoing` e publicava dois espetáculos. */}
-              <label
-                htmlFor="is_ongoing"
-                className="mt-3 flex min-h-11 items-center gap-2.5 text-sm font-medium"
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={isResolved}
+                aria-describedby="aprovar-ajuda"
+                className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent disabled:opacity-50"
               >
-                <input
-                  type="checkbox"
-                  id="is_ongoing"
-                  name="is_ongoing"
-                  // As duas formas do payload: aninhado quando vem da recolha,
-                  // liso quando vem da extração. Isto lia só a forma lisa, e as
-                  // 49 submissões que este sistema recebeu são todas da recolha
-                  // — a caixa vinha desmarcada mesmo para os períodos.
-                  defaultChecked={propostoEmCartaz(payload)}
-                  aria-describedby="is-ongoing-ajuda"
-                  className="size-5 accent-accent"
-                />
-                Em cartaz: um período, não sessões soltas
-              </label>
-              <p id="is-ongoing-ajuda" className="text-sm text-muted">
-                Uma exposição «de X a Y», um festival de três dias: a primeira e a última linha são
-                o dia de abrir e o de fechar, e a ficha diz «em cartaz». Desligado, cada linha é uma
-                sessão.
-              </p>
-            </fieldset>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {/* O rótulo leva a altura toda: a caixa tem 20 px, o alvo é a
-                  linha inteira — como nos filtros da agenda pública. */}
-              <label
-                htmlFor="is_free"
-                className="flex min-h-11 items-center gap-2.5 text-sm font-medium"
+                Aprovar e publicar
+              </button>
+              <button
+                type="submit"
+                name="seguinte"
+                value="1"
+                disabled={isResolved}
+                aria-describedby="aprovar-ajuda"
+                className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium disabled:opacity-50"
               >
-                <input
-                  type="checkbox"
-                  id="is_free"
-                  name="is_free"
-                  defaultChecked={proposed.is_free}
-                  className="size-5 accent-accent"
-                />
-                Entrada livre
-              </label>
-
-              <div>
-                <label htmlFor="price_display" className={LABEL}>
-                  Preço
-                </label>
-                <input
-                  id="price_display"
-                  name="price_display"
-                  defaultValue={proposed.price_display}
-                  className={FIELD}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="ticketing_url" className={LABEL}>
-                  Bilhética
-                </label>
-                <input
-                  id="ticketing_url"
-                  name="ticketing_url"
-                  type="url"
-                  defaultValue={proposed.ticketing_url}
-                  className={FIELD}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="image_url" className={LABEL}>
-                  Imagem
-                </label>
-                <input
-                  id="image_url"
-                  name="image_url"
-                  type="url"
-                  defaultValue={proposed.image_url}
-                  className={FIELD}
-                />
-              </div>
+                Aprovar e abrir a seguinte
+              </button>
             </div>
-
-            <div>
-              <label htmlFor="how_to_arrive" className={LABEL}>
-                Como chegar
-              </label>
-              <textarea
-                id="how_to_arrive"
-                name="how_to_arrive"
-                rows={2}
-                defaultValue={proposed.how_to_arrive}
-                className={FIELD}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="accessibility_notes" className={LABEL}>
-                Notas de acessibilidade
-              </label>
-              <textarea
-                id="accessibility_notes"
-                name="accessibility_notes"
-                rows={2}
-                defaultValue={proposed.accessibility_notes}
-                className={FIELD}
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isResolved}
-              aria-describedby="aprovar-ajuda"
-              className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent disabled:opacity-50"
-            >
-              Aprovar e publicar
-            </button>
             <p id="aprovar-ajuda" className="text-sm text-muted">
-              Os campos que corrigires ficam bloqueados: a recolha da noite seguinte não os volta a
-              escrever por cima.
+              Os campos que corrigires ficam trancados: a recolha seguinte não os volta a escrever
+              por cima.
             </p>
           </form>
+
+          {!isResolved ? (
+            <section aria-labelledby="pedir" className="mt-8 border-t border-border pt-6">
+              <h3 id="pedir" className="font-medium">
+                Pedir o que falta
+              </h3>
+              {falta.length > 0 ? (
+                <p className="mt-1 text-sm">
+                  A ficha pública ainda não ia saber dizer: {falta.join(' · ')}.
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-muted">
+                  Nada de essencial parece faltar. Se quiseres perguntar alguma coisa, a mensagem
+                  abre já com o assunto escrito.
+                </p>
+              )}
+              {escreverA && submission.sender_email ? (
+                <>
+                  <a
+                    href={escreverA}
+                    className="mt-3 inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+                  >
+                    Escrever a {submission.sender_email}
+                  </a>
+                  <p className="mt-1 text-sm text-muted">
+                    Abre o teu programa de email com a mensagem já escrita — revê-a antes de enviar.
+                  </p>
+                  {/* O registo do pedido, com a data e o que se pediu: é o
+                      que a vista «À espera de resposta» mostra, e o que
+                      permite responder «perguntámos a 2 de outubro». */}
+                  <form action={rejectSubmission} className="mt-3">
+                    <input type="hidden" name="submission_id" value={submission.id} />
+                    <input type="hidden" name="status" value="needs_info" />
+                    <input
+                      type="hidden"
+                      name="notes"
+                      value={`Pedido por email a ${formatLongDate(todayInLisbon())}${
+                        falta.length > 0 ? `: ${falta.join('; ')}` : ''
+                      }.`}
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
+                    >
+                      Já perguntei — fica à espera de resposta
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-muted">
+                  {daRecolha
+                    ? 'Veio da recolha, da página da própria fonte: não há a quem escrever daqui. Completa à mão o que souberes, ou recusa.'
+                    : 'Quem enviou não deixou email, e não há a quem perguntar: publica com o que tem, ou recusa.'}
+                </p>
+              )}
+            </section>
+          ) : null}
 
           <form action={rejectSubmission} className="mt-8 space-y-3 border-t border-border pt-6">
             <input type="hidden" name="submission_id" value={submission.id} />
@@ -675,15 +833,31 @@ export default async function RevisaoSubmissao({ params }: Props) {
               </label>
               <select id="status" name="status" className={FIELD} defaultValue="rejected">
                 <option value="rejected">Não serve para a agenda</option>
-                <option value="duplicate">Já cá está</option>
+                <option value="duplicate">Já está na agenda — é duplicada</option>
                 <option value="needs_info">Falta informação — vou perguntar</option>
               </select>
             </div>
+            {/* Nenhum campo pede um identificador (C4-014, C4-029): o evento
+                de que a proposta é duplicada escolhe-se em «Pode já cá estar»,
+                ou diz-se pelo endereço da ficha pública — que é o que quem
+                modera tem aberto no outro separador. */}
             <div>
-              <label htmlFor="duplicate_of" className={LABEL}>
-                Id do evento duplicado (opcional)
+              <label htmlFor="duplicate_url" className={LABEL}>
+                Se já está na agenda: o endereço da ficha do evento
               </label>
-              <input id="duplicate_of" name="duplicate_of" className={FIELD} />
+              <input
+                id="duplicate_url"
+                name="duplicate_url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby="duplicate-url-ajuda"
+                className={FIELD}
+              />
+              <p id="duplicate-url-ajuda" className="mt-1 text-sm text-muted">
+                Abre o evento no sítio e copia o endereço da barra — acaba em /evento/…. Se ele
+                aparece em «Pode já cá estar», basta o botão de lá.
+              </p>
             </div>
             <div>
               <label htmlFor="notes" className={LABEL}>
@@ -699,34 +873,24 @@ export default async function RevisaoSubmissao({ params }: Props) {
               Registar decisão
             </button>
           </form>
-
-          <form action={mergeEvents} className="mt-8 space-y-3 border-t border-border pt-6">
-            <input type="hidden" name="municipality_id" value={proposed.municipality_id} />
-            <h3 className="font-medium">Fundir dois eventos</h3>
-            <p className="text-sm text-muted">
-              As sessões do duplicado passam para o canónico; o duplicado fica arquivado.
-            </p>
-            <div>
-              <label htmlFor="canonical_id" className={LABEL}>
-                Fica (id)
-              </label>
-              <input id="canonical_id" name="canonical_id" className={FIELD} />
-            </div>
-            <div>
-              <label htmlFor="duplicate_id" className={LABEL}>
-                Sai (id)
-              </label>
-              <input id="duplicate_id" name="duplicate_id" className={FIELD} />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium"
-            >
-              Fundir
-            </button>
-          </form>
         </section>
       </div>
+
+      {!isResolved ? (
+        <>
+          {/* O espaço que a barra ocupa, para ela não tapar o fim da página. */}
+          <div aria-hidden="true" className="h-20 sm:hidden" />
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-paper px-4 py-3 sm:hidden">
+            <button
+              type="submit"
+              form="aprovar"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded bg-accent px-4 text-sm font-medium text-on-accent"
+            >
+              Aprovar e publicar
+            </button>
+          </div>
+        </>
+      ) : null}
     </>
   );
 }

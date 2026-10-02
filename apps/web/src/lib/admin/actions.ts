@@ -3,25 +3,53 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { reportarErro } from '../registo';
-import { BALDE_DOS_CARTAZES, normalizeForHash, pastaDoCartaz } from '@coreto/core';
-import { z } from 'zod';
-import { requireAdmin } from './auth';
 import {
+  BALDE_DOS_CARTAZES,
+  CADEADO_DAS_SESSOES,
+  normalizeForHash,
+  pastaDoCartaz,
+} from '@coreto/core';
+import { z } from 'zod';
+import {
+  ambitoDoPainel,
+  regiaoDaFonte,
+  regiaoDaSubmissao,
+  regiaoDoConcelho,
+  regiaoDoEspaco,
+  regiaoDoEvento,
+  regioesDosEventos,
+} from './ambito';
+import { exigirDono, exigirPapel, exigirPapelNas, exigirSessao } from './auth';
+import {
+  avisoDoErroDaBase,
   CAMPOS_DA_REGIAO,
+  CAMPOS_DA_REGIAO_DO_DONO,
   changedFields,
   comAviso,
   destinoDoPainel,
+  EDITABLE_FIELDS,
   eventoParaAprovar,
   LOTE_MAX,
   proposedFromPayload,
+  proposedSessions,
   readEvent,
   readSessions,
 } from './fields';
-import { getPropostaDaSubmissao } from './queries';
+import {
+  eventoPeloEndereco,
+  getPropostaDaSubmissao,
+  lerEventoResumido,
+  listRegionsAdmin,
+  proximaSubmissao,
+} from './queries';
+import { CAMPO_DO_EVENTO, ESTADO_DO_EVENTO, porExtenso, rotulo } from './rotulos';
 import { requireAdminClient } from '../supabase/server';
-import { SECCOES_OPCIONAIS } from '../navegacao';
+import { MAIS, SECCOES_OPCIONAIS } from '../navegacao';
 import { REGIAO_PRINCIPAL } from '../regiao-host';
 import { CACHE_TAGS } from '../queries/events';
+import { formatLongDate, formatTime } from '../format';
+import { emLisboa, isoWithLisbonOffset } from '@coreto/core/dates';
+import { doNomeDaRegiao } from '../regiao';
 import { gerarSegredo, impressaoDoSegredo } from '../balanco/token';
 import { sha256Hex } from '../token-assinado';
 
@@ -33,7 +61,39 @@ import { sha256Hex } from '../token-assinado';
  * caminho de escrita e as que registam a auditoria. Uma escrita a partir daqui
  * seria uma ação sem rasto, e o registo de quem fez o quê é metade do que
  * torna esta fila confiável.
+ *
+ * **E cada uma volta a perguntar de quem é aquilo em que mexe** (C4-015). A
+ * página já recortou pela região de quem está — mas uma ação de servidor é um
+ * endereço que responde a um formulário feito à mão, e um editor de uma região
+ * que enviasse o identificador de uma submissão de outra estaria a aprovar o
+ * que não é dele. A região lê-se da base, nunca do formulário, e a pergunta
+ * vem antes de qualquer escrita (`exigirPapel`, `exigirPapelNas`).
  */
+
+/**
+ * As regiões de tudo aquilo para onde uma aprovação ou uma correção aponta: o
+ * concelho, o espaço e o ciclo escolhidos no formulário. Um editor de uma
+ * região que escolhesse um espaço de outra punha um evento seu dentro da
+ * agenda da vizinha.
+ */
+async function regioesDasEscolhas(evento: Record<string, unknown>): Promise<Array<string | null>> {
+  const texto = (valor: unknown) => (typeof valor === 'string' && valor ? valor : null);
+  const concelho = texto(evento.municipality_id);
+  const espaco = texto(evento.venue_id);
+  const ciclo = texto(evento.series_id);
+  const regioes: Array<string | null> = [await regiaoDoConcelho(concelho)];
+  if (espaco) regioes.push(await regiaoDoEspaco(espaco));
+  if (ciclo) {
+    const { data, error } = await requireAdminClient()
+      .from('series')
+      .select('region_id')
+      .eq('id', ciclo)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    regioes.push((data as { region_id: string | null } | null)?.region_id ?? null);
+  }
+  return regioes;
+}
 
 function invalidate(municipalityId: unknown): void {
   const tags: string[] = [CACHE_TAGS.events, CACHE_TAGS.venues, CACHE_TAGS.taxonomy];
@@ -44,10 +104,13 @@ function invalidate(municipalityId: unknown): void {
 }
 
 export async function approveSubmission(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
-
   const submissionId = String(formData.get('submission_id') ?? '');
+  const ficha = `/admin/fila/${encodeURIComponent(submissionId)}`;
+  const { actor } = await exigirPapelNas('editor', async () => [
+    await regiaoDaSubmissao(submissionId),
+    ...(await regioesDasEscolhas(readEvent(formData))),
+  ]);
+  const supabase = requireAdminClient();
   if (!submissionId) throw new Error('submissão em falta');
 
   /*
@@ -79,7 +142,10 @@ export async function approveSubmission(formData: FormData): Promise<void> {
     p_event: event,
     p_sessions: sessions,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    reportarErro('approve_submission', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
 
   // Bloqueia o que o editor mudou face ao que a fonte propunha — e só isso: os
   // campos herdados não passaram pelas mãos de ninguém, e a recolha da noite
@@ -97,7 +163,27 @@ export async function approveSubmission(formData: FormData): Promise<void> {
   }
 
   invalidate(event.municipality_id);
-  redirect('/admin/fila');
+
+  /*
+   * O retorno (C4-013): aprovar devolvia à fila sem uma palavra, e quem
+   * modera ia ao sítio público confirmar que publicou — cada proposta custava
+   * o dobro. O identificador do evento segue na barra, e a página que recebe
+   * diz «Publicado», com a ligação para o ver no domínio da região.
+   *
+   * «Aprovar e abrir a seguinte» abre a próxima por rever do recorte de quem
+   * modera, com o mesmo aviso no cimo.
+   */
+  const publicado = typeof eventId === 'string' ? `publicado=${encodeURIComponent(eventId)}` : '';
+  // A fila a que se volta é a da região da proposta: é essa que quem modera
+  // está a percorrer, e a escolhida no cimo pode ser outra (ou «todas»).
+  const regiao = await regiaoDaSubmissao(submissionId);
+  const daRegiao = regiao ? `regiao=${encodeURIComponent(regiao)}&` : '';
+  if (formData.get('seguinte') === '1') {
+    const proxima = await proximaSubmissao(await ambitoDoPainel({ pedida: regiao }), submissionId);
+    if (proxima) redirect(`/admin/fila/${encodeURIComponent(proxima)}?${publicado}`);
+    redirect(comAviso(`/admin/fila?${daRegiao}${publicado}`, 'Era a última proposta por rever.'));
+  }
+  redirect(`/admin/fila?${daRegiao}${publicado}`);
 }
 
 /*
@@ -125,25 +211,28 @@ const ESTADOS_PERMITIDOS = new Set([
  * se desfaz um a um.
  */
 export async function bulkSetEventStatus(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  await exigirSessao();
   const supabase = requireAdminClient();
 
   const ids = formData.getAll('ids').map(String).filter(Boolean);
   const status = String(formData.get('status') ?? '');
   const voltarPara = destinoDoPainel(String(formData.get('voltar') ?? '/admin/eventos'));
 
-  if (ids.length === 0) redirect(comAviso(voltarPara, 'Não escolheste nenhum evento.'));
+  if (ids.length === 0) redirect(comAviso(voltarPara, 'Não escolheu nenhum evento.'));
   if (!ESTADOS_PERMITIDOS.has(status)) redirect(comAviso(voltarPara, 'Estado desconhecido.'));
   if (ids.length > LOTE_MAX) {
     redirect(comAviso(voltarPara, `No máximo ${LOTE_MAX} eventos de cada vez.`));
   }
+  // Todos os do lote, e não só o primeiro: um lote com um evento de outra
+  // região recusa-se inteiro, sem escrever nenhum.
+  const { actor } = await exigirPapelNas('editor', () => regioesDosEventos(ids));
 
   const { data, error } = await supabase.rpc('set_event_status', {
     p_ids: ids,
     p_status: status,
     p_actor: actor,
   });
-  if (error) redirect(comAviso(voltarPara, error.message));
+  if (error) redirect(comAviso(voltarPara, avisoDoErroDaBase(error)));
 
   // Sem saber de que concelhos eram, invalida-se o que é comum a todos. É o
   // preço de não ir buscar as linhas outra vez só para afinar a etiqueta.
@@ -155,43 +244,412 @@ export async function bulkSetEventStatus(formData: FormData): Promise<void> {
       voltarPara,
       n === 0
         ? 'Nada mudou — já estavam todos nesse estado.'
-        : `${n} ${n === 1 ? 'evento' : 'eventos'} em «${status}».`,
+        : `${n === 1 ? 'Um evento passou' : `${n} eventos passaram`} a «${rotulo(ESTADO_DO_EVENTO, status)}».`,
     ),
   );
 }
 
+/** Um identificador de evento, tal como a base os escreve. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Não publicar: recusar, pedir o que falta, ou marcar como duplicada.
+ *
+ * **Nenhum campo pede um identificador a uma pessoa** (C4-014, C4-029). O
+ * evento de que a proposta é duplicada chega por um botão de «Pode já cá
+ * estar» — que traz o identificador, escolhido da lista — ou pelo
+ * endereço da ficha pública colado à mão, que é o que quem modera tem aberto
+ * no outro separador. Escrever o nome do evento nesse campo, que era o engano
+ * provável, dava «Não foi possível falar com a base de dados» e um erro do
+ * React em inglês; agora volta ao formulário a dizer o que fazer.
+ */
 export async function rejectSubmission(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  const submissionId = String(formData.get('submission_id') ?? '');
+  const ficha = `/admin/fila/${encodeURIComponent(submissionId)}`;
+  const status = String(formData.get('status') ?? 'rejected');
+  const escolhido = String(formData.get('duplicate_of') ?? '').trim();
+  const endereco = String(formData.get('duplicate_url') ?? '').trim();
+
+  let duplicateOf = '';
+  if (status === 'duplicate') {
+    if (escolhido) {
+      if (!UUID.test(escolhido)) {
+        redirect(
+          comAviso(
+            ficha,
+            'Escolhe o evento em «Pode já cá estar», ou cola o endereço da ficha dele.',
+          ),
+        );
+      }
+      duplicateOf = escolhido;
+    } else if (endereco) {
+      const evento = await eventoPeloEndereco(endereco);
+      if (!evento) {
+        redirect(
+          comAviso(
+            ficha,
+            'Isso não é o endereço de um evento da agenda. Abre a ficha do evento no sítio, copia o endereço da barra (acaba em /evento/…) e cola-o aqui — ou escolhe-o em «Pode já cá estar».',
+          ),
+        );
+      }
+      duplicateOf = evento.id;
+    } else {
+      redirect(
+        comAviso(
+          ficha,
+          'Para marcar como duplicada, diz de que evento: escolhe-o em «Pode já cá estar», ou cola o endereço da ficha dele.',
+        ),
+      );
+    }
+  }
+
+  // A submissão, e o evento de que ela é repetida: os dois têm de ser de uma
+  // região desta sessão — senão, marcar «já cá está» apontava para a agenda
+  // de outra CIM.
+  const { actor } = await exigirPapelNas('editor', async () => [
+    await regiaoDaSubmissao(submissionId),
+    ...(duplicateOf ? [await regiaoDoEvento(duplicateOf)] : []),
+  ]);
   const supabase = requireAdminClient();
 
-  const status = String(formData.get('status') ?? 'rejected');
-  const duplicateOf = String(formData.get('duplicate_of') ?? '');
-
   const { error } = await supabase.rpc('reject_submission', {
-    p_submission_id: String(formData.get('submission_id') ?? ''),
+    p_submission_id: submissionId,
     p_actor: actor,
     p_status: status,
-    p_notes: String(formData.get('notes') ?? '') || null,
+    p_notes: String(formData.get('notes') ?? '').trim() || null,
     p_duplicate_of: duplicateOf || null,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    reportarErro('reject_submission', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
 
-  redirect('/admin/fila');
+  redirect(
+    comAviso(
+      '/admin/fila',
+      status === 'duplicate'
+        ? 'Marcada como duplicada: nada foi publicado, e o evento que já existia fica como estava.'
+        : status === 'needs_info'
+          ? 'Fica à espera de resposta. Quando a pessoa responder, a proposta continua aqui, na vista «À espera de resposta».'
+          : 'Não publicada: a proposta sai da fila e fica registada como recusada.',
+    ),
+  );
+}
+
+/**
+ * «Fundir com este»: a proposta é duplicada de um evento que já existe, e as
+ * datas que ela traz e o evento não tem juntam-se a ele (0172). Nunca tira
+ * nada ao evento.
+ */
+export async function fundirSubmissao(formData: FormData): Promise<void> {
+  const submissionId = String(formData.get('submission_id') ?? '');
+  const eventoId = String(formData.get('evento') ?? '');
+  const ficha = `/admin/fila/${encodeURIComponent(submissionId)}`;
+  if (!UUID.test(eventoId)) {
+    redirect(comAviso(ficha, 'Escolhe o evento em «Pode já cá estar».'));
+  }
+
+  const { actor } = await exigirPapelNas('editor', async () => [
+    await regiaoDaSubmissao(submissionId),
+    await regiaoDoEvento(eventoId),
+  ]);
+  const supabase = requireAdminClient();
+
+  const proposta = await getPropostaDaSubmissao(submissionId);
+  if (!proposta) redirect(comAviso('/admin/fila', 'Essa proposta já não existe.'));
+  const sessoes = proposedSessions(proposta.payload)
+    .filter((sessao) => sessao.date)
+    .map((sessao) => ({
+      session_date: sessao.date,
+      ...(sessao.start ? { start_time: sessao.start } : {}),
+      ...(sessao.end ? { end_time: sessao.end } : {}),
+    }));
+
+  const { data, error } = await supabase.rpc('fundir_submissao_no_evento', {
+    p_submission_id: submissionId,
+    p_event_id: eventoId,
+    p_sessions: sessoes,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('fundir_submissao_no_evento', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+
+  invalidate(proposta.municipality_id);
+  const n = typeof data === 'number' ? data : 0;
+  redirect(
+    comAviso(
+      '/admin/fila',
+      n === 0
+        ? 'Fundida: a proposta era duplicada, e o evento já tinha todas as datas dela.'
+        : `Fundida: ${n === 1 ? 'uma data nova juntou-se' : `${n} datas novas juntaram-se`} ao evento que já existia.`,
+    ),
+  );
+}
+
+/**
+ * Os campos que se destrancam no painel: os que ele corrige, as datas, e os
+ * que a moderação antiga e as migrações de correção trancaram — que também
+ * aparecem na lista, e que também têm de se poder soltar sem SQL.
+ */
+const CAMPOS_QUE_SE_DESTRANCAM = new Set<string>([
+  ...EDITABLE_FIELDS,
+  'is_ongoing',
+  CADEADO_DAS_SESSOES,
+  'description_short',
+  'latitude',
+  'longitude',
+  'date_start',
+  'date_end',
+]);
+
+/**
+ * Corrigir um evento publicado (C4-017), pela `update_event` (0173): só o que
+ * mudou se escreve, fica trancado contra a recolha e deixa rasto.
+ *
+ * A região é perguntada duas vezes — a do evento como está, e a das escolhas
+ * do formulário: mudar o concelho para o de outra região era mudar o evento de
+ * agenda, e isso é de quem modera as duas.
+ */
+export async function atualizarEvento(formData: FormData): Promise<void> {
+  const eventoId = String(formData.get('event_id') ?? '');
+  const ficha = `/admin/eventos/${encodeURIComponent(eventoId)}`;
+  if (!UUID.test(eventoId)) redirect(comAviso('/admin/eventos', 'Esse evento não existe.'));
+
+  const editado = readEvent(formData);
+  // O identificador vai na barra da função, e não no que se corrige.
+  delete editado.id;
+  const sessoes = readSessions(formData);
+
+  const { actor } = await exigirPapelNas('editor', async () => [
+    await regiaoDoEvento(eventoId),
+    ...(await regioesDasEscolhas(editado)),
+  ]);
+  if (sessoes.length === 0) {
+    redirect(
+      comAviso(
+        ficha,
+        'Um evento sem data nenhuma não aparece em lista nenhuma — marca pelo menos um dia.',
+      ),
+    );
+  }
+
+  const antes = await lerEventoResumido(eventoId);
+  const { data, error } = await requireAdminClient().rpc('update_event', {
+    p_event_id: eventoId,
+    p_patch: editado,
+    p_sessions: sessoes,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('update_event', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+
+  invalidate(antes?.municipality_id);
+  if (editado.municipality_id !== antes?.municipality_id) invalidate(editado.municipality_id);
+
+  const mudados = Array.isArray(data) ? (data as string[]) : [];
+  redirect(
+    comAviso(
+      ficha,
+      mudados.length === 0
+        ? 'Nada mudou: o evento já estava assim.'
+        : `Guardado. Mudou ${porExtenso(mudados.map((campo) => rotulo(CAMPO_DO_EVENTO, campo)))} — e fica trancado: a recolha não lhe volta a escrever por cima.`,
+    ),
+  );
+}
+
+/**
+ * Destrancar um campo: a recolha volta a poder escrevê-lo (0015,
+ * `unlock_event_fields`). É o desfazer do cadeado — para quando a fonte
+ * corrigiu o que estava mal, e a correção à mão deixou de ser precisa.
+ */
+export async function destrancarCampo(formData: FormData): Promise<void> {
+  const eventoId = String(formData.get('event_id') ?? '');
+  const campo = String(formData.get('campo') ?? '');
+  const ficha = `/admin/eventos/${encodeURIComponent(eventoId)}`;
+  if (!UUID.test(eventoId)) redirect(comAviso('/admin/eventos', 'Esse evento não existe.'));
+  if (!CAMPOS_QUE_SE_DESTRANCAM.has(campo))
+    redirect(comAviso(ficha, 'Esse campo não se destranca aqui.'));
+
+  const { actor } = await exigirPapelNas('editor', async () => [await regiaoDoEvento(eventoId)]);
+  const { error } = await requireAdminClient().rpc('unlock_event_fields', {
+    p_event_id: eventoId,
+    p_actor: actor,
+    p_fields: [campo],
+  });
+  if (error) {
+    reportarErro('unlock_event_fields', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+  redirect(
+    comAviso(
+      ficha,
+      `Destrancado: a recolha volta a poder escrever ${rotulo(CAMPO_DO_EVENTO, campo)} na próxima noite.`,
+    ),
+  );
+}
+
+/**
+ * As fontes, no painel (C4-032): pausar com prazo e motivo, retomar, reabrir
+ * a pausa automática, ligar e desligar. Cada uma pela sua função da base
+ * (0174), com rasto; e só para quem gere a região da fonte — o editor vê a
+ * ficha, mas estes gestos são das definições da região (`CONTAS.md`).
+ *
+ * A região pergunta-se à base, pela fonte, e nunca ao formulário.
+ */
+async function gestoDaFonte(
+  formData: FormData,
+): Promise<{ fonte: string; ficha: string; actor: string }> {
+  const fonte = String(formData.get('fonte') ?? '');
+  if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(fonte)) {
+    redirect(comAviso('/admin/fontes', 'Essa fonte não existe.'));
+  }
+  const ficha = `/admin/fontes/${encodeURIComponent(fonte)}`;
+  const { actor } = await exigirPapelNas('gestor', async () => [await regiaoDaFonte(fonte)]);
+  return { fonte, ficha, actor };
+}
+
+/** As fontes da região mudam o que o /estado e a entrada do painel dizem. */
+function invalidarFontes(): void {
+  revalidateTag(CACHE_TAGS.sources, { expire: 0 });
+}
+
+export async function pausarFonte(formData: FormData): Promise<void> {
+  const { fonte, ficha, actor } = await gestoDaFonte(formData);
+  const dia = String(formData.get('ate') ?? '');
+  const motivo = String(formData.get('motivo') ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+    redirect(comAviso(ficha, 'Escolhe o dia em que a pausa acaba.'));
+  }
+  if (!motivo) {
+    redirect(
+      comAviso(ficha, 'Escreve o motivo da pausa — é o que o painel e a página /estado vão dizer.'),
+    );
+  }
+  // Até ao fim desse dia, na hora de Lisboa: «em pausa até 21 de outubro»
+  // quer dizer que no dia 21 ainda está.
+  const ate = isoWithLisbonOffset(dia, '23:59');
+  const { error } = await requireAdminClient().rpc('pausar_fonte', {
+    p_fonte: fonte,
+    p_ate: ate,
+    p_motivo: motivo,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('pausar_fonte', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+  invalidarFontes();
+  redirect(
+    comAviso(
+      ficha,
+      `Em pausa até ${formatLongDate(dia)}. Nesse dia, se ninguém a retomar antes, o alarme volta sozinho.`,
+    ),
+  );
+}
+
+export async function retomarFonte(formData: FormData): Promise<void> {
+  const { fonte, ficha, actor } = await gestoDaFonte(formData);
+  const { data, error } = await requireAdminClient().rpc('retomar_fonte', {
+    p_fonte: fonte,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('retomar_fonte', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+  invalidarFontes();
+  redirect(
+    comAviso(
+      ficha,
+      data === true
+        ? 'A pausa acabou: a fonte volta a contar para o alarme.'
+        : 'A fonte não estava em pausa.',
+    ),
+  );
+}
+
+export async function reabrirFonte(formData: FormData): Promise<void> {
+  const { fonte, ficha, actor } = await gestoDaFonte(formData);
+  const { data, error } = await requireAdminClient().rpc('reabrir_fonte', {
+    p_fonte: fonte,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('reabrir_fonte', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+  invalidarFontes();
+  redirect(
+    comAviso(
+      ficha,
+      data === true
+        ? 'Reaberta: a fonte volta a ser lida na próxima recolha, e as falhas seguidas voltam a zero.'
+        : 'Não havia pausa automática nem falhas para reabrir.',
+    ),
+  );
+}
+
+export async function ligarFonte(formData: FormData): Promise<void> {
+  const { fonte, ficha, actor } = await gestoDaFonte(formData);
+  const ligar = formData.get('ligar') === '1';
+  const motivo = String(formData.get('motivo') ?? '').trim();
+  // Desligar é a decisão sem data: pede a caixa de confirmação e o motivo.
+  if (!ligar && formData.get('confirmo') === null) {
+    redirect(
+      comAviso(ficha, 'Para desligar, marca a caixa que confirma que a fonte deixa de ser lida.'),
+    );
+  }
+  const { data, error } = await requireAdminClient().rpc('definir_fonte_ligada', {
+    p_fonte: fonte,
+    p_ligada: ligar,
+    p_motivo: motivo || null,
+    p_actor: actor,
+  });
+  if (error) {
+    reportarErro('definir_fonte_ligada', error);
+    redirect(comAviso(ficha, avisoDoErroDaBase(error)));
+  }
+  invalidarFontes();
+  redirect(
+    comAviso(
+      ficha,
+      data !== true
+        ? ligar
+          ? 'A fonte já estava ligada.'
+          : 'A fonte já estava desligada.'
+        : ligar
+          ? 'Ligada: a fonte volta a ser lida na próxima recolha.'
+          : 'Desligada: a fonte deixa de ser lida. Os eventos que ela já trouxe ficam como estão.',
+    ),
+  );
 }
 
 export async function mergeEvents(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  const canonico = String(formData.get('canonical_id') ?? '');
+  const duplicado = String(formData.get('duplicate_id') ?? '');
+  const voltarPara = destinoDoPainel(String(formData.get('voltar') ?? '/admin/eventos'));
+
+  const { actor } = await exigirPapelNas('editor', () => regioesDosEventos([canonico, duplicado]));
   const supabase = requireAdminClient();
 
   const { error } = await supabase.rpc('merge_events', {
-    p_canonical_id: String(formData.get('canonical_id') ?? ''),
-    p_duplicate_id: String(formData.get('duplicate_id') ?? ''),
+    p_canonical_id: canonico,
+    p_duplicate_id: duplicado,
     p_actor: actor,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    reportarErro('merge_events', error);
+    redirect(comAviso(voltarPara, avisoDoErroDaBase(error)));
+  }
 
   invalidate(formData.get('municipality_id'));
-  redirect('/admin/fila');
+  redirect(
+    comAviso(voltarPara, 'Os dois eventos passaram a ser um: as sessões juntaram-se no que fica.'),
+  );
 }
 
 /**
@@ -227,7 +685,9 @@ export async function mergeEvents(formData: FormData): Promise<void> {
  * já diz.
  */
 export async function actualizarSitio(): Promise<void> {
-  await requireAdmin();
+  // Do dono: descarta a cache de todas as regiões de uma vez, e serve para
+  // quando se escreveu na base por fora do painel — que só ele faz.
+  await exigirDono();
 
   for (const tag of [
     CACHE_TAGS.events,
@@ -246,18 +706,15 @@ export async function actualizarSitio(): Promise<void> {
 }
 
 export async function alternarSeccao(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
-
   const seccao = String(formData.get('seccao') ?? '');
   const ligar = String(formData.get('ligar') ?? '') === '1';
-  // O interruptor vive em dois sítios: no painel de entrada (a região
-  // principal) e na página de cada região. O caminho de volta acompanha, e é
-  // derivado — nunca lido do formulário, que um caminho vindo de fora é um
-  // redirect aberto à espera de acontecer.
-  const regiao = String(formData.get('regiao') ?? REGIAO_PRINCIPAL);
-  const voltarPara =
-    regiao === REGIAO_PRINCIPAL ? '/admin' : `/admin/regioes/${encodeURIComponent(regiao)}`;
+  // O interruptor vive na ficha de cada região, e o caminho de volta é
+  // derivado da região — nunca lido do formulário, que um caminho vindo de
+  // fora é um redirect aberto à espera de acontecer.
+  const regiao = String(formData.get('regiao') ?? '');
+  const voltarPara = `/admin/regioes/${encodeURIComponent(regiao)}`;
+  const { actor } = await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
 
   if (!(SECCOES_OPCIONAIS as readonly string[]).includes(seccao)) {
     redirect(comAviso(voltarPara, 'Secção desconhecida.'));
@@ -269,7 +726,7 @@ export async function alternarSeccao(formData: FormData): Promise<void> {
     p_actor: actor,
     p_region: regiao,
   });
-  if (error) redirect(comAviso(voltarPara, error.message));
+  if (error) redirect(comAviso(voltarPara, avisoDoErroDaBase(error)));
 
   /*
    * Esta etiqueta é lida pelo layout de raiz, e o layout de raiz entra em
@@ -279,12 +736,102 @@ export async function alternarSeccao(formData: FormData): Promise<void> {
    */
   revalidateTag(CACHE_TAGS.sections, { expire: 0 });
 
+  /*
+   * O aviso diz qual, e leva o «desfazer» (C4-035): «A secção passou a estar
+   * desligada.» não dizia qual, e para voltar atrás era procurar o botão
+   * outra vez. O caminho de volta leva a secção e o estado em que estava, e a
+   * ficha da região desenha ao lado do aviso o botão que o repõe.
+   */
+  const nome = MAIS.find((atalho) => atalho.seccao === seccao)?.label ?? seccao;
+  redirect(
+    comAviso(
+      data === true
+        ? `${voltarPara}?desfazer=${encodeURIComponent(seccao)}&estava=${ligar ? '0' : '1'}`
+        : voltarPara,
+      data === true
+        ? `«${nome}» passou a estar ${ligar ? 'ligada' : 'desligada'}: ${
+            ligar
+              ? 'volta ao menu e às páginas do sítio'
+              : 'sai do menu, e as páginas dela deixam de abrir'
+          }.`
+        : 'Nada mudou — já estava assim.',
+    ),
+  );
+}
+
+/**
+ * Tirar a agenda de uma região do ar, ou voltar a pô-la (C4-035).
+ *
+ * Era uma caixa no mesmo formulário do lema e do texto «sobre», gravada pelo
+ * mesmo botão que corrige uma vírgula, e respondia «Região atualizada.». É o
+ * gesto mais grave do painel: o domínio da região passa a mostrar a página do
+ * produto, e as páginas dela deixam de existir.
+ *
+ * Passa a ser só do dono, num bloco à parte, e tirar do ar obriga a escrever o
+ * nome da região — um clique distraído não chega. Voltar a pôr no ar é um
+ * botão só. O aviso diz a hora, e a ficha desenha ao lado o «Voltar a pôr no
+ * ar». Escreve pela mesma `update_region`, com a linha `region.update` na
+ * auditoria.
+ */
+export async function definirRegiaoNoAr(formData: FormData): Promise<void> {
+  const { actor } = await exigirDono();
+  const id = String(formData.get('id') ?? '');
+  const voltarPara = `/admin/regioes/${encodeURIComponent(id)}`;
+  const noAr = formData.get('no_ar') === '1';
+  const regioes = await listRegionsAdmin();
+  const regiao = regioes.find((linha) => linha.id === id);
+  if (!regiao) redirect(comAviso('/admin/regioes', 'Essa região não existe.'));
+  /*
+   * A região principal do deployment não sai do ar. É dela a identidade que o
+   * deployment veste — os canónicos, os feeds, o sitemap, o painel —, e é ela
+   * que um build sem base de dados pré-gera; com a linha escondida pela RLS o
+   * sítio inteiro caía no esqueleto neutro de recurso, sem nome, sem
+   * logótipos e sem aviso nenhum. A base não pode guardar esta regra, porque
+   * quem é a região principal é configuração do deployment; guarda-a quem a
+   * conhece.
+   */
+  if (!noAr && id === REGIAO_PRINCIPAL) {
+    redirect(
+      comAviso(
+        voltarPara,
+        'A região principal do deployment não sai do ar daqui — o deployment tem primeiro de passar o papel a outra região.',
+      ),
+    );
+  }
+  if (!noAr) {
+    const escrito = String(formData.get('confirmacao') ?? '')
+      .trim()
+      .toLocaleLowerCase('pt-PT');
+    if (escrito !== regiao.name.trim().toLocaleLowerCase('pt-PT')) {
+      redirect(
+        comAviso(
+          voltarPara,
+          `Para tirar a agenda do ar, escreve o nome da região — «${regiao.name}» — na caixa de confirmação. Nada mudou.`,
+        ),
+      );
+    }
+  }
+
+  const { data, error } = await requireAdminClient().rpc('update_region', {
+    p_id: id,
+    p_patch: { is_enabled: noAr },
+    p_actor: actor,
+  });
+  if (error) redirect(comAviso(voltarPara, avisoDoErroDaBase(error)));
+  revalidateTag(CACHE_TAGS.regions, { expire: 0 });
+
+  const { time } = emLisboa(Date.now());
+  const agenda = `A agenda ${doNomeDaRegiao(regiao.article, regiao.name)}`;
   redirect(
     comAviso(
       voltarPara,
-      data === true
-        ? `A secção passou a estar ${ligar ? 'ligada' : 'desligada'}.`
-        : 'Nada mudou — já estava assim.',
+      data !== true
+        ? noAr
+          ? `${agenda} já estava no ar.`
+          : `${agenda} já estava fora do ar.`
+        : noAr
+          ? `${agenda} voltou ao ar às ${formatTime(time) ?? time}.`
+          : `${agenda} saiu do ar às ${formatTime(time) ?? time}: o domínio dela mostra a página do produto.`,
     ),
   );
 }
@@ -312,11 +859,16 @@ function regiaoDoFormulario(formData: FormData): string {
 }
 
 export async function fixarDestaque(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = regiaoDoFormulario(formData);
   const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
   const evento = String(formData.get('evento') ?? '').trim();
+  // Os destaques são da entrada de uma região: quem a gere escolhe-os, e só
+  // entre os eventos dela.
+  const { actor } = await exigirPapelNas('gestor', async () => [
+    regiao,
+    ...(evento ? [await regiaoDoEvento(evento)] : []),
+  ]);
+  const supabase = requireAdminClient();
   if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
 
   /*
@@ -339,7 +891,7 @@ export async function fixarDestaque(formData: FormData): Promise<void> {
 
   const seguinte = (ultima?.posicao ?? 0) + 1;
   if (seguinte > DESTAQUES_MAX) {
-    redirect(comAviso(voltarPara, `A montra não leva mais de ${DESTAQUES_MAX} fixados.`));
+    redirect(comAviso(voltarPara, `Os destaques não levam mais de ${DESTAQUES_MAX} fixados.`));
   }
 
   const { error } = await supabase
@@ -352,13 +904,13 @@ export async function fixarDestaque(formData: FormData): Promise<void> {
   }
 
   revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
-  redirect(comAviso(voltarPara, 'Fixado na montra.'));
+  redirect(comAviso(voltarPara, 'Fixado nos destaques da entrada.'));
 }
 
 export async function largarDestaque(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = regiaoDoFormulario(formData);
+  await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
   const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
   const evento = String(formData.get('evento') ?? '').trim();
   if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
@@ -376,13 +928,13 @@ export async function largarDestaque(formData: FormData): Promise<void> {
    * renumeração é três escritas a mais para arrumar um número que ninguém vê.
    */
   revalidateTag(CACHE_TAGS.destaques, { expire: 0 });
-  redirect(comAviso(voltarPara, 'Largado da montra.'));
+  redirect(comAviso(voltarPara, 'Tirado dos destaques da entrada.'));
 }
 
 export async function moverDestaque(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = regiaoDoFormulario(formData);
+  await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
   const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
   const evento = String(formData.get('evento') ?? '').trim();
   const sentido = String(formData.get('sentido') ?? '');
@@ -436,9 +988,9 @@ export async function moverDestaque(formData: FormData): Promise<void> {
 }
 
 export async function definirAlvoDeDestaques(formData: FormData): Promise<void> {
-  await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = regiaoDoFormulario(formData);
+  await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
   const voltarPara = CAMINHO_DOS_DESTAQUES(regiao);
 
   const alvo = z.coerce.number().int().min(0).max(DESTAQUES_MAX).safeParse(formData.get('alvo'));
@@ -459,18 +1011,51 @@ export async function definirAlvoDeDestaques(formData: FormData): Promise<void> 
   redirect(
     comAviso(
       voltarPara,
-      alvo.data === 0 ? 'A montra da entrada fica desligada.' : `A montra passa a ${alvo.data}.`,
+      alvo.data === 0
+        ? 'Os destaques da entrada ficam desligados.'
+        : `Os destaques da entrada passam a ${alvo.data} cartazes.`,
     ),
   );
 }
 
-export async function atualizarRegiao(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
+/** Os números da ficha, ditos como a página os diz — e não pelo nome da coluna. */
+const ROTULOS_NUMERICOS: Record<string, string> = {
+  funding_logo_width: 'A largura do logótipo do financiamento',
+  funding_logo_height: 'A altura do logótipo do financiamento',
+  logo_width: 'A largura do logótipo',
+  logo_height: 'A altura do logótipo',
+  sort_order: 'A ordem',
+};
 
+export async function atualizarRegiao(formData: FormData): Promise<void> {
   const id = String(formData.get('id') ?? '');
   const voltarPara = `/admin/regioes/${encodeURIComponent(id)}`;
+  const sessao = await exigirPapel(id, 'gestor');
+  const { actor } = sessao;
+  const supabase = requireAdminClient();
   if (!id) redirect(comAviso('/admin/regioes', 'Região em falta.'));
+
+  /*
+   * O gestor de uma região edita os textos dela, a cor e o planeador; o resto
+   * da ficha — o email por onde entram as propostas, os logótipos (que entram
+   * por commit), o responsável pelo tratamento, a ordem entre regiões, ligar e
+   * desligar — é de quem opera o produto (`CONTAS.md`). A página não desenha
+   * esses campos a um gestor; se chegarem na mesma, é um formulário feito à
+   * mão, e recusa-se sem escrever nada.
+   */
+  if (sessao.tipo !== 'dono') {
+    const doDono = [...CAMPOS_DA_REGIAO_DO_DONO, 'is_enabled_presente', 'is_enabled'].filter(
+      (campo) => formData.get(campo) !== null,
+    );
+    if (doDono.length > 0) {
+      redirect(
+        comAviso(
+          voltarPara,
+          'Parte deste formulário é de quem opera o Coreto, e não desta conta — nada foi alterado.',
+        ),
+      );
+    }
+  }
 
   /*
    * O patch leva TODOS os campos do formulário, não só os mudados: é a função
@@ -489,7 +1074,12 @@ export async function atualizarRegiao(formData: FormData): Promise<void> {
       } else {
         const numero = Number.parseInt(texto, 10);
         if (!Number.isFinite(numero) || String(numero) !== texto) {
-          redirect(comAviso(voltarPara, `O campo ${campo} tem de ser um número inteiro.`));
+          redirect(
+            comAviso(
+              voltarPara,
+              `${ROTULOS_NUMERICOS[campo] ?? 'Esse campo'} tem de ser um número inteiro.`,
+            ),
+          );
         }
         patch[campo] = numero;
       }
@@ -503,33 +1093,34 @@ export async function atualizarRegiao(formData: FormData): Promise<void> {
   if (patch.sort_order === null) {
     redirect(comAviso(voltarPara, 'A ordem tem de ser um número inteiro.'));
   }
-  // A caixa «região ligada» só viaja quando desmarcada não viaja nada — é o
-  // feitio dos checkboxes; o campo escondido `is_enabled_presente` diz que o
-  // formulário a trazia.
-  if (formData.get('is_enabled_presente') !== null) {
-    patch.is_enabled = formData.get('is_enabled') !== null;
-  }
+  // Ligar e desligar a região saiu deste formulário (C4-035): é a
+  // `definirRegiaoNoAr`, com confirmação escrita. Um `is_enabled` que chegue
+  // por aqui não entra no patch — um formulário feito à mão não tira uma
+  // agenda do ar pelo botão de corrigir uma vírgula.
   /*
-   * A região principal do deployment não se desliga. É dela a identidade que o
-   * deployment veste — os canónicos, os feeds, o sitemap, o painel — e é ela
-   * que um build sem base de dados pré-gera; com a linha escondida pela RLS o
-   * sítio inteiro caía no esqueleto neutro de recurso, sem nome, sem logótipos
-   * e sem aviso nenhum. Quando a escotilha dos anfitriões desconhecidos está
-   * aberta (`REGIAO_DE_OMISSAO` no ambiente), é também a região que eles veem,
-   * o que só agrava a queda. A base não pode guardar esta regra, porque quem é
-   * a região principal é configuração do deployment; guarda-a quem a conhece.
-   * O dia em que uma região destas tiver de sair do ar começa por passar o
-   * papel a outra região, não por este interruptor.
+   * O planeador de transportes (0164) é do gestor da região. A base recusa o
+   * que não seja um endereço https:// sem espaços, mas a recusa dela só diz
+   * metade — «com https://» — a quem colou um endereço com um espaço no meio.
+   * Aqui diz-se a outra metade, antes de chegar lá.
    */
-  if (id === REGIAO_PRINCIPAL && patch.is_enabled === false) {
-    redirect(
-      comAviso(
-        voltarPara,
-        'A região principal do deployment não se desliga — é dela a identidade que o ' +
-          'sítio veste quando não há domínio que diga outra coisa. Para a tirar do ar, ' +
-          'o deployment tem primeiro de passar o papel a outra região.',
-      ),
-    );
+  const planeador = patch.transit_planner_url;
+  if (typeof planeador === 'string') {
+    if (/\s/.test(planeador)) {
+      redirect(
+        comAviso(
+          voltarPara,
+          'O endereço do planeador não pode ter espaços — copia-o inteiro da barra do navegador.',
+        ),
+      );
+    }
+    if (!planeador.startsWith('https://')) {
+      redirect(
+        comAviso(
+          voltarPara,
+          'O endereço do planeador tem de começar por https:// — copia-o inteiro da barra do navegador.',
+        ),
+      );
+    }
   }
 
   const { data, error } = await supabase.rpc('update_region', {
@@ -537,7 +1128,7 @@ export async function atualizarRegiao(formData: FormData): Promise<void> {
     p_patch: patch,
     p_actor: actor,
   });
-  if (error) redirect(comAviso(voltarPara, error.message));
+  if (error) redirect(comAviso(voltarPara, avisoDoErroDaBase(error)));
 
   // A identidade da região entra em todas as páginas do domínio dela — a
   // etiqueta refaz tudo, que é o preço certo de uma edição rara.
@@ -561,7 +1152,8 @@ const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/;
  * interruptor da região, um gesto humano à parte.
  */
 export async function registarLicenca(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  // Do dono: uma licença é um contrato, e os contratos não são de uma região.
+  const { actor } = await exigirDono();
   const supabase = requireAdminClient();
 
   const regiao = String(formData.get('regiao') ?? '');
@@ -613,9 +1205,9 @@ export async function registarLicenca(formData: FormData): Promise<void> {
  * instrução, e o anterior deixa de abrir no pedido seguinte.
  */
 export async function criarSegredoDeBalanco(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = String(formData.get('region_id') ?? '').trim();
+  const { actor } = await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
   const voltarPara = regiao ? `/admin/regioes/${regiao}` : '/admin/regioes';
   if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
 
@@ -643,9 +1235,9 @@ export async function criarSegredoDeBalanco(formData: FormData): Promise<void> {
 
 /** Fecha a porta de uma região. O que lá estava deixa de abrir no pedido seguinte. */
 export async function revogarSegredosDeBalanco(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
   const regiao = String(formData.get('region_id') ?? '').trim();
+  const { actor } = await exigirPapel(regiao, 'gestor');
+  const supabase = requireAdminClient();
   const voltarPara = regiao ? `/admin/regioes/${regiao}` : '/admin/regioes';
   if (!regiao) redirect(comAviso('/admin/regioes', 'Região em falta.'));
 
@@ -689,7 +1281,9 @@ const SENHA_MAXIMA = 200;
  * combinar outra vez com quem já a tem.
  */
 export async function definirBarreira(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  // Do dono: a barreira tapa uma região por contratar, e quem decide quando
+  // ela abre é quem a licencia.
+  const { actor } = await exigirDono();
   const supabase = requireAdminClient();
 
   const regiao = String(formData.get('region_id') ?? '').trim();
@@ -784,7 +1378,12 @@ const POR_DE_LADO = z.object({
  * ganha na resolução (0066). Sem concelho, é regional.
  */
 export async function ligarSitio(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  // O espaço e o concelho do nome têm de ser de uma região desta sessão. Um
+  // nome sem concelho liga em toda a parte, e por isso é só do dono.
+  const { actor } = await exigirPapelNas('editor', async () => [
+    await regiaoDoEspaco(String(formData.get('venue') ?? '')),
+    await regiaoDoConcelho(String(formData.get('municipality') ?? '') || null),
+  ]);
   const supabase = requireAdminClient();
 
   const lido = LIGAR_SITIO.safeParse({
@@ -848,7 +1447,15 @@ export async function ligarSitio(formData: FormData): Promise<void> {
  * de voltar todas as noites a pedir uma decisão que já foi tomada.
  */
 export async function porSitioDeLado(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  const { actor } = await exigirPapelNas('editor', async () => {
+    const { data, error } = await requireAdminClient()
+      .from('unresolved_venues')
+      .select('municipality_id')
+      .eq('normalized', String(formData.get('normalized') ?? ''));
+    if (error) throw new Error(error.message);
+    const linhas = (data ?? []) as Array<{ municipality_id: string | null }>;
+    return Promise.all(linhas.map((linha) => regiaoDoConcelho(linha.municipality_id)));
+  });
   const supabase = requireAdminClient();
 
   const lido = POR_DE_LADO.safeParse({ normalized: formData.get('normalized') });
@@ -1052,7 +1659,9 @@ function voltarAoFormulario(formData: FormData, aviso: string): never {
  * cabeçalho Host; ligada só quer dizer que o mapa dos domínios já a conhece.
  */
 export async function criarRegiao(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
+  // Do dono: fazer nascer uma região é uma decisão comercial, e a região nova
+  // ainda não tem gestor nenhum.
+  const { actor } = await exigirDono();
   const supabase = requireAdminClient();
 
   const lido = NOVA_REGIAO.safeParse(
@@ -1170,10 +1779,15 @@ async function apagarCopiasDoCartaz(eventId: string): Promise<void> {
  * a página a apontar para um endereço morto e a recolha a repor tudo à noite.
  */
 export async function retirarCartaz(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
   const evento = String(formData.get('evento') ?? '').trim();
-  const voltarPara = String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES);
+  const { actor } = await exigirPapelNas('editor', async () => [await regiaoDoEvento(evento)]);
+  const supabase = requireAdminClient();
+  // O destino só vale se for do painel: vinha do formulário tal e qual, e um
+  // `https://…` posto à mão saía do sítio com o aviso pendurado.
+  const voltarPara = destinoDoPainel(
+    String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES),
+    CAMINHO_DOS_CARTAZES,
+  );
   if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
 
   const { error } = await supabase.rpc('retirar_cartaz', {
@@ -1196,10 +1810,13 @@ export async function retirarCartaz(formData: FormData): Promise<void> {
  * três vezes à espera de ver o cartaz aparecer.
  */
 export async function reporCartaz(formData: FormData): Promise<void> {
-  const actor = await requireAdmin();
-  const supabase = requireAdminClient();
   const evento = String(formData.get('evento') ?? '').trim();
-  const voltarPara = String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES);
+  const { actor } = await exigirPapelNas('editor', async () => [await regiaoDoEvento(evento)]);
+  const supabase = requireAdminClient();
+  const voltarPara = destinoDoPainel(
+    String(formData.get('voltar') ?? CAMINHO_DOS_CARTAZES),
+    CAMINHO_DOS_CARTAZES,
+  );
   if (!evento) redirect(comAviso(voltarPara, 'Falta dizer qual é o evento.'));
 
   const { error } = await supabase.rpc('repor_cartaz', {
@@ -1225,7 +1842,9 @@ export async function reporCartaz(formData: FormData): Promise<void> {
  * `havia` em `decidirCartaz`. O que se decidiu não guardar não fica guardado.
  */
 export async function declararAlojamentoDaFonte(formData: FormData): Promise<void> {
-  await requireAdmin();
+  // Do dono: copiar cartazes de terceiros para o nosso balde é uma decisão de
+  // quem responde pelo alojamento, e vale para a fonte em todas as regiões.
+  await exigirDono();
   const supabase = requireAdminClient();
   const fonte = String(formData.get('fonte') ?? '').trim();
   const voltarPara = `${CAMINHO_DOS_CARTAZES}?vista=fontes`;

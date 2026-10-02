@@ -1,7 +1,8 @@
 import { todayInLisbon } from '@coreto/core/dates';
 import 'server-only';
 import { hasServiceRole } from '../env';
-import { requireAdmin } from './auth';
+import { exigirSessao } from './auth';
+import { pode, type Sessao } from './papeis';
 import { listRegionsAdmin, monthlyReport } from './queries';
 import { escolherRegiao, lerMes, mesAnterior, type RelatorioMensal } from './relatorio';
 
@@ -38,8 +39,9 @@ function recusa(status: number, erro: string): Response {
 }
 
 export async function prepararExportacao(request: Request): Promise<Exportacao> {
+  let sessao: Sessao;
   try {
-    await requireAdmin();
+    sessao = await exigirSessao();
   } catch {
     return { ok: false, resposta: recusa(401, 'sessão de administração em falta') };
   }
@@ -50,7 +52,14 @@ export async function prepararExportacao(request: Request): Promise<Exportacao> 
   const mes = mesPedido ? lerMes(mesPedido) : mesAnterior(todayInLisbon());
   if (!mes) return { ok: false, resposta: recusa(400, 'o mês tem de ser AAAA-MM') };
 
-  const regiao = escolherRegiao(await listRegionsAdmin(), params.get('regiao'));
+  /*
+   * Só as regiões que esta sessão gere (C4-015): o relatório de uma CIM não é
+   * de outra. Uma região que existe mas não é desta conta responde como uma
+   * que não existe — «sem acesso» dizia a quem experimenta que acertou num
+   * identificador.
+   */
+  const regioes = (await listRegionsAdmin()).filter((linha) => pode(sessao, linha.id, 'gestor'));
+  const regiao = escolherRegiao(regioes, params.get('regiao'));
   if (!regiao) return { ok: false, resposta: recusa(404, 'região desconhecida') };
 
   return { ok: true, regiao, mes, relatorio: await monthlyReport(regiao, mes) };

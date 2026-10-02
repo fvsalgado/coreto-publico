@@ -320,7 +320,7 @@ describe('paraCsv', () => {
     expect(linhas).toContain('eventos_publicados_no_mes;tomar;Tomar;musica;Música;12');
     expect(linhas).toContain('eventos_a_decorrer_no_mes;ourem;Ourém;0');
     expect(linhas).toContain('totais;publicados_no_mes;13');
-    expect(linhas).toContain('submissoes_recebidas;Formulário;0');
+    expect(linhas).toContain('submissoes_recebidas;Envio por programa;0');
     expect(linhas).toContain('submissoes_revistas;Aprovadas;5');
     expect(linhas).toContain('qualidade;tomar;Tomar;40;3;43;30;20;35;41;22;20');
     expect(linhas).toContain('visitas;fotografia_de;2026-08-01');

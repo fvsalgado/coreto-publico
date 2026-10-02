@@ -233,20 +233,27 @@ function ehPendente(chave) {
 // -------------------------------------------------- o texto que se vê mesmo --
 
 /**
- * Os ficheiros que servem texto público.
+ * Os ficheiros que servem texto.
  *
- * O painel fica de fora: `apps/web/app/admin` está atrás de sessão e fala para
- * dentro, e o glossário interno existe precisamente para se usar aí. Uma regra
- * que proibisse «disjuntor» na página de fontes do painel era uma regra que
- * ninguém cumpria.
+ * Por omissão, o que se serve a quem visita. Com `comPainel`, também o painel —
+ * as páginas de `apps/web/app/admin` e os avisos que as ações de
+ * `apps/web/src/lib/admin` escrevem de volta.
+ *
+ * O painel ficou de fora durante muito tempo, com a ideia de que o glossário
+ * interno existia para se usar lá. Deixou de ser assim no lote 6: o painel é o
+ * produto que a CIM usa todos os dias, e quem modera numa câmara não tem de
+ * saber o que é um «disjuntor» ou uma «montra» (C4-018). O glossário vale
+ * para ele como vale para o sítio.
  */
-function ficheirosPublicos() {
+function ficheirosPublicos({ comPainel = false } = {}) {
   const encontrados = [];
   const andar = (dir) => {
     for (const entrada of readdirSync(dir, { withFileTypes: true })) {
       const caminho = join(dir, entrada.name);
       if (entrada.isDirectory()) {
-        if (entrada.name !== 'admin' && entrada.name !== 'node_modules') andar(caminho);
+        if ((comPainel || entrada.name !== 'admin') && entrada.name !== 'node_modules') {
+          andar(caminho);
+        }
       } else if (/\.tsx?$/.test(entrada.name) && !/\.test\.tsx?$/.test(entrada.name)) {
         encontrados.push(relative(RAIZ, caminho));
       }
@@ -254,6 +261,7 @@ function ficheirosPublicos() {
   };
   andar(join(RAIZ, 'apps', 'web', 'app'));
   andar(join(RAIZ, 'apps', 'web', 'src', 'components'));
+  if (comPainel) andar(join(RAIZ, 'apps', 'web', 'src', 'lib', 'admin'));
   return encontrados;
 }
 
@@ -323,9 +331,9 @@ const TRATAMENTO_PLURAL = ['vocês', 'vosso', 'vossa', 'vossos', 'vossas', 'vos'
 /** E «sítio», sempre — a palavra da casa (`docs/NARRATIVA.md` §8). */
 const SITE = ['site', 'sites'];
 
-function varrerDicionario(termos, { afirmacao, porque, prefixoDaChave }) {
+function varrerDicionario(termos, { afirmacao, porque, prefixoDaChave, comPainel = false }) {
   const achados = [];
-  for (const ficheiro of ficheirosPublicos()) {
+  for (const ficheiro of ficheirosPublicos({ comPainel })) {
     const fonte = semComentarios(ler(ficheiro));
     for (const { linha, texto } of prosaDe(fonte)) {
       for (const termo of termos) {
@@ -1710,7 +1718,13 @@ if (/import .*analytics\/posthog/.test(ler('apps/web/src/components/AnalyticsPro
 
 {
   const consulta = ler('apps/web/src/lib/analytics/queries.ts');
-  const semRegiao = /rpc\('event_stats_by_municipality'\)/.test(consulta);
+  // O recorte chegou com as contas por pessoa (C4-015), e não pela RPC: a
+  // função continua a devolver os concelhos todos, e é o painel que guarda só
+  // os da região escolhida. Conta como recorte feito quando esse filtro lá
+  // está — e aí é a nota antiga que tem de ter saído.
+  const semRegiao =
+    /rpc\('event_stats_by_municipality'\)/.test(consulta) &&
+    !/concelhos\.includes\(linha\.municipalityId\)/.test(consulta);
   const painel = semComentarios(ler('apps/web/app/admin/estatisticas/page.tsx'));
   if (semRegiao) {
     afirmar({
@@ -2107,28 +2121,35 @@ if (noDossiePrivado('docs/NARRATIVA.md')) {
 }
 
 varrerDicionario(GLOSSARIO_INTERNO, {
-  afirmacao: 'nenhum termo do glossário interno aparece em texto visível servido',
+  afirmacao: 'nenhum termo do glossário interno aparece em texto visível servido, painel incluído',
   porque:
-    'o jargão já escorregou uma vez para a declaração de acessibilidade e para a entrada do Médio Tejo; «montra» é a página do produto e «gaveta» é o menu, e quem lê não tem de saber a diferença',
+    'o jargão já escorregou uma vez para a declaração de acessibilidade e para a entrada do Médio Tejo, e o painel abria com «disjuntor» e «montra»; quem lê — quem visita ou quem modera numa câmara — não tem de saber a diferença',
   prefixoDaChave: 'glossario',
+  comPainel: true,
 });
 varrerDicionario(PALAVRAS_PROIBIDAS, {
   afirmacao: 'nenhuma palavra proibida aparece em texto visível servido',
   porque:
     'cada uma descreve qualquer coisa e por isso não descreve nada; ao lado de frases que se podem conferir, uma delas chega para pôr a página inteira em dúvida',
   prefixoDaChave: 'proibida',
+  // O painel também: é a mesma casa a falar, a quem modera.
+  comPainel: true,
 });
 varrerDicionario(TRATAMENTO_PLURAL, {
   afirmacao: 'o texto servido trata quem lê por «você» implícito, e nunca por «vocês»',
   porque:
     'o tratamento mudava de página para página, e às vezes dentro da mesma caixa; uma regra que muda com a página ninguém a consegue seguir (docs/NARRATIVA.md §8)',
   prefixoDaChave: 'tratamento',
+  // O painel também: é a mesma casa a falar, a quem modera.
+  comPainel: true,
 });
 varrerDicionario(SITE, {
   afirmacao: 'o texto servido diz «sítio», e nunca «site»',
   porque:
     '«sítio» é a palavra da casa — «o sítio da câmara», «colar no seu sítio» — e as duas a conviver liam-se como descuido (docs/NARRATIVA.md §8)',
   prefixoDaChave: 'sitio',
+  // O painel também: é a mesma casa a falar, a quem modera.
+  comPainel: true,
 });
 
 {

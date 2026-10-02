@@ -120,7 +120,7 @@ index dbb6612..a800cd5 100644
 -está escrita em [`docs/TITULARIDADE.md`](docs/TITULARIDADE.md), §5.5.
 +está escrita no dossiê de titularidade, §5.5 — fora deste repositório.
 diff --git a/README.md b/README.md
-index 2929d01..107f3ff 100644
+index 8a90309..107f3ff 100644
 --- a/README.md
 +++ b/README.md
 @@ -8,10 +8,53 @@ usar: página, RSS, calendário, JSON e um widget para embeber.
@@ -178,7 +178,7 @@ index 2929d01..107f3ff 100644
  ## O que é e para quem
  
  Três públicos, por esta ordem:
-@@ -80,24 +123,19 @@ corrigida para o número errado por quem só olhe para ela.
+@@ -80,25 +123,19 @@ corrigida para o número errado por quem só olhe para ela.
  | Medição             | contadores agregados em Postgres; PostHog na UE, sem cookies, facultativo |
  | Integração contínua | GitHub Actions                                                            |
  
@@ -199,6 +199,7 @@ index 2929d01..107f3ff 100644
 -| [`docs/EMAIL.md`](docs/EMAIL.md)                                     | O canal de entrada por email                                                                   |
 -| [`docs/DNS.md`](docs/DNS.md)                                         | DNS, certificados e autenticação de email (CAA, DNSSEC, SPF, DKIM, DMARC)                      |
 -| [`docs/NOVA-CIM.md`](docs/NOVA-CIM.md)                               | Como nasce uma região nova — sem um commit                                                     |
+-| [`docs/ENTRADA.md`](docs/ENTRADA.md)                                 | O guia para a CIM: o que nos dá, o que decide, os papéis no painel e os passos                 |
 -| [`docs/regioes/medio-tejo/`](docs/regioes/medio-tejo/)               | Os levantamentos do Médio Tejo (fontes, coretos, plano de dados, inventário)                   |
 +| Documento                                    | Para quê                                             |
 +| -------------------------------------------- | ---------------------------------------------------- |
@@ -216,7 +217,7 @@ index 2929d01..107f3ff 100644
  
  Porque é que a impressão digital tem de ser idêntica dos dois lados, porque é
  que quase-duplicados não se fundem sozinhos, o que impede uma recolha vazia de
-@@ -277,7 +315,7 @@ Aqui esteve escrito que ele «é o titular dos direitos», sem reserva nenhuma,
+@@ -278,7 +315,7 @@ Aqui esteve escrito que ele «é o titular dos direitos», sem reserva nenhuma,
  esta secção era uma segunda fonte de verdade sobre um assunto que não pode ter
  duas. Passou a haver uma só, e mais honesta: **[`AUTORIA.md`](AUTORIA.md)** diz
  o que é reclamado e o que não é; **[`docs/TERCEIROS.md`](docs/TERCEIROS.md)**

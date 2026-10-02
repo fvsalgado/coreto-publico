@@ -182,6 +182,17 @@ export function nextBaseline(current: number | null, found: number): number {
  * que lá está. O backoffice quer poder dizer «a fonte continua a dizer outra
  * coisa» em vez de esconder a discordância.
  */
+/**
+ * O cadeado das datas de um evento.
+ *
+ * As sessões não são uma coluna de `events` — vivem em `event_sessions` —, e
+ * por isso o `applyManualLocks` passa por este cadeado sem lhe tocar (só
+ * trava o que existe na linha guardada). Quem o respeita é a escrita das
+ * sessões, na recolha: com ele, as datas que uma pessoa corrigiu no painel
+ * (`update_event`, 0173) não são substituídas pelas da fonte.
+ */
+export const CADEADO_DAS_SESSOES = 'sessions';
+
 export interface LockResult<T> {
   event: T;
   /** Campos que a recolha queria escrever e não escreveu. */

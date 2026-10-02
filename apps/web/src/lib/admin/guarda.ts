@@ -37,6 +37,18 @@ export const ADMIN_PATH_HEADER = 'x-coreto-caminho-admin';
 export const ADMIN_LOGIN_PATH = '/admin/entrar';
 
 /**
+ * A página onde uma pessoa convidada escolhe a palavra-passe (0170).
+ *
+ * Abre sem sessão, como a entrada, e pela mesma razão: quem lá chega ainda não
+ * tem com que entrar. A guarda dela é a ligação de uso único que traz no
+ * endereço, e é a base que a confere.
+ */
+export const ADMIN_ACTIVATION_PATH = '/admin/ativar';
+
+/** As duas páginas da área interna que se abrem sem sessão. Lista fechada. */
+export const CAMINHOS_SEM_SESSAO: readonly string[] = [ADMIN_LOGIN_PATH, ADMIN_ACTIVATION_PATH];
+
+/**
  * Para onde mandar um pedido a `/admin` que não tem sessão.
  *
  * Guarda-se o caminho a que a pessoa ia, no `destino`, para não se perder o
@@ -68,6 +80,6 @@ export function adminLoginPath(pathname: string): string {
  */
 export function barreiraDoLayout(temSessao: boolean, cabecalho: string | null): string | null {
   if (temSessao) return null;
-  if (!cabecalho || cabecalho === ADMIN_LOGIN_PATH) return null;
+  if (!cabecalho || CAMINHOS_SEM_SESSAO.includes(cabecalho)) return null;
   return adminLoginPath(cabecalho);
 }

@@ -1785,4 +1785,113 @@ begin
 end
 $$;
 
+-- ---- As contas por pessoa e os papéis por região (0170, 0171) ----
+--
+-- O desenho comum aos dois painéis da casa (`CONTAS.md`), verificado sobre a
+-- base inteira e não só no dia da migração: as três tabelas fechadas ao
+-- público e sem policies, os dois papéis e mais nenhum, o email em minúsculas,
+-- ninguém semeado, e as funções que escrevem nelas fora do alcance de quem não
+-- é a chave de serviço (a regra geral de cima apanha as `security definer`;
+-- aqui nomeia-se cada uma, para uma que perca o `security definer` não
+-- escapar). E o recorte das etiquetas por região a não misturar regiões.
+do $$
+declare
+  n integer;
+  v_tabela text;
+  v_funcao text;
+  v_recusou boolean;
+  v_pessoa uuid;
+begin
+  foreach v_tabela in array array['admin_pessoas', 'admin_papeis', 'admin_convites'] loop
+    assert (select relrowsecurity from pg_class where oid = ('public.' || v_tabela)::regclass),
+      format('%s está sem RLS', v_tabela);
+    assert not has_table_privilege('anon', 'public.' || v_tabela, 'select'),
+      format('o anon lê %s', v_tabela);
+    assert not has_table_privilege('authenticated', 'public.' || v_tabela, 'select'),
+      format('quem tem sessão lê %s', v_tabela);
+    select count(*) into n from pg_policies where schemaname = 'public' and tablename = v_tabela;
+    assert n = 0, format('%s ganhou %s policy(s) — sem nenhuma, nega tudo', v_tabela, n);
+  end loop;
+
+  -- Nenhuma pessoa nasce de uma migração ou de um seed: a linha de uma pessoa
+  -- entra pelo painel, nunca por um ficheiro que vai para o repositório.
+  select count(*) into n from public.admin_pessoas;
+  assert n = 0, format('há %s pessoa(s) semeada(s) — as contas nascem no painel', n);
+
+  foreach v_funcao in array array[
+    'admin_criar_pessoa', 'admin_definir_papel', 'admin_definir_estado_da_pessoa',
+    'admin_criar_convite', 'admin_ativar_com_convite', 'admin_registar_acesso',
+    'rate_limit_peek', 'rate_limit_clear', 'etiquetas_por_mapear_nas_regioes'
+  ] loop
+    select count(*) into n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+     where s.nspname = 'public' and p.proname = v_funcao and p.prosecdef;
+    assert n = 1, format('a função %s não existe, ou não é security definer', v_funcao);
+    assert not exists (
+      select 1 from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+       where s.nspname = 'public' and p.proname = v_funcao
+         and (has_function_privilege('anon', p.oid, 'execute')
+              or has_function_privilege('authenticated', p.oid, 'execute'))
+    ), format('a função %s está ao alcance do público', v_funcao);
+  end loop;
+
+  -- Os dois papéis, e mais nenhum; o email em minúsculas. As restrições, e não
+  -- só as funções: uma escrita por fora também tem de bater nelas.
+  v_recusou := false;
+  begin
+    insert into public.admin_pessoas (email, nome, criada_por) values ('Maiusculas@Exemplo.pt', 'X', 'checks');
+  exception when check_violation then v_recusou := true;
+  end;
+  assert v_recusou, 'um email com maiúsculas entrou na tabela das pessoas';
+
+  v_pessoa := public.admin_criar_pessoa('checks@exemplo.pt', 'Pessoa das checks', 'schema-checks');
+  v_recusou := false;
+  begin
+    insert into public.admin_papeis (pessoa_id, region_id, papel, atribuido_por)
+    select v_pessoa, id, 'dono', 'checks' from public.regions limit 1;
+  exception when check_violation then v_recusou := true;
+  end;
+  assert v_recusou, 'um papel que não é gestor nem editor entrou';
+
+  -- Um papel numa região, e a etiqueta de outra não lhe aparece: o recorte
+  -- prova-se com as regiões de prova que o CI semeia.
+  perform public.admin_definir_papel(v_pessoa, (select id from public.regions order by sort_order limit 1),
+                                     'editor', 'schema-checks');
+  select count(*) into n from public.admin_papeis where pessoa_id = v_pessoa;
+  assert n = 1, 'o papel da pessoa das checks não ficou';
+
+  delete from public.admin_actions where actor = 'schema-checks';
+  delete from public.admin_pessoas where id = v_pessoa;
+end
+$$;
+
+-- ---- Os duplicados prováveis, o «fundir com este» (0172), corrigir um evento (0173) e as fontes no painel (0174) ----
+--
+-- As funções que a ficha da fila chama em vez de pedir identificadores a quem
+-- modera (C4-014, C4-029), a que corrige um evento publicado (C4-017) e as que
+-- governam as fontes (C4-032). As
+-- provas do que fazem — o duplicado pelo espaço, dia e hora; fundir sem tirar
+-- nada; corrigir só o que mudou, com cadeado e rasto — estão nas migrações;
+-- aqui fica que existem, que correm como dono e que o público não lhes chega.
+do $$
+declare
+  v_funcao text;
+  n        integer;
+begin
+  foreach v_funcao in array array[
+    'candidatos_a_duplicado', 'fundir_submissao_no_evento', 'update_event',
+    'pausar_fonte', 'retomar_fonte', 'reabrir_fonte', 'definir_fonte_ligada'
+  ] loop
+    select count(*) into n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+     where s.nspname = 'public' and p.proname = v_funcao and p.prosecdef;
+    assert n = 1, format('a função %s não existe, ou não é security definer', v_funcao);
+    assert not exists (
+      select 1 from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+       where s.nspname = 'public' and p.proname = v_funcao
+         and (has_function_privilege('anon', p.oid, 'execute')
+              or has_function_privilege('authenticated', p.oid, 'execute'))
+    ), format('a função %s está ao alcance do público', v_funcao);
+  end loop;
+end
+$$;
+
 select 'todas as asserções passaram' as resultado;

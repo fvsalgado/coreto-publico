@@ -1,3 +1,4 @@
+import { emLisboa } from '@coreto/core/dates';
 /**
  * O relatório mensal de uma região: o tipo, e o que se faz com ele sem tocar
  * na base.
@@ -233,12 +234,14 @@ export interface RelatorioMensal {
 }
 
 /** Os canais de entrada, com o nome por que o painel os trata. */
-export const CANAIS = { scraper: 'Recolha', email: 'Email', form: 'Formulário' } as const;
+// «Formulário» era o formulário público, que saiu do sítio: o que entra hoje
+// pelo canal `form` é o envio por programa (C4-033).
+export const CANAIS = { scraper: 'Recolha', email: 'Email', form: 'Envio por programa' } as const;
 
 /** Os desfechos de uma revisão, tal como o relatório os agrupa. */
 export const DESFECHOS = {
   approved: 'Aprovadas',
-  rejected: 'Rejeitadas',
+  rejected: 'Recusadas',
   other: 'Outras',
 } as const;
 
@@ -405,8 +408,8 @@ export const MEDIDAS_COMPARAVEIS = [
   { campo: 'events_published', rotulo: 'Eventos publicados' },
   { campo: 'events_happening', rotulo: 'Eventos a decorrer' },
   { campo: 'sessions_happening', rotulo: 'Sessões' },
-  { campo: 'submissions_received', rotulo: 'Submissões recebidas' },
-  { campo: 'submissions_approved', rotulo: 'Submissões aprovadas' },
+  { campo: 'submissions_received', rotulo: 'Propostas recebidas' },
+  { campo: 'submissions_approved', rotulo: 'Propostas aprovadas' },
 ] as const satisfies ReadonlyArray<{
   campo: keyof Omit<TotaisDaJanela, 'from' | 'to'>;
   rotulo: string;
@@ -443,6 +446,196 @@ export function variacao(antes: number, agora: number): Variacao {
       ? `de ${antes} para ${agora}`
       : `${Math.abs(percentagem)}% ${absoluto > 0 ? 'acima' : 'abaixo'}`;
   return { absoluto, percentagem, palavras: `${quantos} ${verbo}, ${parte}` };
+}
+
+/**
+ * Uma tabela do relatório, para quem a abre numa folha de cálculo (C4-033).
+ *
+ * O CSV por blocos (`paraCsv`) é o das máquinas: as colunas têm os nomes que a
+ * ficha técnica documenta, e é por eles que se cruza um mês com outro. A quem
+ * cola o relatório no relatório de atividades da CIM, uma pilha de tabelas com
+ * cabeçalhos diferentes no mesmo ficheiro obrigava a refazer tudo à mão. Aqui
+ * é uma tabela por ficheiro, com os cabeçalhos em português corrente e os
+ * concelhos pelo nome.
+ */
+export interface TabelaDoRelatorio {
+  /** O que vai na barra (`?tabela=`) e no nome do ficheiro. */
+  chave: string;
+  titulo: string;
+  cabecalho: readonly string[];
+  linhas: readonly Celula[][];
+}
+
+/** «1 de outubro de 2026, 02h20», na hora de Lisboa. */
+export function quandoEmLisboa(instante: string | null | undefined): string {
+  if (!instante) return '';
+  const { date, time } = emLisboa(Date.parse(instante));
+  const [ano, mes, dia] = date.split('-');
+  const nomeDoMes = MESES[Number(mes) - 1] ?? mes;
+  const [horas, minutos] = time.split(':');
+  return `${Number(dia)} de ${nomeDoMes} de ${ano}, ${horas}h${minutos}`;
+}
+
+export function tabelasDoRelatorio(relatorio: RelatorioMensal): TabelaDoRelatorio[] {
+  const { events, sources, submissions, quality, visits, territory } = relatorio;
+  const nomes = new Map<string, string>(
+    [...quality, ...events.happening_in_month].map((l) => [l.municipality_id, l.municipality_name]),
+  );
+  const concelho = (id: string | null) => (id ? (nomes.get(id) ?? id) : 'Toda a região');
+  return [
+    {
+      chave: 'resumo',
+      titulo: 'Resumo do mês',
+      cabecalho: ['Medida', 'Valor'],
+      linhas: [
+        ['Região', relatorio.region.name],
+        ['Mês', nomeDoMes(relatorio.month)],
+        ['Produzido a', quandoEmLisboa(relatorio.generated_at)],
+        ['Eventos publicados no mês', events.totals.published_in_month],
+        ['Eventos a decorrer no mês', events.totals.happening_in_month],
+        ['Eventos publicados no dia em que se produziu', events.totals.published_now],
+        ['Propostas recebidas', submissions.received],
+        ['Concelhos', territory.municipalities],
+        ['Freguesias', territory.parishes],
+        ['Câmaras com agenda lida', territory.municipal_sources_enabled],
+        ['Juntas de freguesia com agenda lida', territory.parish_sources_enabled],
+      ],
+    },
+    {
+      chave: 'eventos-publicados',
+      titulo: 'Eventos publicados no mês, por concelho e categoria',
+      cabecalho: ['Concelho', 'Categoria', 'Eventos'],
+      linhas: events.published_in_month.map((l) => [
+        l.municipality_name,
+        l.category_name ?? 'Sem categoria',
+        l.count,
+      ]),
+    },
+    {
+      chave: 'eventos-a-decorrer',
+      titulo: 'Eventos a decorrer no mês, por concelho',
+      cabecalho: ['Concelho', 'Eventos a decorrer'],
+      linhas: events.happening_in_month.map((l) => [l.municipality_name, l.count]),
+    },
+    {
+      chave: 'fontes',
+      titulo: 'As fontes e as leituras do mês',
+      cabecalho: [
+        'Fonte',
+        'Concelho',
+        'Ligada',
+        'Leituras',
+        'Falhas',
+        'Último sucesso',
+        'Eventos novos no mês',
+      ],
+      linhas: sources.map((f) => [
+        f.name,
+        concelho(f.municipality_id),
+        f.is_enabled,
+        f.runs,
+        f.failures,
+        quandoEmLisboa(f.last_success_at),
+        f.items_new_in_month,
+      ]),
+    },
+    {
+      chave: 'propostas',
+      titulo: 'Propostas recebidas no mês, por canal, e revistas, pelo desfecho',
+      cabecalho: ['Propostas', 'Quantas'],
+      linhas: [
+        ...(Object.keys(CANAIS) as Array<keyof typeof CANAIS>).map((canal): Celula[] => [
+          `Recebidas — ${CANAIS[canal]}`,
+          submissions.received_by_channel[canal],
+        ]),
+        ...(Object.keys(DESFECHOS) as Array<keyof typeof DESFECHOS>).map((desfecho): Celula[] => [
+          `Revistas — ${DESFECHOS[desfecho]}`,
+          submissions.reviewed[desfecho],
+        ]),
+      ],
+    },
+    {
+      chave: 'qualidade',
+      titulo: 'A qualidade do catálogo, por concelho',
+      cabecalho: [
+        'Concelho',
+        'Publicados',
+        'Por publicar',
+        'No catálogo',
+        'Com hora',
+        'Com espaço',
+        'Com imagem',
+        'Com descrição',
+        'Com preço',
+        'Com coordenadas',
+      ],
+      linhas: quality.map((q) => [
+        q.municipality_name,
+        q.published,
+        q.pending,
+        q.in_catalogue,
+        q.with_time,
+        q.with_venue,
+        q.with_image,
+        q.with_description,
+        q.with_price,
+        q.with_coordinates,
+      ]),
+    },
+    {
+      chave: 'comparacao',
+      titulo: 'As mesmas medidas noutras janelas',
+      cabecalho: ['Janela', 'De', 'Até', ...MEDIDAS_COMPARAVEIS.map((medida) => medida.rotulo)],
+      linhas: JANELAS.flatMap((janela) => {
+        const totais = relatorio.comparison[janela.campo];
+        if (!totais) return [];
+        return [
+          [
+            janela.rotulo,
+            totais.from,
+            totais.to,
+            ...MEDIDAS_COMPARAVEIS.map((medida) => totais[medida.campo]),
+          ] as Celula[],
+        ];
+      }),
+    },
+    {
+      chave: 'visitas',
+      titulo: 'Visitas, por concelho',
+      cabecalho: [
+        'Concelho',
+        'Aberturas',
+        'Bilhética',
+        'Calendário',
+        'Partilhas',
+        'Cliques',
+        'Página oficial',
+        'Como chegar',
+      ],
+      linhas: visits.available
+        ? visits.by_municipality.map((v) => [
+            v.municipality_name,
+            v.views,
+            v.ticket_clicks,
+            v.ical_downloads,
+            v.shares,
+            v.clicks,
+            v.source_clicks,
+            v.directions_clicks,
+          ])
+        : [],
+    },
+  ];
+}
+
+/** Uma tabela num CSV só, com o mesmo separador e o mesmo BOM do `paraCsv`. */
+export function csvDeUmaTabela(tabela: TabelaDoRelatorio): string {
+  return `${BOM}${[tabela.cabecalho, ...tabela.linhas].map((campos) => linha(campos)).join('\r\n')}\r\n`;
+}
+
+/** `coreto-medio-tejo-2026-08-fontes.csv` */
+export function nomeDoFicheiroDaTabela(regiao: string, mes: string, chave: string): string {
+  return `coreto-${regiao}-${mes}-${chave}.csv`;
 }
 
 /**

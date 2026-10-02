@@ -1,16 +1,21 @@
 import { todayInLisbon } from '@coreto/core/dates';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { BotaoDeCopiar } from '@/src/components/BotaoDeCopiar';
 import { InterruptoresDeSeccoes } from '@/src/components/InterruptoresDeSeccoes';
 import { PageHeader } from '@/src/components/PageHeader';
 import {
+  alternarSeccao,
   atualizarRegiao,
   criarSegredoDeBalanco,
   definirBarreira,
+  definirRegiaoNoAr,
   registarLicenca,
   revogarSegredosDeBalanco,
 } from '@/src/lib/admin/actions';
 import { passosDeArranque } from '@/src/lib/admin/arranque';
+import { exigirSessao } from '@/src/lib/admin/auth';
+import { pode } from '@/src/lib/admin/papeis';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
 import { porNome } from '@/src/lib/artigos';
 import {
@@ -23,19 +28,35 @@ import {
 } from '@/src/lib/admin/queries';
 import { hasServiceRole } from '@/src/lib/env';
 import { formatLongDate } from '@/src/lib/format';
-import { COR_POR_OMISSAO, contraste, paletaDaMarca } from '@/src/lib/paleta';
+import {
+  BRANCO,
+  COR_POR_OMISSAO,
+  contraste,
+  GRAFITE,
+  paletaDaMarca,
+  SUPERFICIE,
+  SUPERFICIE_ESCURA,
+} from '@/src/lib/paleta';
 import { listCoretos, listMunicipalities } from '@/src/lib/queries/events';
 import { doNomeDaRegiao } from '@/src/lib/regiao';
+import { SECCOES_OPCIONAIS } from '@/src/lib/navegacao';
 import { REGIAO_PRINCIPAL } from '@/src/lib/regiao-host';
 
 export const dynamic = 'force-dynamic';
 
-const FIELD = 'mt-1 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
+const FIELD =
+  'mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 const LABEL = 'block text-sm font-medium';
+const BOTAO_DE_DESFAZER =
+  'inline-flex min-h-11 items-center rounded border border-field px-4 text-sm font-medium';
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ aviso?: string; segredo?: string }>;
+  /**
+   * `desfazer` e `estava` vêm de um interruptor de secção acabado de carregar:
+   * a secção e o estado em que estava, para o aviso levar o «Desfazer» (C4-035).
+   */
+  searchParams: Promise<{ aviso?: string; segredo?: string; desfazer?: string; estava?: string }>;
 }
 
 /** Um campo de texto do formulário, com o rótulo e a ajuda no sítio do costume. */
@@ -74,9 +95,15 @@ function Campo({
 }
 
 /**
- * A cor como vai ficar: o cabeçalho com o nome por cima, e o acento sobre o
- * papel, com o contraste de cada par escrito ao lado — para quem escolhe a cor
- * ver o que escolheu antes de guardar outra vez.
+ * A cor como vai ficar: o cabeçalho com o nome por cima, e uma ligação em
+ * cada tema, com o contraste de cada par escrito ao lado — para quem escolhe a
+ * cor ver o que escolheu antes de guardar outra vez.
+ *
+ * Os fundos e as tintas da amostra vão por extenso, e não pelos tokens do
+ * painel: a amostra mostra o sítio da região, e não o painel. Com os tokens, o
+ * painel em tema escuro pintava a superfície escura por baixo da ligação do
+ * tema claro — a amostra mentia, e a auditoria do painel reprovava-a por
+ * contraste.
  */
 function AmostraDaCor({ cor }: { cor: string }) {
   const paleta = paletaDaMarca(cor);
@@ -87,7 +114,7 @@ function AmostraDaCor({ cor }: { cor: string }) {
       </p>
     );
   }
-  const { claro } = paleta;
+  const { claro, escuro } = paleta;
   const arredondar = (valor: number) => valor.toFixed(1).replace('.', ',');
   return (
     <div className="max-w-md overflow-hidden rounded border border-border text-sm">
@@ -97,11 +124,17 @@ function AmostraDaCor({ cor }: { cor: string }) {
       >
         O cabeçalho · {arredondar(contraste(claro.brand, claro['on-brand']))}:1
       </p>
-      <p className="bg-surface px-3 py-2">
+      <p className="px-3 py-2" style={{ backgroundColor: SUPERFICIE, color: GRAFITE }}>
         <span style={{ color: claro.accent }} className="font-semibold underline">
           Uma ligação
         </span>{' '}
-        · {arredondar(contraste(claro.accent, '#ffffff'))}:1 sobre o branco
+        · {arredondar(contraste(claro.accent, SUPERFICIE))}:1 sobre o branco
+      </p>
+      <p className="px-3 py-2" style={{ backgroundColor: SUPERFICIE_ESCURA, color: BRANCO }}>
+        <span style={{ color: escuro.accent }} className="font-semibold underline">
+          Uma ligação
+        </span>{' '}
+        · {arredondar(contraste(escuro.accent, SUPERFICIE_ESCURA))}:1 no tema escuro
       </p>
     </div>
   );
@@ -148,14 +181,14 @@ function Area({
  * promessas das schema-checks, e mudam por migração, seguindo o NOVA-CIM.md.
  */
 export default async function FichaDaRegiao({ params, searchParams }: Props) {
-  const [{ id }, { aviso, segredo }] = await Promise.all([params, searchParams]);
+  const [{ id }, { aviso, segredo, desfazer, estava }] = await Promise.all([params, searchParams]);
 
   if (!hasServiceRole) {
     return (
       <>
         <PageHeader title="Região" />
         <p className="text-muted">
-          Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o backoffice não lê nada.
+          Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o painel não lê nada.
         </p>
       </>
     );
@@ -173,7 +206,17 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
       listCoretos(id),
     ]);
   const regiao = regioes.find((linha) => linha.id === id);
-  if (!regiao) notFound();
+  /*
+   * A ficha é de quem gere a região, e do dono (C4-015). A de outra região
+   * responde como uma que não existe. Dentro dela, o gestor edita os textos, a
+   * cor, o planeador, as secções e a porta do balanço; o resto — o email por
+   * onde entram as propostas, os logótipos, o responsável pelo tratamento, a
+   * ordem, a barreira, as licenças — é do dono, e nem se desenha a um gestor
+   * (a ação recusa-o na mesma, se chegar).
+   */
+  const sessao = await exigirSessao();
+  if (!regiao || !pode(sessao, regiao.id, 'gestor')) notFound();
+  const dono = sessao.tipo === 'dono';
 
   // Já vêm por ordem decrescente de início — a mais recente manda no estado.
   const licencas = todasAsLicencas.filter((linha) => linha.region_id === id);
@@ -227,13 +270,38 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
     <>
       <PageHeader
         title={regiao.name}
-        lead="Tudo o que este formulário grava passa pela função da base e deixa linha na auditoria, com o antes e o depois de cada campo."
+        lead="Tudo o que se grava nesta página fica na auditoria, com o antes e o depois de cada campo."
       />
 
       {aviso ? (
-        <p role="status" className="mb-6 rounded border border-border bg-surface px-3 py-2 text-sm">
-          {aviso}
-        </p>
+        <div
+          role="status"
+          className="mb-6 rounded border border-border bg-surface px-3 py-2 text-sm"
+        >
+          <p>{aviso}</p>
+          {/* O desfazer, ao lado do aviso e não à procura do botão (C4-035). */}
+          {desfazer &&
+          (SECCOES_OPCIONAIS as readonly string[]).includes(desfazer) &&
+          (estava === '0' || estava === '1') ? (
+            <form action={alternarSeccao} className="mt-2">
+              <input type="hidden" name="seccao" value={desfazer} />
+              <input type="hidden" name="ligar" value={estava} />
+              <input type="hidden" name="regiao" value={regiao.id} />
+              <button type="submit" className={BOTAO_DE_DESFAZER}>
+                Desfazer
+              </button>
+            </form>
+          ) : null}
+          {dono && !regiao.is_enabled ? (
+            <form action={definirRegiaoNoAr} className="mt-2">
+              <input type="hidden" name="id" value={regiao.id} />
+              <input type="hidden" name="no_ar" value="1" />
+              <button type="submit" className={BOTAO_DE_DESFAZER}>
+                Voltar a pôr no ar
+              </button>
+            </form>
+          ) : null}
+        </div>
       ) : null}
 
       <section aria-labelledby="arranque" className="mb-8 max-w-3xl">
@@ -268,44 +336,46 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
         </ul>
       </section>
 
-      <section aria-labelledby="fixos" className="mb-8">
-        <h2 id="fixos" className="text-lg font-semibold">
-          O que não se edita aqui
-        </h2>
-        <p className="mt-1 max-w-2xl text-sm text-muted">
-          O identificador é a chave de tudo; o domínio é encaminhamento; o domínio dos UID é o
-          espaço de nomes permanente dos calendários subscritos; a contagem de concelhos e a caixa
-          geográfica são as promessas que as schema-checks verificam. Mudam por migração, com o guia{' '}
-          <code>docs/NOVA-CIM.md</code> ao lado.
-        </p>
-        <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <dt className="text-muted">Identificador</dt>
-            <dd>
-              <code>{regiao.id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted">Domínio</dt>
-            <dd>{regiao.domain}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Domínio dos UID iCal</dt>
-            <dd>{regiao.ical_uid_domain}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Concelhos esperados</dt>
-            <dd>{regiao.expected_municipality_count}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Caixa geográfica</dt>
-            <dd>
-              {regiao.bbox_lat_min}–{regiao.bbox_lat_max} N · {regiao.bbox_lon_min}–
-              {regiao.bbox_lon_max} E
-            </dd>
-          </div>
-        </dl>
-      </section>
+      {dono ? (
+        <section aria-labelledby="fixos" className="mb-8">
+          <h2 id="fixos" className="text-lg font-semibold">
+            O que não se edita aqui
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
+            O identificador é a chave de tudo; o domínio é encaminhamento; o domínio dos UID é o
+            espaço de nomes permanente dos calendários subscritos; a contagem de concelhos e a caixa
+            geográfica são as promessas que as schema-checks verificam. Mudam por migração, com o
+            guia <code>docs/NOVA-CIM.md</code> ao lado.
+          </p>
+          <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-muted">Identificador</dt>
+              <dd>
+                <code>{regiao.id}</code>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted">Domínio</dt>
+              <dd>{regiao.domain}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Domínio dos UID iCal</dt>
+              <dd>{regiao.ical_uid_domain}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Concelhos esperados</dt>
+              <dd>{regiao.expected_municipality_count}</dd>
+            </div>
+            <div>
+              <dt className="text-muted">Caixa geográfica</dt>
+              <dd>
+                {regiao.bbox_lat_min}–{regiao.bbox_lat_max} N · {regiao.bbox_lon_min}–
+                {regiao.bbox_lon_max} E
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
 
       <form action={atualizarRegiao} className="max-w-2xl space-y-8">
         <input type="hidden" name="id" value={regiao.id} />
@@ -372,14 +442,16 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
               obrigatorio
               tipo="url"
             />
-            <Campo
-              nome="contact_email"
-              rotulo="Email da região"
-              valor={regiao.contact_email}
-              obrigatorio
-              tipo="email"
-              ajuda="É para onde o rodapé aponta e por onde entram os eventos por email."
-            />
+            {dono ? (
+              <Campo
+                nome="contact_email"
+                rotulo="Email da região"
+                valor={regiao.contact_email}
+                obrigatorio
+                tipo="email"
+                ajuda="É para onde o rodapé aponta e por onde entram os eventos por email."
+              />
+            ) : null}
           </div>
         </fieldset>
 
@@ -396,90 +468,97 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
               valor={regiao.funding_statement}
               linhas={2}
             />
-            <Campo
-              nome="funding_logo_path"
-              rotulo="Caminho do logótipo"
-              valor={regiao.funding_logo_path}
-              ajuda="Um caminho dentro do sítio, por exemplo /logos/medio-tejo/centro2030.svg. O ficheiro versiona-se no repositório, em public/."
-            />
-            <Campo
-              nome="funding_logo_alt"
-              rotulo="Texto alternativo do logótipo"
-              valor={regiao.funding_logo_alt}
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Campo
-                nome="funding_logo_width"
-                rotulo="Largura (px)"
-                valor={regiao.funding_logo_width}
-                tipo="number"
-              />
-              <Campo
-                nome="funding_logo_height"
-                rotulo="Altura (px)"
-                valor={regiao.funding_logo_height}
-                tipo="number"
-              />
-            </div>
+            {dono ? (
+              <>
+                <Campo
+                  nome="funding_logo_path"
+                  rotulo="Caminho do logótipo"
+                  valor={regiao.funding_logo_path}
+                  ajuda="Um caminho dentro do sítio, por exemplo /logos/medio-tejo/centro2030.svg. O ficheiro versiona-se no repositório, em public/."
+                />
+                <Campo
+                  nome="funding_logo_alt"
+                  rotulo="Texto alternativo do logótipo"
+                  valor={regiao.funding_logo_alt}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Campo
+                    nome="funding_logo_width"
+                    rotulo="Largura (px)"
+                    valor={regiao.funding_logo_width}
+                    tipo="number"
+                  />
+                  <Campo
+                    nome="funding_logo_height"
+                    rotulo="Altura (px)"
+                    valor={regiao.funding_logo_height}
+                    tipo="number"
+                  />
+                </div>
+              </>
+            ) : null}
           </div>
         </fieldset>
 
-        <fieldset>
-          <legend className="text-lg font-semibold">Logótipos e imagem de partilha</legend>
-          <p className="mt-1 text-sm text-muted">
-            Caminhos dentro do sítio; os ficheiros versionam-se no repositório, em{' '}
-            <code>public/logos/</code> e <code>public/og/</code>. Em branco, o cabeçalho escreve o
-            nome por extenso e a partilha usa o cartaz neutro do produto.
-          </p>
-          <div className="mt-3 space-y-4">
-            <Campo
-              nome="logo_on_graphite_path"
-              rotulo="Logótipo sobre grafite"
-              valor={regiao.logo_on_graphite_path}
-              ajuda="A variante para fundos escuros — o cabeçalho e o rodapé."
-            />
-            <Campo
-              nome="logo_on_brand_path"
-              rotulo="Logótipo sobre a cor da marca"
-              valor={regiao.logo_on_brand_path}
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
+        {dono ? (
+          <fieldset>
+            <legend className="text-lg font-semibold">Logótipos e imagem de partilha</legend>
+            <p className="mt-1 text-sm text-muted">
+              Caminhos dentro do sítio; os ficheiros versionam-se no repositório, em{' '}
+              <code>public/logos/</code> e <code>public/og/</code>. Em branco, o cabeçalho escreve o
+              nome por extenso e a partilha usa o cartaz neutro do produto.
+            </p>
+            <div className="mt-3 space-y-4">
               <Campo
-                nome="logo_width"
-                rotulo="Largura (px)"
-                valor={regiao.logo_width}
-                tipo="number"
+                nome="logo_on_graphite_path"
+                rotulo="Logótipo sobre grafite"
+                valor={regiao.logo_on_graphite_path}
+                ajuda="A variante para fundos escuros — o cabeçalho e o rodapé."
               />
               <Campo
-                nome="logo_height"
-                rotulo="Altura (px)"
-                valor={regiao.logo_height}
-                tipo="number"
+                nome="logo_on_brand_path"
+                rotulo="Logótipo sobre a cor da marca"
+                valor={regiao.logo_on_brand_path}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Campo
+                  nome="logo_width"
+                  rotulo="Largura (px)"
+                  valor={regiao.logo_width}
+                  tipo="number"
+                />
+                <Campo
+                  nome="logo_height"
+                  rotulo="Altura (px)"
+                  valor={regiao.logo_height}
+                  tipo="number"
+                />
+              </div>
+              <Campo
+                nome="og_image_path"
+                rotulo="Imagem de partilha"
+                valor={regiao.og_image_path}
+                ajuda="A imagem que sai quando alguém partilha o sítio, por exemplo /og/medio-tejo.png."
+              />
+              <Campo
+                nome="og_image_alt"
+                rotulo="Texto alternativo da imagem de partilha"
+                valor={regiao.og_image_alt}
               />
             </div>
-            <Campo
-              nome="og_image_path"
-              rotulo="Imagem de partilha"
-              valor={regiao.og_image_path}
-              ajuda="A imagem que sai quando alguém partilha o sítio, por exemplo /og/medio-tejo.png."
-            />
-            <Campo
-              nome="og_image_alt"
-              rotulo="Texto alternativo da imagem de partilha"
-              valor={regiao.og_image_alt}
-            />
-          </div>
-        </fieldset>
+          </fieldset>
+        ) : null}
 
-        <fieldset>
-          <legend className="text-lg font-semibold">Responsável pelo tratamento (RGPD)</legend>
-          <p className="mt-1 max-w-xl text-sm text-muted">
-            Quem responde pelos dados pessoais nesta região. <strong>Com o nome em branco</strong>,
-            a política de privacidade usa o nome e o endereço do promotor, e mais nada — é a omissão
-            desde a 0101. Quem é o responsável é decisão contratual, CIM a CIM — ver{' '}
-            <code>docs/RGPD.md</code>.
-          </p>
-          {/*
+        {dono ? (
+          <fieldset>
+            <legend className="text-lg font-semibold">Responsável pelo tratamento (RGPD)</legend>
+            <p className="mt-1 max-w-xl text-sm text-muted">
+              Quem responde pelos dados pessoais nesta região. <strong>Com o nome em branco</strong>
+              , a política de privacidade usa o nome e o endereço do promotor, e mais nada — é a
+              omissão desde a 0101. Quem é o responsável é decisão contratual, CIM a CIM — ver{' '}
+              <code>docs/RGPD.md</code>.
+            </p>
+            {/*
             A lista do que falta, no sítio onde se preenche.
             -----------------------------------------------------------------
             Vivia no `docs/RGPD.md` e no `docs/LICENCIAR.md`, que é onde tem de
@@ -487,63 +566,64 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
             só aparece quando há responsável declarado: sem ele não há
             obrigação por cumprir, há uma decisão por tomar.
           */}
-          {regiao.data_controller_name ? (
-            <p className="mt-2 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
-              O que a lei pede a uma região contratada: nome, NIF, morada e contacto. E, se quem
-              responde for uma autoridade ou organismo público — uma CIM, uma câmara —, também o{' '}
-              <strong>encarregado de proteção de dados</strong> e o contacto dele, que o artigo
-              37.º, n.º 7, do RGPD manda publicar. O que ficar em branco não aparece na política:
-              não se mostra o que não se sabe.
-            </p>
-          ) : null}
-          <div className="mt-3 space-y-4">
-            <Campo
-              nome="data_controller_name"
-              rotulo="Nome"
-              valor={regiao.data_controller_name}
-              ajuda="Em branco, vale o promotor. Preenchido, é este nome que a política publica — e o endereço abaixo deixa de herdar o do promotor."
-            />
-            <Campo
-              nome="data_controller_url"
-              rotulo="Endereço"
-              valor={regiao.data_controller_url}
-              tipo="url"
-              ajuda="O sítio de quem responde. Uma pessoa singular não tem, e em branco o nome sai sem ligação — que é o certo."
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
+            {regiao.data_controller_name ? (
+              <p className="mt-2 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
+                O que a lei pede a uma região contratada: nome, NIF, morada e contacto. E, se quem
+                responde for uma autoridade ou organismo público — uma CIM, uma câmara —, também o{' '}
+                <strong>encarregado de proteção de dados</strong> e o contacto dele, que o artigo
+                37.º, n.º 7, do RGPD manda publicar. O que ficar em branco não aparece na política:
+                não se mostra o que não se sabe.
+              </p>
+            ) : null}
+            <div className="mt-3 space-y-4">
               <Campo
-                nome="data_controller_nif"
-                rotulo="NIF ou NIPC"
-                valor={regiao.data_controller_nif}
+                nome="data_controller_name"
+                rotulo="Nome"
+                valor={regiao.data_controller_name}
+                ajuda="Em branco, vale o promotor. Preenchido, é este nome que a política publica — e o endereço abaixo deixa de herdar o do promotor."
               />
               <Campo
-                nome="data_controller_email"
-                rotulo="Contacto para direitos"
-                valor={regiao.data_controller_email}
-                tipo="email"
-                ajuda="Em branco, vale o email da região."
+                nome="data_controller_url"
+                rotulo="Endereço"
+                valor={regiao.data_controller_url}
+                tipo="url"
+                ajuda="O sítio de quem responde. Uma pessoa singular não tem, e em branco o nome sai sem ligação — que é o certo."
               />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Campo
+                  nome="data_controller_nif"
+                  rotulo="NIF ou NIPC"
+                  valor={regiao.data_controller_nif}
+                />
+                <Campo
+                  nome="data_controller_email"
+                  rotulo="Contacto para direitos"
+                  valor={regiao.data_controller_email}
+                  tipo="email"
+                  ajuda="Em branco, vale o email da região."
+                />
+              </div>
+              <Area
+                nome="data_controller_address"
+                rotulo="Morada"
+                valor={regiao.data_controller_address}
+                linhas={3}
+              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Campo
+                  nome="data_controller_dpo"
+                  rotulo="Encarregado de proteção de dados"
+                  valor={regiao.data_controller_dpo}
+                />
+                <Campo
+                  nome="data_controller_dpo_contact"
+                  rotulo="Contacto do encarregado"
+                  valor={regiao.data_controller_dpo_contact}
+                />
+              </div>
             </div>
-            <Area
-              nome="data_controller_address"
-              rotulo="Morada"
-              valor={regiao.data_controller_address}
-              linhas={3}
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Campo
-                nome="data_controller_dpo"
-                rotulo="Encarregado de proteção de dados"
-                valor={regiao.data_controller_dpo}
-              />
-              <Campo
-                nome="data_controller_dpo_contact"
-                rotulo="Contacto do encarregado"
-                valor={regiao.data_controller_dpo_contact}
-              />
-            </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        ) : null}
 
         {/*
           A ligação «Ir de transportes públicos» das fichas de evento e de
@@ -598,57 +678,25 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           </fieldset>
         ) : null}
 
-        <fieldset>
-          <legend className="text-lg font-semibold">Estado e ordem</legend>
-          <div className="mt-3 space-y-4">
-            {/*
-              A região principal do deployment não leva interruptor:
-              desligada, o sítio inteiro caía no esqueleto neutro de recurso,
-              em silêncio. A ação recusa na mesma um pedido forjado — isto é
-              só a porta a dizer a verdade antes de alguém a empurrar.
-            */}
-            {regiao.id === REGIAO_PRINCIPAL ? (
-              <p className="max-w-xl text-sm text-muted">
-                Esta é a <strong>região principal</strong> do deployment: é dela a identidade que o
-                sítio veste — canónicos, feeds, sitemap e painel — e por isso não se desliga daqui.
-                Para a tirar do ar, o deployment tem primeiro de passar o papel a outra região.
-              </p>
-            ) : (
-              <>
-                {/*
-                  A caixa desmarcada não viaja no POST — é o feitio dos
-                  checkboxes — e o campo escondido diz à ação que o formulário
-                  a trazia.
-                */}
-                <input type="hidden" name="is_enabled_presente" value="1" />
-                <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-                  <input
-                    type="checkbox"
-                    name="is_enabled"
-                    defaultChecked={regiao.is_enabled}
-                    className="h-5 w-5 rounded border-field"
-                  />
-                  Região ligada
-                </label>
-                <p className="text-sm text-muted">
-                  Desligada, a região sai do mapa público: o domínio dela deixa de ser de alguém e
-                  passa a mostrar a página do produto, e as páginas dela deixam de existir. É o
-                  interruptor de arranque — liga-se quando os dados estiverem prontos para gente.
-                </p>
-              </>
-            )}
-            <div className="max-w-40">
-              <Campo
-                nome="sort_order"
-                rotulo="Ordem"
-                valor={regiao.sort_order}
-                obrigatorio
-                tipo="number"
-                ajuda="Ordena as listas onde as regiões aparecem juntas."
-              />
+        {dono ? (
+          <fieldset>
+            {/* A caixa «Região ligada» saiu daqui (C4-035): tirar a agenda do ar
+                é a «Zona de perigo», em baixo, com confirmação escrita. */}
+            <legend className="text-lg font-semibold">Ordem</legend>
+            <div className="mt-3 space-y-4">
+              <div className="max-w-40">
+                <Campo
+                  nome="sort_order"
+                  rotulo="Ordem"
+                  valor={regiao.sort_order}
+                  obrigatorio
+                  tipo="number"
+                  ajuda="Ordena as listas onde as regiões aparecem juntas."
+                />
+              </div>
             </div>
-          </div>
-        </fieldset>
+          </fieldset>
+        ) : null}
 
         <button
           type="submit"
@@ -672,89 +720,92 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
         quem souber o endereço do `feed.xml`. É uma escolha informada — e uma
         escolha informada só é informada se estiver escrita onde se faz.
       */}
-      <section aria-labelledby="barreira" className="mt-10 max-w-2xl">
-        <h2 id="barreira" className="text-lg font-semibold">
-          Barreira temporária
-        </h2>
-        <p className="mt-1 max-w-xl text-sm text-muted">
-          Uma senha partilhada, para uma região pronta e ainda não contratada: o sítio fica de pé e
-          só entra quem a souber. Não é uma conta — não há registo, não há nomes, e nada se guarda
-          sobre quem entra. Cada entrada vale um dia.
-        </p>
-
-        <p className={`mt-3 text-sm ${regiao.gate_enabled ? 'text-highlight' : ''}`}>
-          <strong>{regiao.gate_enabled ? 'Ligada.' : 'Desligada.'}</strong>{' '}
-          <span className="text-muted">
-            {barreira
-              ? `Senha definida a ${barreira.updated_at.slice(0, 10).split('-').reverse().join('/')}${
-                  barreira.updated_by ? `, por ${barreira.updated_by}` : ''
-                }.`
-              : 'Não há senha definida — e sem senha a barreira não se liga.'}
-          </span>
-        </p>
-
-        <div className="mt-3 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
-          <p className="font-medium">A barreira cobre as páginas, e só as páginas.</p>
-          <p className="mt-1 text-muted">
-            Continuam a responder a quem souber o endereço: <code>/feed.xml</code>,{' '}
-            <code>/agenda.ics</code>, <code>/dados.json</code>, <code>/dados.csv</code>,{' '}
-            <code>/estado.json</code>, <code>/api/events</code>, o widget e os ficheiros de máquina
-            (<code>robots.txt</code>, <code>sitemap.xml</code>, <code>security.txt</code>). Foi a
-            escolha pedida — a mais simples, para uma coisa temporária. Quem quiser a região mesmo
-            fechada desliga-a no formulário acima, e aí não responde nada.
+      {dono ? (
+        <section aria-labelledby="barreira" className="mt-10 max-w-2xl">
+          <h2 id="barreira" className="text-lg font-semibold">
+            Barreira temporária
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-muted">
+            Uma senha partilhada, para uma região pronta e ainda não contratada: o sítio fica de pé
+            e só entra quem a souber. Não é uma conta — não há registo, não há nomes, e nada se
+            guarda sobre quem entra. Cada entrada vale um dia.
           </p>
-        </div>
 
-        <form action={definirBarreira} className="mt-4 space-y-4">
-          <input type="hidden" name="region_id" value={regiao.id} />
+          <p className={`mt-3 text-sm ${regiao.gate_enabled ? 'text-highlight' : ''}`}>
+            <strong>{regiao.gate_enabled ? 'Ligada.' : 'Desligada.'}</strong>{' '}
+            <span className="text-muted">
+              {barreira
+                ? `Senha definida a ${barreira.updated_at.slice(0, 10).split('-').reverse().join('/')}${
+                    barreira.updated_by ? `, por ${barreira.updated_by}` : ''
+                  }.`
+                : 'Não há senha definida — e sem senha a barreira não se liga.'}
+            </span>
+          </p>
 
-          <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
-            <input
-              type="checkbox"
-              name="ligada"
-              defaultChecked={regiao.gate_enabled}
-              className="h-5 w-5 rounded border-field"
-            />
-            Barreira ligada
-          </label>
-
-          <div>
-            <label htmlFor="senha" className={LABEL}>
-              Senha nova{' '}
-              <span className="font-normal text-muted">(em branco: fica a que já lá está)</span>
-            </label>
-            <input
-              id="senha"
-              name="senha"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              maxLength={200}
-              className={FIELD}
-            />
-            <p className="mt-1 text-sm text-muted">
-              Oito caracteres à mínima. Escreva-a onde a possa voltar a ler antes de gravar: a base
-              guarda só uma impressão dela, e nem esta página a consegue reconstruir. Trocar a senha
-              não expulsa quem já entrou — quem tem um dia por gastar continua lá dentro até ele
-              acabar.
+          <div className="mt-3 max-w-xl rounded border border-border bg-surface px-3 py-2 text-sm">
+            <p className="font-medium">A barreira cobre as páginas, e só as páginas.</p>
+            <p className="mt-1 text-muted">
+              Continuam a responder a quem souber o endereço: <code>/feed.xml</code>,{' '}
+              <code>/agenda.ics</code>, <code>/dados.json</code>, <code>/dados.csv</code>,{' '}
+              <code>/estado.json</code>, <code>/api/events</code>, o widget e os ficheiros de
+              máquina (<code>robots.txt</code>, <code>sitemap.xml</code>, <code>security.txt</code>
+              ). Foi a escolha pedida — a mais simples, para uma coisa temporária. Quem quiser a
+              região mesmo fechada tira-a do ar na zona de perigo, em baixo, e aí não responde nada.
             </p>
           </div>
 
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center rounded border border-border px-4 text-sm font-medium hover:bg-surface"
-          >
-            Guardar barreira
-          </button>
-        </form>
+          <form action={definirBarreira} className="mt-4 space-y-4">
+            <input type="hidden" name="region_id" value={regiao.id} />
 
-        <p className="mt-2 max-w-xl text-xs text-muted">
-          Desligar não apaga a senha: a região volta a fechar-se com a mesma no dia seguinte, sem a
-          ter de combinar outra vez com quem já a tem. Ligar, desligar e trocar ficam na auditoria,
-          sem a senha e sem a impressão dela. Uma mudança pode demorar até cinco minutos a valer em
-          todos os servidores — é o tempo que o mapa das regiões vale em cada um.
-        </p>
-      </section>
+            <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="ligada"
+                defaultChecked={regiao.gate_enabled}
+                className="h-5 w-5 rounded border-field"
+              />
+              Barreira ligada
+            </label>
+
+            <div>
+              <label htmlFor="senha" className={LABEL}>
+                Senha nova{' '}
+                <span className="font-normal text-muted">(em branco: fica a que já lá está)</span>
+              </label>
+              <input
+                id="senha"
+                name="senha"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={200}
+                className={FIELD}
+              />
+              <p className="mt-1 text-sm text-muted">
+                Oito caracteres à mínima. Escreve-a onde a possas voltar a ler antes de gravar: a
+                base guarda só uma impressão dela, e nem esta página a consegue reconstruir. Trocar
+                a senha não expulsa quem já entrou — quem tem um dia por gastar continua lá dentro
+                até ele acabar.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center rounded border border-border px-4 text-sm font-medium hover:bg-surface"
+            >
+              Guardar barreira
+            </button>
+          </form>
+
+          <p className="mt-2 max-w-xl text-xs text-muted">
+            Desligar não apaga a senha: a região volta a fechar-se com a mesma no dia seguinte, sem
+            a ter de combinar outra vez com quem já a tem. Ligar, desligar e trocar ficam na
+            auditoria, sem a senha e sem a impressão dela. Uma mudança pode demorar até cinco
+            minutos a valer em todos os servidores — é o tempo que o mapa das regiões vale em cada
+            um.
+          </p>
+        </section>
+      ) : null}
 
       {/*
         A porta de quem decide.
@@ -787,8 +838,8 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           >
             <p className="font-medium">O endereço, uma vez.</p>
             <p className="mt-1 text-muted">
-              Copie-o agora. Não volta a aparecer: a base guarda só uma impressão dele, e nem esta
-              página o consegue reconstruir. Se o perder, crie outro — o novo fecha este.
+              Copia-o agora. Não volta a aparecer: a base guarda só uma impressão dele, e nem esta
+              página o consegue reconstruir. Se o perderes, cria outro — o novo fecha este.
             </p>
             {/*
               O endereço inteiro, no domínio da região (C4-028). Mostrava-se
@@ -880,71 +931,73 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
         aninham, e um contrato não é um campo da região — é história que se
         acrescenta, nunca se reescreve.
       */}
-      <section aria-labelledby="licencas" className="mt-10 max-w-2xl">
-        <h2 id="licencas" className="text-lg font-semibold">
-          Licenças
-        </h2>
-        <p className={`mt-1 text-sm ${licenca.alerta ? 'text-highlight' : 'text-muted'}`}>
-          {licenca.texto}
-        </p>
-        <p className="mt-1 max-w-xl text-sm text-muted">
-          Uma linha por contrato ou renovação — corrigir é acrescentar outra, com nota. Expirar
-          avisa no painel e não desliga nada: o corte é o interruptor da região, um gesto humano.
-        </p>
+      {dono ? (
+        <section aria-labelledby="licencas" className="mt-10 max-w-2xl">
+          <h2 id="licencas" className="text-lg font-semibold">
+            Licenças
+          </h2>
+          <p className={`mt-1 text-sm ${licenca.alerta ? 'text-highlight' : 'text-muted'}`}>
+            {licenca.texto}
+          </p>
+          <p className="mt-1 max-w-xl text-sm text-muted">
+            Uma linha por contrato ou renovação — corrigir é acrescentar outra, com nota. Expirar
+            avisa no painel e não desliga nada: o corte é o interruptor da região, um gesto humano.
+          </p>
 
-        {licencas.length > 0 ? (
-          <ul className="mt-3 border-y border-border">
-            {licencas.map((linha) => (
-              <li key={linha.id} className="border-b border-border py-2 text-sm last:border-b-0">
-                <span className="font-medium">{linha.kind}</span>{' '}
-                <span className="text-muted">
-                  · {linha.starts_on.split('-').reverse().join('/')} —{' '}
-                  {linha.ends_on ? linha.ends_on.split('-').reverse().join('/') : 'sem prazo'} ·
-                  registada por {linha.created_by}
-                </span>
-                {linha.notes ? <p className="mt-0.5 text-sm text-muted">{linha.notes}</p> : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+          {licencas.length > 0 ? (
+            <ul className="mt-3 border-y border-border">
+              {licencas.map((linha) => (
+                <li key={linha.id} className="border-b border-border py-2 text-sm last:border-b-0">
+                  <span className="font-medium">{linha.kind}</span>{' '}
+                  <span className="text-muted">
+                    · {linha.starts_on.split('-').reverse().join('/')} —{' '}
+                    {linha.ends_on ? linha.ends_on.split('-').reverse().join('/') : 'sem prazo'} ·
+                    registada por {linha.created_by}
+                  </span>
+                  {linha.notes ? <p className="mt-0.5 text-sm text-muted">{linha.notes}</p> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
 
-        <form action={registarLicenca} className="mt-4 space-y-4">
-          <input type="hidden" name="regiao" value={regiao.id} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="starts_on" className={LABEL}>
-                Início
-              </label>
-              <input id="starts_on" name="starts_on" type="date" required className={FIELD} />
+          <form action={registarLicenca} className="mt-4 space-y-4">
+            <input type="hidden" name="regiao" value={regiao.id} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="starts_on" className={LABEL}>
+                  Início
+                </label>
+                <input id="starts_on" name="starts_on" type="date" required className={FIELD} />
+              </div>
+              <div>
+                <label htmlFor="ends_on" className={LABEL}>
+                  Fim <span className="font-normal text-muted">(em branco: sem prazo)</span>
+                </label>
+                <input id="ends_on" name="ends_on" type="date" className={FIELD} />
+              </div>
             </div>
             <div>
-              <label htmlFor="ends_on" className={LABEL}>
-                Fim <span className="font-normal text-muted">(em branco: sem prazo)</span>
+              <label htmlFor="kind" className={LABEL}>
+                Tipo
               </label>
-              <input id="ends_on" name="ends_on" type="date" className={FIELD} />
+              <input id="kind" name="kind" required className={FIELD} />
+              <p className="mt-1 text-sm text-muted">«contrato», «piloto», «demo», «cortesia»…</p>
             </div>
-          </div>
-          <div>
-            <label htmlFor="kind" className={LABEL}>
-              Tipo
-            </label>
-            <input id="kind" name="kind" required className={FIELD} />
-            <p className="mt-1 text-sm text-muted">«contrato», «piloto», «demo», «cortesia»…</p>
-          </div>
-          <div>
-            <label htmlFor="notes" className={LABEL}>
-              Notas <span className="font-normal text-muted">(opcional)</span>
-            </label>
-            <textarea id="notes" name="notes" rows={2} className={FIELD} />
-          </div>
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center rounded border border-border px-4 text-sm font-medium hover:bg-surface"
-          >
-            Registar licença
-          </button>
-        </form>
-      </section>
+            <div>
+              <label htmlFor="notes" className={LABEL}>
+                Notas <span className="font-normal text-muted">(opcional)</span>
+              </label>
+              <textarea id="notes" name="notes" rows={2} className={FIELD} />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex min-h-11 items-center rounded border border-border px-4 text-sm font-medium hover:bg-surface"
+            >
+              Registar licença
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <section aria-labelledby="seccoes" className="mt-10">
         <h2 id="seccoes" className="text-lg font-semibold">
@@ -957,6 +1010,103 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
         </p>
         <InterruptoresDeSeccoes regiao={regiao.id} seccoes={seccoes} />
       </section>
+
+      {/*
+        Os destaques têm página própria, e a única ligação para ela estava na
+        lista das regiões — que é do dono. Um gestor tinha o papel e as ações,
+        e nenhuma porta para lá chegar (C4-015).
+      */}
+      <section aria-labelledby="destaques" className="mt-10">
+        <h2 id="destaques" className="text-lg font-semibold">
+          Destaques da entrada
+        </h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          Os cartazes que abrem a página inicial da agenda: quantos são, e quais ficam fixados.
+        </p>
+        <p className="mt-2">
+          <Link
+            href={`/admin/regioes/${encodeURIComponent(regiao.id)}/destaques`}
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            Escolher os destaques
+          </Link>
+        </p>
+      </section>
+
+      {/*
+        A zona de perigo (C4-035).
+        ---------------------------------------------------------------------
+        Tirar uma região inteira do ar era uma caixa no formulário do lema,
+        gravada pelo botão que corrige uma vírgula, e o aviso era «Região
+        atualizada.». Passa a ser um bloco à parte, só do dono, e tirar do ar
+        obriga a escrever o nome da região. O aviso diz a hora e traz o
+        «Voltar a pôr no ar».
+      */}
+      {dono ? (
+        <section
+          id="zona-de-perigo"
+          aria-labelledby="perigo"
+          className="mt-12 max-w-2xl rounded border-2 border-highlight p-4"
+        >
+          <h2 id="perigo" className="text-lg font-semibold">
+            Zona de perigo
+          </h2>
+          {regiao.id === REGIAO_PRINCIPAL ? (
+            <p className="mt-1 text-sm text-muted">
+              Esta é a <strong>região principal</strong> do deployment: é dela a identidade que o
+              sítio veste — canónicos, feeds, sitemap e painel — e por isso não sai do ar daqui.
+              Para a tirar do ar, o deployment tem primeiro de passar o papel a outra região.
+            </p>
+          ) : regiao.is_enabled ? (
+            <>
+              <p className="mt-1 text-sm">
+                <strong>Tirar a agenda do ar.</strong> O domínio {regiao.domain || 'da região'}{' '}
+                passa a mostrar a página do produto, e as páginas da agenda deixam de existir para
+                quem visita. Os dados ficam todos; voltar a pô-la no ar é um botão só.
+              </p>
+              <form action={definirRegiaoNoAr} className="mt-3 space-y-3">
+                <input type="hidden" name="id" value={regiao.id} />
+                <input type="hidden" name="no_ar" value="0" />
+                <div>
+                  <label htmlFor="confirmacao" className={LABEL}>
+                    Para confirmar, escreve o nome da região: «{regiao.name}»
+                  </label>
+                  <input
+                    id="confirmacao"
+                    name="confirmacao"
+                    required
+                    autoComplete="off"
+                    spellCheck={false}
+                    className={FIELD}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="inline-flex min-h-11 items-center rounded bg-ink px-4 text-sm font-medium text-paper"
+                >
+                  Tirar a agenda do ar
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-sm">
+                <strong>A agenda está fora do ar.</strong> O domínio mostra a página do produto.
+              </p>
+              <form action={definirRegiaoNoAr} className="mt-3">
+                <input type="hidden" name="id" value={regiao.id} />
+                <input type="hidden" name="no_ar" value="1" />
+                <button
+                  type="submit"
+                  className="inline-flex min-h-11 items-center rounded bg-accent px-4 text-sm font-medium text-on-accent"
+                >
+                  Voltar a pôr no ar
+                </button>
+              </form>
+            </>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

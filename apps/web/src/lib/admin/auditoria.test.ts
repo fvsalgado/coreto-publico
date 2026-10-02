@@ -74,13 +74,13 @@ describe('ondeVerAEntidade', () => {
   it('liga o que tem ficha própria no painel', () => {
     expect(ondeVerAEntidade('submission', 'abc')).toBe('/admin/fila/abc');
     expect(ondeVerAEntidade('region', 'medio-tejo')).toBe('/admin/regioes/medio-tejo');
+    // Um evento passou a ter ficha: a de correção (C4-017).
+    expect(ondeVerAEntidade('event', 'e1')).toBe('/admin/eventos/e1');
   });
 
   it('e não inventa endereço para o que não tem', () => {
-    // A lista de eventos do painel não filtra por identificador, e uma secção
-    // do sítio não é uma coisa com endereço. Melhor sem ligação do que com uma
-    // que dá 404.
-    expect(ondeVerAEntidade('event', 'e1')).toBeNull();
+    // Uma secção do sítio não é uma coisa com endereço. Melhor sem ligação do
+    // que com uma que dá 404.
     expect(ondeVerAEntidade('site_section', 'coretos')).toBeNull();
   });
 });

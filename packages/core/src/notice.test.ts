@@ -13,6 +13,13 @@ describe('looksLikeMunicipalNotice', () => {
     );
   });
 
+  it('apanha as reuniões, os atendimentos e as campanhas que o C2-022 encontrou na entrada', () => {
+    expect(looksLikeMunicipalNotice('Atendimento DECO')).toBe(true);
+    expect(looksLikeMunicipalNotice('Reunião da Assembleia de Freguesia')).toBe(true);
+    expect(looksLikeMunicipalNotice('Sessão Ordinária da Assembleia Municipal')).toBe(true);
+    expect(looksLikeMunicipalNotice('Campanha promocional de descontos em estadias')).toBe(true);
+  });
+
   it('apanha variações de caixa e de acentos', () => {
     expect(looksLikeMunicipalNotice('EPOCA BALNEAR 2026')).toBe(true);
     expect(looksLikeMunicipalNotice('Horário de funcionamento da Biblioteca')).toBe(true);
@@ -38,6 +45,9 @@ describe('looksLikeMunicipalNotice', () => {
     // denuncia nada: uma campanha de recolha de livros é programação de
     // biblioteca, e o que a rede apanha é a expressão inteira.
     expect(looksLikeMunicipalNotice('Campanha de recolha de livros')).toBe(false);
+    // «Reunião» sozinha também não: há encontros de bandas e de coros com
+    // esse nome, e são programação.
+    expect(looksLikeMunicipalNotice('Reunião de Bandas Filarmónicas')).toBe(false);
     expect(looksLikeMunicipalNotice('O Ensaio Geral da Vacinação')).toBe(false);
     expect(looksLikeMunicipalNotice(null)).toBe(false);
     expect(looksLikeMunicipalNotice('')).toBe(false);

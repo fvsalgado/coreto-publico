@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { ADMIN_LOGIN_PATH, ADMIN_PATH_HEADER, adminLoginPath } from '@/src/lib/admin/guarda';
-import { ADMIN_COOKIE_NAME, chaveDaSessao, readSessionToken } from '@/src/lib/admin/session';
+import { ADMIN_PATH_HEADER, CAMINHOS_SEM_SESSAO, adminLoginPath } from '@/src/lib/admin/guarda';
+import {
+  ADMIN_COOKIE_NAME,
+  chaveDaPorta,
+  chaveDaSessao,
+  lerSessaoNaPorta,
+} from '@/src/lib/admin/session';
 import { SITE_URL } from '@/src/lib/env';
 import {
   REGIAO_PRINCIPAL,
@@ -182,6 +187,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     // A área interna não é para indexar, nem para ficar em cache de ninguém.
     response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
     response.headers.set('Cache-Control', 'no-store, must-revalidate');
+    // A ligação de ativação traz o token no endereço (0170), como o balanço
+    // traz o segredo: um `Referer` completo entregava-o ao primeiro sítio
+    // para onde alguém seguisse a partir da página.
+    response.headers.set('Referrer-Policy', 'no-referrer');
     return response;
   }
 
@@ -413,12 +422,28 @@ function deixarPassar(request: NextRequest): NextResponse {
  */
 async function guardAdmin(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
-  if (pathname === ADMIN_LOGIN_PATH) return deixarPassar(request);
+  if (CAMINHOS_SEM_SESSAO.includes(pathname)) return deixarPassar(request);
 
+  /*
+   * Duas sessões possíveis, as duas conferidas aqui sem ir à base (0170): a do
+   * dono, assinada com o segredo e o hash da palavra-passe dele, como sempre;
+   * e a de uma pessoa, pela assinatura da porta — ver `chaveDaPorta`. A da
+   * pessoa tem uma segunda assinatura, com o hash da palavra-passe dela, que
+   * só o servidor confere, depois de a ler da base: é o layout, a segunda
+   * barreira, que fecha a porta a quem mudou de palavra-passe ou foi
+   * desativado.
+   */
   const secret = process.env.ADMIN_SESSION_SECRET;
   const hash = process.env.ADMIN_PASSWORD_HASH;
   const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
-  if (secret && hash && (await readSessionToken(token, chaveDaSessao(secret, hash)))) {
+  if (
+    secret &&
+    hash &&
+    (await lerSessaoNaPorta(token, {
+      doDono: chaveDaSessao(secret, hash),
+      daPorta: chaveDaPorta(secret),
+    }))
+  ) {
     return deixarPassar(request);
   }
 

@@ -14,7 +14,12 @@ const monthlyReport = vi.hoisted(() =>
   vi.fn<(regiao: string, mes: string) => Promise<RelatorioMensal>>(),
 );
 
-vi.mock('@/src/lib/admin/auth', () => ({ requireAdmin }));
+// A sessão é a do dono, que gere todas as regiões: o recorte de quem só gere
+// uma prova-se em `exportar-relatorio.test.ts`.
+vi.mock('@/src/lib/admin/auth', () => ({
+  requireAdmin,
+  exigirSessao: async () => ({ tipo: 'dono' as const, actor: await requireAdmin() }),
+}));
 vi.mock('@/src/lib/admin/queries', () => ({ listRegionsAdmin, monthlyReport }));
 vi.mock('@/src/lib/env', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/src/lib/env')>()),

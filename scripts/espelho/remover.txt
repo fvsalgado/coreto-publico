@@ -17,6 +17,7 @@ docs/BENCHMARK.md
 docs/CONFIGURACAO-DO-DONO.md
 docs/DNS.md
 docs/EMAIL.md
+docs/ENTRADA.md
 docs/INDICADORES.md
 docs/INFRAESTRUTURA.md
 docs/LICENCIAR.md

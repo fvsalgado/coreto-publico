@@ -21,6 +21,11 @@
  *
  *     BASE_URL=http://localhost:3998 ADMIN_PASSWORD=… pnpm check:a11y:admin
  *
+ * A entrada pede email e palavra-passe desde as contas por pessoa (0170). A
+ * palavra-passe é a do dono; o email é o `ADMIN_EMAIL` do servidor auditado,
+ * quando ele o tem — sem ele, o dono entra com qualquer email, e é esse que
+ * aqui se escreve.
+ *
  * `localhost` e não `127.0.0.1` de propósito: o `next start` corre em
  * produção e o cookie de sessão sai `Secure`, que o Chromium só aceita por
  * HTTP no nome `localhost`. A chave de serviço tem de ter vinte caracteres
@@ -39,6 +44,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3998';
 const PASSWORD = process.env.ADMIN_PASSWORD ?? '';
+const EMAIL = process.env.ADMIN_EMAIL ?? 'dono@coreto.invalid';
 
 /** Um Chromium já instalado, pela razão do `check-a11y.mjs`. */
 const EXECUTABLE_PATH = process.env.CHROMIUM_PATH;
@@ -68,6 +74,15 @@ const VIEWPORTS = [
 const AMOSTRAS = {
   'fila/[id]': '00000000-0000-4000-8000-000000000000',
   'regioes/[id]': process.env.REGIAO_DE_OMISSAO?.trim() || 'medio-tejo',
+  'regioes/[id]/destaques': process.env.REGIAO_DE_OMISSAO?.trim() || 'medio-tejo',
+  /*
+   * A ficha de um evento e a de uma fonte (lote 6). Sem base, um identificador
+   * que não existe — e audita-se o 404. Com base, `AMOSTRA_EVENTO` e
+   * `AMOSTRA_FONTE` apontam a fichas a sério, que é onde estão os
+   * formulários: um 404 auditado não diz nada sobre o que lá se escreve.
+   */
+  'eventos/[id]': process.env.AMOSTRA_EVENTO?.trim() || '00000000-0000-4000-8000-000000000000',
+  'fontes/[id]': process.env.AMOSTRA_FONTE?.trim() || 'fonte-que-nao-existe',
 };
 
 /**
@@ -81,8 +96,17 @@ const VARIANTES = [
   '/admin/relatorios?mes=nao-e-um-mes',
 ];
 
-/** As rotas da entrada, auditadas sem sessão — com sessão redirecionam. */
-const ROTAS_DE_ENTRADA = ['/admin/entrar', '/admin/entrar?erro=credenciais'];
+/**
+ * As rotas que abrem sem sessão — com sessão, a entrada redireciona. A da
+ * ativação de uma conta (0170) audita-se com uma ligação que não vale, que é
+ * a página que se vê sem convite.
+ */
+const ROTAS_DE_ENTRADA = [
+  '/admin/entrar',
+  '/admin/entrar?erro=credenciais',
+  '/admin/entrar?erro=demasiadas&ate=10h42',
+  `/admin/ativar?t=${'x'.repeat(43)}`,
+];
 
 /**
  * As rotas, lidas do sistema de ficheiros: cada `page.tsx` debaixo de
@@ -98,7 +122,7 @@ function rotasDoPainel() {
         percorrer(join(pasta, entrada.name), [...segmentos, entrada.name]);
       } else if (entrada.name === 'page.tsx') {
         const caminho = segmentos.join('/');
-        if (caminho === 'entrar') continue;
+        if (caminho === 'entrar' || caminho === 'ativar') continue;
         const amostra = AMOSTRAS[caminho];
         const publico = amostra ? caminho.replace(/\[[^\]]+\]/, amostra) : caminho;
         if (/\[[^\]]+\]/.test(publico)) {
@@ -122,6 +146,7 @@ async function entrar(browser) {
   const context = await browser.newContext({ baseURL: BASE_URL });
   const page = await context.newPage();
   await page.goto('/admin/entrar', { waitUntil: 'domcontentloaded' });
+  await page.fill('#email', EMAIL);
   await page.fill('#password', PASSWORD);
   await Promise.all([
     page.waitForURL((url) => !url.pathname.startsWith('/admin/entrar'), { timeout: 30_000 }),
@@ -137,7 +162,7 @@ const resultados = [];
 let failures = 0;
 
 /** O título de `app/admin/error.tsx`. Muda ali, muda aqui — ver `auditar`. */
-const TITULO_DE_ERRO = 'Não foi possível falar com a base de dados';
+const TITULO_DE_ERRO = 'Esta página não abriu';
 
 /** As rotas que caíram no limite de erro — contadas para o resumo final. */
 const rotasEmErro = new Set();

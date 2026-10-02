@@ -3,23 +3,30 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 
+/** O título deste ecrã. O `scripts/check-a11y-admin.mjs` procura-o para saber que uma página caiu. */
+const TITULO = 'Esta página não abriu';
+
 /**
  * A rede por baixo do painel.
  *
- * As ações de moderação que ainda atiram o erro em bruto do Postgres —
- * aprovar, rejeitar, fundir — caíam no ecrã cru do Next; agora caem aqui,
- * dentro do layout de administração, com a mensagem do erro à vista (aqui
- * pode mostrar-se: quem está no painel tem sessão) e um caminho de volta. Não
- * é desculpa para o erro em bruto — a correção certa é cada ação redirecionar
- * com o aviso, como as outras já fazem —, é a segunda linha para o que
- * escapar a essa.
+ * As leituras falhadas aterram aqui: desde que `admin/queries.ts` deixou de
+ * devolver `[]` por causa de um erro, uma consulta que não corre chega a este
+ * ecrã em vez de se disfarçar de «nada por moderar». Um painel que diz «não
+ * consegui ler» é um painel em que se pode acreditar quando diz «não há nada».
  *
- * **E agora é também onde as leituras falhadas aterram.** Desde que
- * `admin/queries.ts` deixou de devolver `[]` por causa de um erro, uma
- * consulta que não corre chega aqui em vez de se disfarçar de «nada por
- * moderar». É por isso que o texto fala de ações e de leituras: um painel que
- * diz «não consegui ler» é um painel em que se pode acreditar quando ele diz
- * «não há nada».
+ * **As ações não deviam chegar aqui**, e as da moderação já não chegam: cada
+ * uma volta ao formulário com um aviso em português (`avisoDoErroDaBase`). O
+ * que ainda cai aqui é avaria, e o ecrã diz isso e só isso.
+ *
+ * **Não mostra a mensagem do erro** (C4-029). Em produção o React substitui-a
+ * por «Minified React error #441; visit https://react.dev/…» — inglês técnico
+ * que não diz a quem modera o que fez nem se a decisão ficou registada — e,
+ * em desenvolvimento, o texto em bruto do Postgres. A mensagem fica no registo
+ * do servidor; o ecrã mostra o código que a encontra lá, o `digest`.
+ *
+ * E o título deixou de dizer «Não foi possível falar com a base de dados»:
+ * quase sempre falou, e a base recusou. Uma explicação falsa é pior do que
+ * nenhuma.
  */
 export default function ErroDoPainel({
   error,
@@ -29,31 +36,22 @@ export default function ErroDoPainel({
   reset: () => void;
 }) {
   useEffect(() => {
+    // Na consola de quem está a ver, para quem opera poder pedir o pormenor;
+    // no ecrã, nunca.
     console.error('erro no painel', error);
   }, [error]);
 
   return (
     <>
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">Não foi possível falar com a base de dados</h1>
+        <h1 className="text-2xl font-semibold">{TITULO}</h1>
         <p className="mt-2 max-w-2xl text-muted">
-          Esta página não está a mostrar nada porque não conseguiu ler, e não porque não haja nada
-          para mostrar — a diferença é o motivo de ver este ecrã em vez de uma lista vazia. Se
-          estava a fazer alguma coisa, nada ficou pelo meio: as escritas do painel são atómicas.
-          Ainda assim, convém confirmar o estado antes de repetir.
+          Uma leitura ou uma gravação falhou, e a página parou em vez de mostrar uma lista vazia —
+          uma lista vazia diria «não há nada», e isso não se sabe. Se estavas a gravar alguma coisa,
+          ou ficou gravada por inteiro ou não ficou: o painel não deixa nada a meio. Antes de
+          repetir, confirma na fila ou na lista se a mudança lá está.
         </p>
       </header>
-
-      {error.message ? (
-        // A mensagem pode ser mais larga do que o ecrã e rola: sem foco, quem
-        // anda de teclado não chega ao fim dela (2.1.1).
-        <pre
-          tabIndex={0}
-          className="mb-6 max-w-2xl overflow-x-auto rounded border border-border bg-surface p-3 text-sm text-highlight"
-        >
-          {error.message}
-        </pre>
-      ) : null}
 
       <div className="flex flex-wrap gap-3">
         <button
@@ -78,8 +76,9 @@ export default function ErroDoPainel({
       </div>
 
       {error.digest ? (
-        <p className="mt-8 text-sm text-muted">
-          Código do erro:{' '}
+        <p className="mt-8 max-w-2xl text-sm text-muted">
+          Se isto se repetir, diz a quem opera o Coreto o que estavas a fazer e este código, que
+          encontra o erro no registo:{' '}
           <code className="rounded border border-border px-1.5 py-0.5">{error.digest}</code>
         </p>
       ) : null}

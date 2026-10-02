@@ -41,6 +41,18 @@ const NOTICE_PREFIXES: readonly string[] = [
   // se fossem programação, e não são. «Vacinação Antirrábica» esteve
   // publicado na agenda de Tomar como um evento cultural.
   'vacinacao',
+  // Os atendimentos e as reuniões dos órgãos autárquicos (C2-022): «Atendimento
+  // DECO» e «Reunião da Assembleia de Freguesia» estiveram na agenda do Médio
+  // Tejo. Em início de título, porque é aí que a agenda de uma junta os
+  // escreve — e «Reunião» sozinha não, que há encontros de bandas e de coros
+  // que se chamam assim.
+  'atendimento',
+  'reuniao-da-assembleia',
+  'reuniao-do-executivo',
+  'reuniao-ordinaria',
+  'reuniao-extraordinaria',
+  'sessao-ordinaria',
+  'sessao-extraordinaria',
 ];
 
 /** Expressões que denunciam um aviso em qualquer ponto do título. */
@@ -58,6 +70,10 @@ const NOTICE_ANYWHERE: readonly string[] = [
   // sala, nem bilhete, nem hora a que se chega tarde. A de Assentiz, sobre
   // bem-estar animal, esteve publicada como programação.
   'campanha-de-sensibilizacao',
+  // E uma campanha promocional é publicidade: «Campanha promocional de
+  // descontos em estadias» esteve na entrada da agenda (C2-022).
+  'campanha-promocional',
+  'assembleia-de-freguesia',
 ];
 
 function hasPrefix(slug: string, prefix: string): boolean {

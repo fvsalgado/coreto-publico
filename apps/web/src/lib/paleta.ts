@@ -44,13 +44,17 @@ export const COR_POR_OMISSAO: string = CORES_DO_TOLDO.montra;
 /** O turquesa do Médio Tejo, que é o `@theme` de `globals.css`. */
 export const COR_DO_TEMA: string = CORES_DO_TOLDO.cim;
 
-/** O papel, a superfície e as tintas da casa — os fundos contra os quais se mede. */
+/**
+ * O papel, a superfície e as tintas da casa — os fundos contra os quais se
+ * mede. A superfície dos dois temas, o branco e o grafite exportam-se para a
+ * amostra da cor na ficha da região, que os pinta por extenso.
+ */
 const PAPEL = '#f6fafb';
-const SUPERFICIE = '#ffffff';
+export const SUPERFICIE = '#ffffff';
 const PAPEL_ESCURO = '#131418';
-const SUPERFICIE_ESCURA = '#1c1d24';
-const BRANCO = '#ffffff';
-const GRAFITE = '#181921';
+export const SUPERFICIE_ESCURA = '#1c1d24';
+export const BRANCO = '#ffffff';
+export const GRAFITE = '#181921';
 const TINTA_ESCURA = '#101319';
 
 /** O mínimo AA para texto, e a folga com que se calcula para não ficar à justa. */

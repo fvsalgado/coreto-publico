@@ -1,11 +1,14 @@
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
+import { SemAcessoNoPainel } from '@/src/components/SemAcessoNoPainel';
 import { criarRegiao } from '@/src/lib/admin/actions';
+import { exigirSessao } from '@/src/lib/admin/auth';
 import { hasServiceRole } from '@/src/lib/env';
 
 export const dynamic = 'force-dynamic';
 
-const FIELD = 'mt-1 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
+const FIELD =
+  'mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink';
 const LABEL = 'block text-sm font-medium';
 const AJUDA = 'mt-1 text-sm text-muted';
 
@@ -110,6 +113,10 @@ export default async function NovaRegiao({ searchParams }: Props) {
     );
   }
 
+  // Fazer nascer uma região é do dono (C4-015): uma decisão comercial, e a
+  // região nova ainda não tem gestor nenhum.
+  if ((await exigirSessao()).tipo !== 'dono') return <SemAcessoNoPainel titulo="Nova região" />;
+
   const aviso = texto(params.aviso);
 
   return (
@@ -193,7 +200,7 @@ export default async function NovaRegiao({ searchParams }: Props) {
               valor={texto(params.contact_email)}
               tipo="email"
               exemplo="coreto@cimlt.pt"
-              ajuda="Tem de ser exatamente o endereço que reencaminha para o webhook de submissões: é por ele que uma submissão fica marcada com a região (docs/EMAIL.md)."
+              ajuda="Tem de ser exatamente o endereço que reencaminha as propostas por email para o Coreto: é por ele que uma proposta fica marcada com a região (docs/EMAIL.md)."
             />
           </div>
         </fieldset>

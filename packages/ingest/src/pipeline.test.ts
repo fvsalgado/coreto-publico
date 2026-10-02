@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  CADEADO_DAS_SESSOES,
   eventFingerprint,
   type CartazGuardado,
   type EventRow,
@@ -735,6 +736,35 @@ describe('runPipeline', () => {
 
     const after = db.events.get(written.id);
     expect(after?.title).toBe('Título corrigido à mão');
+  });
+
+  it('não substitui as datas corrigidas à mão no painel', async () => {
+    const db = new FakeDatabase();
+    await run(makeSource(), db);
+
+    const [written] = [...db.events.values()];
+    expect(written).toBeDefined();
+    if (!written) return;
+
+    // Alguém corrige a hora no painel: as sessões mudam e fica o cadeado delas.
+    const corrigidas: SessionRow[] = [
+      {
+        session_date: '2026-12-31',
+        start_time: '18:00',
+        end_time: null,
+        venue_id: null,
+        location_override: null,
+        is_cancelled: false,
+        notes: null,
+      },
+    ];
+    db.sessions.set(written.id, corrigidas);
+    written.content_hash = 'diferente-para-forcar-escrita';
+    db.locks.set(written.id, [CADEADO_DAS_SESSOES]);
+
+    await run(makeSource(), db);
+
+    expect(db.sessions.get(written.id)).toEqual(corrigidas);
   });
 
   it('uma contagem muito abaixo da linha de base não escreve nada', async () => {

@@ -1,15 +1,19 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
 import { SemChaveDeServico } from '@/src/components/SemChaveDeServico';
 import { declararAlojamentoDaFonte, reporCartaz, retirarCartaz } from '@/src/lib/admin/actions';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
+import { ligacoesPublicas } from '@/src/lib/admin/ligacoes';
 import {
   contarCartazes,
   listCartazes,
   listFontesParaAlojamento,
+  listSourcesParaFiltro,
   type CartazDoPainel,
 } from '@/src/lib/admin/queries';
-import { formatEventDates } from '@/src/lib/format';
+import { formatEventDates, formatLongDate } from '@/src/lib/format';
 import { hasServiceRole } from '@/src/lib/env';
 import { todayInLisbon } from '@coreto/core';
 
@@ -58,14 +62,33 @@ export default async function Cartazes({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Cartazes" />;
 
   const params = await searchParams;
-  const vista = params.vista === 'fontes' ? 'fontes' : 'cartazes';
+  const ambito = await ambitoDoPainel({ pedida: params.regiao });
+  // A vista das fontes é do dono: copiar cartazes de terceiros para o balde do
+  // produto é uma decisão de quem responde pelo alojamento, em todas as
+  // regiões. Os cartazes, esses, retiram-se na região de quem modera.
+  const dono = ambito.sessao.tipo === 'dono';
+  const vista = params.vista === 'fontes' && dono ? 'fontes' : 'cartazes';
   const filtro = { estado: params.estado ?? '', q: (params.q ?? '').trim() };
 
-  const [contagens, linhas, fontes] = await Promise.all([
-    contarCartazes(),
-    vista === 'cartazes' ? listCartazes(filtro) : Promise.resolve([] as CartazDoPainel[]),
+  const [contagens, linhas, fontes, fontesDaRegiao] = await Promise.all([
+    contarCartazes(ambito),
+    vista === 'cartazes'
+      ? listCartazes(filtro, undefined, ambito)
+      : Promise.resolve([] as CartazDoPainel[]),
     vista === 'fontes' ? listFontesParaAlojamento() : Promise.resolve([]),
+    listSourcesParaFiltro(ambito),
   ]);
+  // Nomes, e não identificadores (C4-011): a linha dizia «torres-novas ·
+  // cm-torresnovas». E a ficha pública no domínio da região (C4-017).
+  const nomeDaFonte = new Map(fontesDaRegiao.map((fonte) => [fonte.id, fonte.name]));
+  const ligacoes = ligacoesPublicas(
+    ambito.disponiveis,
+    ambito.regiaoDoConcelho,
+    (await headers()).get('host'),
+  );
+  /** «2 de outubro de 2026», de um instante guardado em UTC — o dia basta aqui. */
+  const dia = (instante: string | null | undefined) =>
+    instante ? formatLongDate(instante.slice(0, 10)) : '—';
 
   const hoje = todayInLisbon();
   const aqui = `/admin/cartazes${vista === 'fontes' ? '?vista=fontes' : ''}`;
@@ -74,7 +97,7 @@ export default async function Cartazes({ searchParams }: Props) {
     <>
       <PageHeader
         title="Cartazes"
-        lead="Os cartazes dos eventos são obra gráfica de quem os fez. Daqui retira-se um a pedido de quem é seu autor — e um cartaz retirado não volta com a recolha da noite —, e declara-se de que fontes é que se pode guardar cópia."
+        lead="Os cartazes dos eventos são obra gráfica de quem os fez. Daqui retira-se um a pedido de quem é seu autor — e um cartaz retirado não volta com a recolha seguinte —, e declara-se de que fontes é que se pode guardar cópia."
       />
 
       {params.aviso ? (
@@ -96,22 +119,24 @@ export default async function Cartazes({ searchParams }: Props) {
         </span>
       </p>
 
-      <nav aria-label="Vistas" className="mb-6 flex flex-wrap gap-2">
-        <Link
-          href="/admin/cartazes"
-          aria-current={vista === 'cartazes' ? 'page' : undefined}
-          className={vista === 'cartazes' ? BOTAO_CHEIO : BOTAO}
-        >
-          Cartazes
-        </Link>
-        <Link
-          href="/admin/cartazes?vista=fontes"
-          aria-current={vista === 'fontes' ? 'page' : undefined}
-          className={vista === 'fontes' ? BOTAO_CHEIO : BOTAO}
-        >
-          De quem se pode copiar
-        </Link>
-      </nav>
+      {dono ? (
+        <nav aria-label="Vistas" className="mb-6 flex flex-wrap gap-2">
+          <Link
+            href="/admin/cartazes"
+            aria-current={vista === 'cartazes' ? 'page' : undefined}
+            className={vista === 'cartazes' ? BOTAO_CHEIO : BOTAO}
+          >
+            Cartazes
+          </Link>
+          <Link
+            href="/admin/cartazes?vista=fontes"
+            aria-current={vista === 'fontes' ? 'page' : undefined}
+            className={vista === 'fontes' ? BOTAO_CHEIO : BOTAO}
+          >
+            De quem se pode copiar
+          </Link>
+        </nav>
+      ) : null}
 
       {vista === 'cartazes' ? (
         <>
@@ -179,25 +204,48 @@ export default async function Cartazes({ searchParams }: Props) {
                     <div className="min-w-0">
                       <p className="text-sm text-muted">
                         {formatEventDates(linha.date_start, linha.date_end, hoje)} ·{' '}
-                        {linha.municipality_id}
-                        {linha.source_id ? ` · ${linha.source_id}` : ''}
+                        {ambito.nomeDoConcelho.get(linha.municipality_id) ?? linha.municipality_id}
+                        {linha.source_id
+                          ? ` · ${nomeDaFonte.get(linha.source_id) ?? linha.source_id}`
+                          : ''}
                       </p>
                       <p className="font-medium">
+                        {/* A ficha de correção no painel; a pública, no domínio
+                            da região, ao lado (C4-017). */}
                         <Link
-                          href={`/evento/${linha.slug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href={`/admin/eventos/${encodeURIComponent(linha.id)}`}
                           className="underline underline-offset-4"
-                          aria-label={`${linha.title} (abre noutro separador)`}
                         >
                           {linha.title}
                         </Link>
+                        {ligacoes.doConcelho(linha.municipality_id, `/evento/${linha.slug}`) ? (
+                          <>
+                            {' · '}
+                            <a
+                              href={
+                                ligacoes.doConcelho(
+                                  linha.municipality_id,
+                                  `/evento/${linha.slug}`,
+                                ) ?? undefined
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-normal underline underline-offset-4"
+                            >
+                              ver no sítio
+                              <span className="sr-only">
+                                {' '}
+                                «{linha.title}» (abre noutro separador)
+                              </span>
+                            </a>
+                          </>
+                        ) : null}
                       </p>
                       <p className="text-xs text-muted">
                         {linha.image_retirado_em
-                          ? `Retirado por ${linha.image_retirado_por ?? '—'} a ${linha.image_retirado_em.slice(0, 10)}.`
+                          ? `Retirado por ${linha.image_retirado_por ?? '—'} a ${dia(linha.image_retirado_em)}.`
                           : linha.image_miniatura
-                            ? `Cópia nossa desde ${linha.image_guardado_em?.slice(0, 10) ?? '—'}. Crédito: ${linha.image_credit ?? 'por escrever'}.`
+                            ? `Cópia nossa desde ${dia(linha.image_guardado_em)}. Crédito: ${linha.image_credit ?? 'por escrever'}.`
                             : 'Servido do servidor de quem o publicou.'}
                       </p>
                       {linha.image_origem ? (

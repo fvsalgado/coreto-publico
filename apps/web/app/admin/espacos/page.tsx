@@ -7,6 +7,7 @@ import {
   listVenuesForLinking,
   type LinkableVenue,
 } from '@/src/lib/admin/queries';
+import { ambitoDoPainel } from '@/src/lib/admin/ambito';
 import { hasServiceRole } from '@/src/lib/env';
 import { listMunicipalitiesDeTodas } from '@/src/lib/queries/events';
 
@@ -21,7 +22,7 @@ const BOTAO_DISCRETO =
   'inline-flex min-h-11 items-center text-sm text-muted underline-offset-4 hover:underline';
 
 interface Props {
-  searchParams: Promise<{ aviso?: string }>;
+  searchParams: Promise<{ aviso?: string; regiao?: string }>;
 }
 
 /** Uma cadeia dentro de aspas simples de SQL: só a plica precisa de dobrar. */
@@ -32,12 +33,20 @@ function emSql(texto: string): string {
 export default async function EspacosPorResolver({ searchParams }: Props) {
   if (!hasServiceRole) return <SemChaveDeServico titulo="Espaços por resolver" />;
 
-  const [{ aviso }, fila, espacos, concelhos] = await Promise.all([
-    searchParams,
-    listUnresolvedVenues(),
-    listVenuesForLinking(),
+  const { aviso, regiao } = await searchParams;
+  // Os nomes da região escolhida, e os espaços a que se podem ligar — os dela
+  // (C4-015). Um nome sem concelho liga em toda a parte, e por isso só o dono
+  // o vê.
+  const ambito = await ambitoDoPainel({ pedida: regiao });
+  const [fila, espacos, todosOsConcelhos] = await Promise.all([
+    listUnresolvedVenues(ambito),
+    listVenuesForLinking(ambito),
     listMunicipalitiesDeTodas(),
   ]);
+  const concelhos = ambito.concelhos
+    ? todosOsConcelhos.filter((concelho) => ambito.concelhos?.includes(concelho.id))
+    : todosOsConcelhos;
+  const dono = ambito.sessao.tipo === 'dono';
   const primeiro = fila[0];
 
   // Os espaços por concelho, para os `<optgroup>`; e o nome de cada concelho,
@@ -128,7 +137,12 @@ export default async function EspacosPorResolver({ searchParams }: Props) {
                         linha.name
                       )}
                     </th>
-                    <td className="py-3 pr-4 text-muted">{linha.municipality_id ?? '—'}</td>
+                    <td className="py-3 pr-4 text-muted">
+                      {linha.municipality_id
+                        ? (ambito.nomeDoConcelho.get(linha.municipality_id) ??
+                          linha.municipality_id)
+                        : 'sem concelho'}
+                    </td>
                     <td
                       className={`py-3 pr-4 tabular-nums ${
                         linha.eventos_por_acontecer > 0 ? 'font-medium' : 'text-muted'
@@ -201,21 +215,39 @@ export default async function EspacosPorResolver({ searchParams }: Props) {
             com fonte, e é o repositório que o reconstrói. A 0117 tem a
             decisão inteira.
           */}
-          <section aria-labelledby="novo" className="mt-8">
-            <h2 id="novo" className="text-lg font-semibold">
-              Quando o espaço ainda não existe
-            </h2>
-            <p className="mt-1 max-w-prose text-muted">
-              Se o nome é de um espaço que já está no catálogo com outra grafia, liga-se acima e
-              acabou. Se é um espaço que o catálogo não tem, cria-se primeiro — por migração, porque
-              um espaço leva morada, coordenadas, tipo e a nota de onde se confirmou cada coisa.
-              Depois volta-se aqui a ligar-lhe o nome como a fonte o escreve.
-            </p>
-            <pre
-              className="mt-3 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
-              tabIndex={0}
-            >
-              {`-- Só quando o espaço não existe. Confirma a morada, as coordenadas e o
+          {/*
+            O SQL de um espaço novo é de quem opera o Coreto: é ele que cria
+            espaços, por migração, com a morada e as coordenadas confirmadas.
+            A quem modera diz-se a quem o pedir.
+          */}
+          {!dono ? (
+            <section aria-labelledby="novo" className="mt-8">
+              <h2 id="novo" className="text-lg font-semibold">
+                Quando o espaço ainda não existe
+              </h2>
+              <p className="mt-1 max-w-prose text-muted">
+                Se o nome é de um espaço que já está no catálogo com outra grafia, liga-se acima e
+                acabou. Se é um espaço que o catálogo não tem, pede-o a quem opera o Coreto, com a
+                morada e onde a confirmaste: o espaço entra no catálogo com as coordenadas e o tipo
+                certos, e depois volta-se aqui a ligar-lhe o nome como a fonte o escreve.
+              </p>
+            </section>
+          ) : (
+            <section aria-labelledby="novo" className="mt-8">
+              <h2 id="novo" className="text-lg font-semibold">
+                Quando o espaço ainda não existe
+              </h2>
+              <p className="mt-1 max-w-prose text-muted">
+                Se o nome é de um espaço que já está no catálogo com outra grafia, liga-se acima e
+                acabou. Se é um espaço que o catálogo não tem, cria-se primeiro — por migração,
+                porque um espaço leva morada, coordenadas, tipo e a nota de onde se confirmou cada
+                coisa. Depois volta-se aqui a ligar-lhe o nome como a fonte o escreve.
+              </p>
+              <pre
+                className="mt-3 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
+                tabIndex={0}
+              >
+                {`-- Só quando o espaço não existe. Confirma a morada, as coordenadas e o
 -- tipo contra uma fonte primária, e diz na nota onde e quando.
 insert into public.venues (id, name, municipality_id, kind, address, postal_code, latitude, longitude, notes)
 values ('id-novo', '${emSql(primeiro?.name ?? 'o nome')}', '${primeiro?.municipality_id ?? 'concelho'}', 'other',
@@ -226,14 +258,15 @@ values ('id-novo', '${emSql(primeiro?.name ?? 'o nome')}', '${primeiro?.municipa
 insert into public.venue_aliases (alias, venue_id, municipality_id)
 values (public.normalize_for_hash('${emSql(primeiro?.name ?? 'o nome')}'), 'id-novo', '${primeiro?.municipality_id ?? 'concelho'}')
 on conflict do nothing;`}
-            </pre>
-            <p className="mt-3 max-w-prose text-sm text-muted">
-              Um alias com concelho ganha ao regional na resolução, e um nome com concelho só se
-              liga a um espaço desse concelho — a base recusa o resto. «Vários locais», «A anunciar»
-              e o nome de um concelho não são sítios: «Não é um sítio» tira-os da fila sem apagar o
-              histórico de quantas vezes apareceram.
-            </p>
-          </section>
+              </pre>
+              <p className="mt-3 max-w-prose text-sm text-muted">
+                Um alias com concelho ganha ao regional na resolução, e um nome com concelho só se
+                liga a um espaço desse concelho — a base recusa o resto. «Vários locais», «A
+                anunciar» e o nome de um concelho não são sítios: «Não é um sítio» tira-os da fila
+                sem apagar o histórico de quantas vezes apareceram.
+              </p>
+            </section>
+          )}
         </>
       )}
     </>

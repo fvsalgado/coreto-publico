@@ -1,6 +1,8 @@
 import { todayInLisbon } from '@coreto/core/dates';
 import Link from 'next/link';
 import { PageHeader } from '@/src/components/PageHeader';
+import { SemAcessoNoPainel } from '@/src/components/SemAcessoNoPainel';
+import { exigirSessao } from '@/src/lib/admin/auth';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
 import {
   listRegionGates,
@@ -88,11 +90,15 @@ export default async function Regioes({ searchParams }: Props) {
       <>
         <PageHeader title="Regiões" />
         <p className="text-muted">
-          Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o backoffice não lê nada.
+          Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o painel não lê nada.
         </p>
       </>
     );
   }
+
+  // A lista de todas as regiões é do dono (C4-015). Um gestor tem a ficha da
+  // sua, na barra, em «Definições da região».
+  if ((await exigirSessao()).tipo !== 'dono') return <SemAcessoNoPainel titulo="Regiões" />;
 
   const [regioes, seccoes, licencas, segredos, barreiras] = await Promise.all([
     listRegionsAdmin(),
@@ -163,7 +169,7 @@ export default async function Regioes({ searchParams }: Props) {
                 </Link>{' '}
                 <span className="font-normal text-muted">{regiao.id}</span>
                 {regiao.kind === 'montra' ? (
-                  <span className="ml-1 text-sm font-normal text-muted">(montra)</span>
+                  <span className="ml-1 text-sm font-normal text-muted">(demonstração)</span>
                 ) : null}
               </h2>
 
@@ -191,7 +197,7 @@ export default async function Regioes({ searchParams }: Props) {
                 <div>
                   {/* A montra da entrada (0161): os cartazes que abrem a
                       página inicial, fixados aqui e completados pela semana. */}
-                  <dt className="text-muted">Montra</dt>
+                  <dt className="text-muted">Destaques da entrada</dt>
                   <dd>
                     <Link href={`${ficha}/destaques`} className="underline underline-offset-4">
                       {(regiao.destaques_alvo ?? 12) === 0

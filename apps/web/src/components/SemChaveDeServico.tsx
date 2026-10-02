@@ -14,7 +14,7 @@ export function SemChaveDeServico({ titulo }: { titulo: string }) {
     <>
       <PageHeader title={titulo} />
       <p className="text-muted">
-        Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o backoffice não lê nada.
+        Falta <code>SUPABASE_SERVICE_ROLE_KEY</code>. Sem ela o painel não lê nada.
       </p>
     </>
   );

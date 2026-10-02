@@ -76,6 +76,24 @@ const CHAVES_DA_EXTRACAO: Partial<Record<EditableField, string>> = {
   accessibility_notes: 'accessibilityNotes',
 };
 
+/**
+ * Um evento guardado, nos termos do formulário: os quinze campos como texto
+ * (vazio onde a base tem nulo) e a entrada livre como caixa. É o que a ficha
+ * de correção põe nos campos (C4-017).
+ */
+export function valoresDoEvento(evento: Partial<Record<EditableField, unknown>>): Proposed {
+  const valores = {} as Record<EditableField, string | boolean>;
+  for (const campo of EDITABLE_FIELDS) {
+    const valor = evento[campo];
+    valores[campo] = BOOLEAN_FIELDS.has(campo)
+      ? valor === true
+      : typeof valor === 'string'
+        ? valor
+        : '';
+  }
+  return valores as Proposed;
+}
+
 export interface ProposedSession {
   date: string;
   start: string;
@@ -711,3 +729,79 @@ export const CAMPOS_DA_REGIAO = {
   brand_color: 'obrigatorio',
   sort_order: 'inteiro',
 } as const;
+
+/**
+ * O que dizer a quem modera quando a base recusa uma escrita.
+ *
+ * As ações faziam `throw new Error(error.message)`, e um engano de quem modera
+ * — o nome de um evento escrito onde se pedia o identificador — acabava num
+ * ecrã a dizer «Não foi possível falar com a base de dados», com um erro do
+ * React em inglês por baixo (C4-029). Falou, e recusou: é outra coisa, e
+ * diz-se com outras palavras.
+ *
+ * As recusas que as funções desta casa escrevem (`raise exception`, código
+ * `P0001`) já vêm em português e dizem o que está mal — passam tal e qual. As
+ * do Postgres traduzem-se; e o resto, que é avaria, diz que é avaria sem
+ * fingir que foi engano de ninguém.
+ */
+export function avisoDoErroDaBase(erro: { code?: string; message?: string } | null): string {
+  const codigo = erro?.code ?? '';
+  const mensagem = erro?.message ?? '';
+  if (codigo === 'P0001' && mensagem) return mensagem.charAt(0).toUpperCase() + mensagem.slice(1);
+  if (codigo === '22P02') {
+    return 'Isso não identifica nada que a base conheça — escolhe da lista, em vez de escrever à mão.';
+  }
+  if (codigo === '23505') {
+    return /events_source_key/.test(mensagem)
+      ? 'Este evento já está publicado a partir da mesma fonte: procura-o em «Eventos» e corrige-o lá.'
+      : 'Isso já existe — recarrega a página para ver o estado de agora.';
+  }
+  if (codigo === '23503') {
+    return 'Uma das escolhas do formulário já não existe — recarrega a página e escolhe outra vez.';
+  }
+  // As restrições do evento (0004, 0130): dizem-se pelo que se escolheu, e não
+  // pelo nome da restrição ou pelos identificadores dos dois concelhos.
+  if (codigo === '23514') {
+    if (/events_has_location/.test(mensagem)) {
+      return 'Um evento tem de dizer onde é: escolhe um espaço, ou escreve o local livre.';
+    }
+    if (/outro concelho/.test(mensagem)) {
+      return 'O espaço escolhido é de outro concelho: escolhe um espaço do concelho do evento, ou muda o concelho.';
+    }
+    return 'A base recusou esta combinação de campos — revê o concelho, o espaço e as datas.';
+  }
+  return 'A base não guardou isto, e não foi por nada que se tenha escrito. Tenta outra vez daqui a pouco; se voltar a acontecer, diz a quem opera o Coreto.';
+}
+
+/**
+ * Os campos da ficha da região que são de quem opera o produto, e não do
+ * gestor da região (`CONTAS.md`).
+ *
+ * O email da região é por onde entram as propostas — mudá-lo sem mudar o
+ * reencaminhamento parte o correio; os logótipos e a imagem de partilha são
+ * ficheiros que entram por commit, e um caminho escrito à mão parte o
+ * cabeçalho; o responsável pelo tratamento é uma decisão do contrato; e a
+ * ordem decide onde a região aparece entre as outras. O resto — os textos, o
+ * promotor, a declaração de financiamento, a cor, o planeador — é da região.
+ */
+export const CAMPOS_DA_REGIAO_DO_DONO: ReadonlySet<keyof typeof CAMPOS_DA_REGIAO> = new Set([
+  'contact_email',
+  'funding_logo_path',
+  'funding_logo_width',
+  'funding_logo_height',
+  'funding_logo_alt',
+  'logo_on_graphite_path',
+  'logo_on_brand_path',
+  'logo_width',
+  'logo_height',
+  'og_image_path',
+  'og_image_alt',
+  'data_controller_name',
+  'data_controller_url',
+  'data_controller_nif',
+  'data_controller_address',
+  'data_controller_email',
+  'data_controller_dpo',
+  'data_controller_dpo_contact',
+  'sort_order',
+] as const);

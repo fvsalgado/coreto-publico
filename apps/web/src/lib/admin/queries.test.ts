@@ -49,6 +49,7 @@ function clienteQue(resposta: unknown) {
     'or',
     'not',
     'gte',
+    'lt',
     'lte',
     'ilike',
     'order',
@@ -102,6 +103,35 @@ const LEITURAS: Array<[nome: string, correr: (q: typeof import('./queries')) => 
     ['getSubmission', (q) => q.getSubmission('11111111-1111-1111-1111-111111111111')],
     ['listAttachments', (q) => q.listAttachments('11111111-1111-1111-1111-111111111111')],
     ['findDuplicateCandidates', (q) => q.findDuplicateCandidates('Concerto', null, 'tomar')],
+    [
+      'candidatosADuplicado',
+      (q) => q.candidatosADuplicado({ title: 'Concerto', date: null, municipalityId: 'tomar' }),
+    ],
+    ['sessoesDoEvento', (q) => q.sessoesDoEvento('11111111-1111-1111-1111-111111111111')],
+    [
+      'proximaSubmissao',
+      (q) =>
+        q.proximaSubmissao(
+          { regioes: ['medio-tejo'], concelhos: ['tomar'] },
+          '11111111-1111-1111-1111-111111111111',
+        ),
+    ],
+    ['lerEventoResumido', (q) => q.lerEventoResumido('11111111-1111-1111-1111-111111111111')],
+    [
+      'lerEventoParaCorrigir',
+      (q) => q.lerEventoParaCorrigir('11111111-1111-1111-1111-111111111111'),
+    ],
+    ['camposTrancados', (q) => q.camposTrancados('11111111-1111-1111-1111-111111111111')],
+    ['nomeDaFonte', (q) => q.nomeDaFonte('cm-tomar')],
+    ['lerFonte', (q) => q.lerFonte('cm-tomar')],
+    [
+      'nomesDasEntidades',
+      (q) =>
+        q.nomesDasEntidades([
+          { entity_type: 'event', entity_id: '11111111-1111-1111-1111-111111111111' },
+        ]),
+    ],
+    ['eventoPeloEndereco', (q) => q.eventoPeloEndereco('https://exemplo.pt/evento/concerto-abc')],
     ['listSourceHealth', (q) => q.listSourceHealth()],
     ['listRecentRuns', (q) => q.listRecentRuns()],
     ['listAdminActions', (q) => q.listAdminActions(1)],
@@ -112,7 +142,8 @@ const LEITURAS: Array<[nome: string, correr: (q: typeof import('./queries')) => 
     ['listVenuesForLinking', (q) => q.listVenuesForLinking()],
     ['qualityByMunicipality', (q) => q.qualityByMunicipality()],
     ['qualityBySource', (q) => q.qualityBySource()],
-    ['dashboardCounts', (q) => q.dashboardCounts()],
+    ['resumoDaEntrada', (q) => q.resumoDaEntrada(undefined)],
+    ['etiquetasPorMapear', (q) => q.etiquetasPorMapear({ regioes: ['medio-tejo'], concelhos: [] })],
     ['listRegionsAdmin', (q) => q.listRegionsAdmin()],
     ['listRegionLicenses', (q) => q.listRegionLicenses()],
     ['listSiteSections', (q) => q.listSiteSections('medio-tejo')],

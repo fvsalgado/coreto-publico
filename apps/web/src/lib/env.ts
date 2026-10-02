@@ -15,6 +15,12 @@ const schema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(20).optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
   ADMIN_PASSWORD_HASH: z.string().optional(),
+  /*
+   * O email do dono, opcional (0170). Com ele, a senha do ambiente só abre a
+   * sessão do dono a quem escrever este email; sem ele, abre-a com qualquer
+   * email, como antes das contas por pessoa — o segredo é a palavra-passe.
+   */
+  ADMIN_EMAIL: z.string().email().optional(),
   ADMIN_SESSION_SECRET: z.string().min(32).optional(),
   IP_HASH_SALT: z.string().min(16).optional(),
   REVALIDATE_SECRET: z.string().min(16).optional(),
