@@ -3,8 +3,9 @@ import { eventFilterSchema, todayInLisbon } from '@coreto/core';
 import { BandstandMark } from '@/src/components/BandstandMark';
 import { Capa } from '@/src/components/Capa';
 import { SITE_URL, hasDatabase } from '@/src/lib/env';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { exigirRegiao, toldoDaRegiao } from '@/src/lib/queries/regioes';
+import { COR_DO_TEMA } from '@/src/lib/paleta';
+import { deNome, urlDoSitio } from '@/src/lib/regiao';
 import { eventUrl } from '@/src/lib/feeds/build';
 import { formatCategory, formatDatasDoCartao } from '@/src/lib/format';
 import {
@@ -162,7 +163,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const found = municipalities.find((item) => item.id === municipality.toLowerCase());
 
   return {
-    title: found ? `Agenda de ${found.name}` : 'Agenda',
+    title: found ? `Agenda ${deNome(found.name, found.article)}` : 'Agenda',
     // A caixa embebida repete o que já está na página do concelho: indexá-la
     // era pedir a um motor de busca que escolhesse entre duas cópias do mesmo.
     robots: { index: false, follow: false },
@@ -225,12 +226,18 @@ function WidgetShell({ opcoes, children }: ShellProps) {
  * O sinal do coreto é pequeno e é o que faz a caixa reconhecer-se como parte
  * de alguma coisa maior — quem já viu a agenda sabe de onde isto vem sem ter
  * de ler o rodapé.
+ *
+ * O nome parte em duas linhas quando não cabe numa, e não se corta com
+ * reticências: com a letra a 200 %, «Agenda do Entroncamento» ficava
+ * «Agenda do Entr…» (C3-011), e o nome da agenda é a única coisa que o
+ * cabeçalho diz. A caixa mede a altura que tem (`WidgetHeightReporter`), e uma
+ * linha a mais é só uma linha a mais.
  */
 function Cabecalho({ titulo, href }: { titulo: string; href: string }) {
   return (
     <div className="mb-2.5 flex items-center gap-2 border-b border-border pb-2">
       <BandstandMark className="size-4 shrink-0 text-accent" />
-      <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold tracking-tight">
+      <h1 className="min-w-0 flex-1 font-display text-sm font-semibold tracking-tight [overflow-wrap:anywhere]">
         <a
           href={href}
           target="_blank"
@@ -399,7 +406,15 @@ export default async function WidgetPage({ params, searchParams }: Props) {
   ]);
   const regiao = await exigirRegiao(regiaoId);
   const base = urlDoSitio(regiao, SITE_URL);
-  const opcoes = lerOpcoes(consulta);
+  /*
+   * Sem cor escolhida por quem embebe, a caixa veste a da região (C4-006): a
+   * câmara de uma CIM vermelha não recebia uma caixa turquesa por omissão. O
+   * turquesa da casa fica de fora de propósito — é o de fábrica destes
+   * tokens, afinado à mão, e passá-lo pela paleta de quem embebe mudava-o.
+   */
+  const lidas = lerOpcoes(consulta);
+  const toldo = await toldoDaRegiao(regiao);
+  const opcoes = lidas.color || toldo === COR_DO_TEMA ? lidas : { ...lidas, color: toldo };
   const municipalities = await listMunicipalities(regiao.id);
   const municipality = municipalities.find((item) => item.id === segmento.toLowerCase());
 
@@ -446,7 +461,10 @@ export default async function WidgetPage({ params, searchParams }: Props) {
   const cicloEscolhido = opcoes.series
     ? ciclos.find((ciclo) => ciclo.id === opcoes.series)?.name
     : undefined;
-  const titulo = espacoEscolhido ?? cicloEscolhido ?? `Agenda de ${municipality.name}`;
+  const titulo =
+    espacoEscolhido ??
+    cicloEscolhido ??
+    `Agenda ${deNome(municipality.name, municipality.article)}`;
   /*
    * Um widget filtrado a um ciclo aponta para a página desse ciclo — a não ser
    * que a secção dos ciclos esteja desligada, e nessa altura essa página não

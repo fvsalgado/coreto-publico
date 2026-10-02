@@ -1,6 +1,7 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { notFound } from 'next/navigation';
+import { COR_DO_TEMA, COR_POR_OMISSAO } from '../paleta';
 import { REGIAO_DE_RECURSO, regiaoDaLinha, type LinhaDeRegiao, type Regiao } from '../regiao';
 import { REGIAO_PRINCIPAL } from '../regiao-host';
 import { publicClient } from '../supabase/server';
@@ -30,6 +31,40 @@ const COLUNAS_DA_REGIAO =
   'gate_enabled, destaques_alvo';
 
 /**
+ * O artigo de quem promove cada região (0169): `{ 'medio-tejo': 'a' }`.
+ *
+ * **Uma leitura à parte, e que degrada**, pela razão do planeador e da cor lá
+ * em baixo: a coluna é nova, e posta em `COLUNAS_DA_REGIAO` uma coluna em
+ * falta fazia o PostgREST recusar a leitura da região inteira — o domínio de
+ * uma CIM caía por causa de um «da» ou de um «do». Sem a coluna, o mapa vem
+ * vazio e o artigo vale «a», que é o que a prosa dizia antes dela. Uma
+ * leitura só para todas as regiões: são poucas linhas, e a lista e a região
+ * avulsa usam a mesma.
+ */
+const lerArtigosDosPromotores = unstable_cache(
+  async (): Promise<Record<string, string>> => {
+    const supabase = publicClient();
+    if (!supabase) return {};
+    const { data, error } = await supabase.from('regions').select('id, cim_article');
+    exigirLeitura('artigosDosPromotores', error);
+    const linhas = (data ?? []) as unknown as Array<{ id: string; cim_article?: string | null }>;
+    return Object.fromEntries(
+      linhas
+        .filter((linha) => typeof linha.cim_article === 'string')
+        .map((linha) => [linha.id, linha.cim_article as string]),
+    );
+  },
+  ['artigos-dos-promotores'],
+  { tags: [CACHE_TAGS.regions], revalidate: 3600 },
+);
+
+const artigosDosPromotores = degradarForaDaCache(
+  'artigosDosPromotores',
+  lerArtigosDosPromotores,
+  () => ({}),
+);
+
+/**
  * Uma região pelo identificador. `null` para slug desconhecido ou sem base.
  *
  * **Propaga o erro, e é o pior caso de todos os desta correção.** Antes, uma
@@ -54,7 +89,12 @@ export const carregarRegiao = unstable_cache(
       .eq('id', id)
       .maybeSingle();
     exigirLeitura('carregarRegiao', error);
-    return data ? regiaoDaLinha(data as unknown as LinhaDeRegiao) : null;
+    if (!data) return null;
+    const artigos = await artigosDosPromotores();
+    return regiaoDaLinha({
+      ...(data as unknown as LinhaDeRegiao),
+      cim_article: artigos[id] ?? null,
+    });
   },
   ['regiao'],
   { tags: [CACHE_TAGS.regions], revalidate: 3600 },
@@ -113,7 +153,10 @@ export const listRegioes = unstable_cache(
       .select(COLUNAS_DA_REGIAO)
       .order('sort_order');
     exigirLeitura('listRegioes', error);
-    return ((data ?? []) as unknown as LinhaDeRegiao[]).map(regiaoDaLinha);
+    const artigos = await artigosDosPromotores();
+    return ((data ?? []) as unknown as LinhaDeRegiao[]).map((linha) =>
+      regiaoDaLinha({ ...linha, cim_article: artigos[linha.id] ?? null }),
+    );
   },
   ['regioes'],
   { tags: [CACHE_TAGS.regions], revalidate: 3600 },
@@ -169,3 +212,46 @@ const lerPlaneador = unstable_cache(
 );
 
 export const planeadorDaRegiao = degradarForaDaCache('planeadorDaRegiao', lerPlaneador, () => null);
+
+/**
+ * A cor da marca que a região declarou (0167), ou `null`.
+ *
+ * **Uma leitura à parte, e que degrada, pela razão do planeador acima:** a
+ * coluna é nova, e um deploy que corra à frente da migração não pode deitar o
+ * domínio de uma CIM abaixo por causa de uma cor. Sem a coluna, a resposta é
+ * `null`, e o layout veste o que vestia antes dela — o turquesa da casa, ou o
+ * vermelho do produto na demonstração.
+ *
+ * Só se aceita `#rrggbb`, que é o que a restrição da coluna já garante: o
+ * valor vai parar a uma folha de estilos servida, e a dupla verificação custa
+ * uma expressão regular.
+ */
+const lerCor = unstable_cache(
+  async (id: string): Promise<string | null> => {
+    const supabase = publicClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('regions')
+      .select('brand_color')
+      .eq('id', id)
+      .maybeSingle();
+    exigirLeitura('corDaRegiao', error);
+    const cor = (data as { brand_color?: string | null } | null)?.brand_color;
+    return typeof cor === 'string' && /^#[0-9a-f]{6}$/i.test(cor) ? cor.toLowerCase() : null;
+  },
+  ['cor-da-regiao'],
+  { tags: [CACHE_TAGS.regions], revalidate: 3600 },
+);
+
+export const corDaRegiao = degradarForaDaCache('corDaRegiao', lerCor, () => null);
+
+/**
+ * A cor do toldo de uma região: a que ela declarou, ou — com a coluna ainda
+ * por migrar — a que vestia antes dela: o vermelho do produto na
+ * demonstração, o turquesa da casa nas outras.
+ */
+export async function toldoDaRegiao(regiao: Pick<Regiao, 'id' | 'tipo'>): Promise<string> {
+  return (
+    (await corDaRegiao(regiao.id)) ?? (regiao.tipo === 'montra' ? COR_POR_OMISSAO : COR_DO_TEMA)
+  );
+}

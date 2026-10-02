@@ -40,7 +40,11 @@ const BASE = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:3000');
 const HOST = process.env.HOST ?? BASE.hostname;
 const ESPERA_MS = Number(process.env.MAPA_ESPERA_MS ?? 45_000);
 
-/** A página do mapa; muda-se só para ensaiar o guião contra outra rota. */
+/**
+ * A página do mapa. O CI corre o guião duas vezes: na `/mapa` e, com
+ * `MAPA_CAMINHO=/coretos`, no mapa dos coretos — as marcas contam-se da mesma
+ * maneira nos dois.
+ */
 const CAMINHO = process.env.MAPA_CAMINHO ?? '/mapa';
 
 const alvo = `${BASE.protocol}//${HOST}${BASE.port ? `:${BASE.port}` : ''}${CAMINHO}`;

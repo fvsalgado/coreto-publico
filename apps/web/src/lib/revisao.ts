@@ -45,7 +45,7 @@ export const REVISAO_PRIVACIDADE = '2026-08-29';
 export const ELABORACAO_ACESSIBILIDADE = '2026-08-27';
 
 /** E quando foi revista pela última vez. Ver `PRAZO_DE_REVISAO_EM_MESES`. */
-export const REVISAO_ACESSIBILIDADE = '2026-08-29';
+export const REVISAO_ACESSIBILIDADE = '2026-10-02';
 
 /**
  * O prazo que a própria declaração promete: «no mínimo, uma vez por ano».

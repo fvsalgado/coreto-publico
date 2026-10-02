@@ -1,5 +1,10 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+import { todayInLisbon } from '@coreto/core';
+import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
+import { FilaDePilulas } from '@/src/components/FilaDePilulas';
 import { PageHeader } from '@/src/components/PageHeader';
+import { ATALHOS, DEFAULTS, buildHref } from '@/src/lib/agenda';
 
 /**
  * A página que aparece quando não há página, dentro de uma região.
@@ -7,11 +12,29 @@ import { PageHeader } from '@/src/components/PageHeader';
  * É de propósito que não vai à base de dados buscar nada: esta é a página
  * servida quando alguma coisa correu mal, e uma página de erro que depende do
  * que pode ter falhado não é uma página de erro. Rende dentro do layout da
- * região — o toldo e o rodapé ficam de pé —, mas o Next não lhe dá parâmetros,
- * e por isso não nomeia a região nem lista concelhos: a grelha dos onze que
- * aqui viveu era uma lista regional numa página que não pode ler nenhuma.
- * Os atalhos são caminhos relativos, que valem em qualquer domínio.
+ * região — o toldo, a barra de baixo e o rodapé ficam de pé, também para os
+ * endereços que não correspondem a rota nenhuma (ver `[...resto]/page.tsx`) —,
+ * mas o Next não lhe dá parâmetros, e por isso não nomeia a região nem lista
+ * concelhos. Os atalhos são caminhos relativos, que valem em qualquer domínio.
+ *
+ * **O que se oferece é o que trazia a pessoa até aqui** (C1-023). Quem aterra
+ * numa ficha que saiu da agenda vinha à procura de programação: a pesquisa e
+ * os três recortes de tempo respondem a isso antes de qualquer pedido de
+ * desculpa. Os recortes saem da mesma lista e do mesmo `buildHref` da agenda,
+ * byte a byte, com o dia de hoje — e não pedem nada à base, que é a regra
+ * desta página.
  */
+
+/*
+ * Sem `robots`: o Next já carimba `noindex` numa resposta 404, e um segundo
+ * `<meta name="robots">` era a mesma coisa dita duas vezes, com o risco de um
+ * dia as duas divergirem.
+ */
+export const metadata: Metadata = {
+  title: 'Página não encontrada',
+  description:
+    'Este endereço não corresponde a nenhuma página da agenda. A pesquisa, os eventos de hoje, do fim de semana e dos próximos sete dias, e os atalhos para o resto do sítio.',
+};
 
 /*
  * Quatro destinos que existem sempre.
@@ -30,14 +53,31 @@ const SHORTCUTS = [
 ];
 
 export default function NotFound() {
+  const hoje = todayInLisbon();
+  const quando = ATALHOS.map((atalho) => ({
+    chave: atalho.id,
+    rotulo: atalho.rotulo,
+    href: buildHref({ ...DEFAULTS, ...atalho.janela(hoje) }, 1),
+    activa: false,
+  }));
+
   return (
     <>
       <PageHeader
         title="Esta página não existe"
-        lead="Pode ter sido um evento que já saiu da agenda, um endereço mal copiado ou uma ligação nossa que ficou para trás. Nenhuma dessas é culpa de quem chegou aqui."
-      />
+        lead="Pode ter sido um evento que já saiu da agenda, um endereço mal copiado ou uma ligação nossa que ficou para trás. A programação continua aqui:"
+      >
+        <CaixaDePesquisa className="mt-5 max-w-xl" />
+        <FilaDePilulas
+          nome="Atalhos de data"
+          rotulo="Quando"
+          destaque
+          className="mt-4"
+          pilulas={quando}
+        />
+      </PageHeader>
 
-      <nav aria-labelledby="atalhos" className="mt-8">
+      <nav aria-labelledby="atalhos" className="mt-10">
         <h2 id="atalhos" className="ct-heading">
           Por onde continuar
         </h2>

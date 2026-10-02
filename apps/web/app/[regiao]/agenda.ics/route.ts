@@ -5,7 +5,7 @@ import { calendarResponse } from '@/src/lib/feeds/http';
 import { buildCalendar } from '@/src/lib/feeds/ical';
 import { loadFeed } from '@/src/lib/feeds/load';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { osConcelhosDaRegiao, urlDoSitio } from '@/src/lib/regiao';
 
 /**
  * Subscrição da agenda inteira.
@@ -34,7 +34,7 @@ export async function GET(
 
   const calendar = buildCalendar(toCalendarEntries(events, feedContext), {
     name: `Coreto — ${regiao.nome}`,
-    description: `A agenda cultural dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}.`,
+    description: `A agenda cultural ${osConcelhosDaRegiao(regiao, 'de')} ${regiao.doNome}.`,
     url: `${urlDoSitio(regiao, SITE_URL)}/agenda`,
   });
 

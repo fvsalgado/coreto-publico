@@ -32,10 +32,10 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Capa } from '@/src/components/Capa';
 import { formatDatasDoCartao } from '@/src/lib/format';
-import type { EventCard } from '@/src/lib/queries/types';
+import type { EventoDoVisor } from '@/src/lib/visor';
 
-/** Um destaque já com a hora e os dias das sessões (`withCardTimes`). */
-type Destaque = EventCard & { start_time?: string | null; dias?: readonly string[] };
+/** Um destaque já com a hora e os dias das sessões, e só os campos que se leem aqui. */
+type Destaque = EventoDoVisor;
 
 interface Props {
   events: Destaque[];
@@ -139,11 +139,11 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
   if (total < MINIMO) return null;
 
   const atual = aberto === null ? null : comCartaz[aberto];
-  const onde = (evento: EventCard) =>
+  const onde = (evento: Destaque) =>
     (evento.venue_id ? venueNames?.[evento.venue_id] : null) ?? evento.location_name;
   // «Mação · Mação» não diz mais do que «Mação»: o concelho só entra quando
   // acrescenta alguma coisa ao sítio — a mesma regra do cartão de evento.
-  const ondeComConcelho = (evento: EventCard) => {
+  const ondeComConcelho = (evento: Destaque) => {
     const sitio = onde(evento);
     const concelho = municipalityNames?.[evento.municipality_id];
     return [sitio, concelho === sitio ? null : concelho]
@@ -152,7 +152,7 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
   };
 
   return (
-    <section aria-labelledby="destaques" className="mt-8">
+    <section aria-labelledby="destaques" className="ct-sem-impressao mt-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         {/* Um nome só para a janela, «os próximos 7 dias» (C2-040): eram
             quatro — «Esta semana», «Em cartaz esta semana», «A semana dia a
@@ -196,6 +196,7 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
               >
                 <Link
                   href={`/evento/${evento.slug}`}
+                  prefetch={false}
                   onClick={(acontecimento) => {
                     // Só se interceta o clique simples e sem modificadores:
                     // abrir num separador novo tem de continuar a abrir a
@@ -356,6 +357,7 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
               <h3 className="mt-1 text-lg font-semibold">{atual.title}</h3>
               <Link
                 href={`/evento/${atual.slug}`}
+                prefetch={false}
                 className="mt-3 inline-flex min-h-11 items-center rounded bg-white px-5 text-sm font-medium text-black"
               >
                 Ver o evento

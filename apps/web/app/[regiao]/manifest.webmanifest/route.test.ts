@@ -15,8 +15,14 @@ import { REGIAO_DE_RECURSO, descricaoDoSitio, tituloDoSitio, type Regiao } from 
  */
 
 const exigirRegiao = vi.hoisted(() => vi.fn<(id: string) => Promise<Regiao>>());
+// A cor vem da base (0167). Aqui faz o que a leitura faz com a coluna vazia —
+// o toldo da casa, ou o do produto na montra —, e cada teste que precise de
+// uma cor declarada di-la.
+const toldoDaRegiao = vi.hoisted(() =>
+  vi.fn<(regiao: Pick<Regiao, 'id' | 'tipo'>) => Promise<string>>(),
+);
 
-vi.mock('@/src/lib/queries/regioes', () => ({ exigirRegiao }));
+vi.mock('@/src/lib/queries/regioes', () => ({ exigirRegiao, toldoDaRegiao }));
 
 const { GET } = await import('./route');
 
@@ -57,6 +63,11 @@ async function manifesto(regiao: Regiao): Promise<MetadataRoute.Manifest> {
 describe('GET /manifest.webmanifest', () => {
   beforeEach(() => {
     exigirRegiao.mockReset().mockResolvedValue(TRAVESSIA);
+    toldoDaRegiao
+      .mockReset()
+      .mockImplementation(async (regiao) =>
+        regiao.tipo === 'montra' ? CORES_DO_TOLDO.montra : CORES_DO_TOLDO.cim,
+      );
   });
 
   it('serve-se como manifesto e guarda-se uma hora', async () => {
@@ -73,15 +84,22 @@ describe('GET /manifest.webmanifest', () => {
 
     expect(dados.name).toBe(tituloDoSitio(TRAVESSIA));
     expect(dados.name).toBe('Coreto — a agenda cultural da Travessia do Zêzere');
-    expect(dados.short_name).toBe('Coreto');
+    // O nome por baixo do ícone é o da região (C4-027): quem instala a agenda
+    // da sua terra não fica com o nome do produto no ecrã.
+    expect(dados.short_name).toBe('Travessia do Zêzere');
     expect(dados.description).toBe(descricaoDoSitio(TRAVESSIA));
     expect(dados.lang).toBe('pt-PT');
     expect(JSON.stringify(dados)).not.toContain('Médio Tejo');
   });
 
-  it('veste o toldo da região: turquesa numa CIM, vermelho na montra', async () => {
-    // As duas cores existem para a montra não se confundir com a agenda de
-    // uma região, e a barra do sistema é onde a confusão se via.
+  it('veste o toldo da região: o que ela declarou, e o da casa enquanto não declara', async () => {
+    // A barra do sistema é onde uma agenda instalada se confundia com outra.
+    toldoDaRegiao.mockResolvedValueOnce('#1f5c4a');
+    expect((await manifesto(TRAVESSIA)).theme_color).toBe('#1f5c4a');
+    expect(toldoDaRegiao).toHaveBeenLastCalledWith(TRAVESSIA);
+
+    // Sem cor declarada: turquesa numa CIM, vermelho na montra — as duas
+    // existem para a montra não se confundir com a agenda de uma região.
     expect(CORES_DO_TOLDO.cim).not.toBe(CORES_DO_TOLDO.montra);
     expect((await manifesto(TRAVESSIA)).theme_color).toBe(CORES_DO_TOLDO.cim);
     expect((await manifesto({ ...TRAVESSIA, tipo: 'montra' })).theme_color).toBe(
@@ -97,6 +115,13 @@ describe('GET /manifest.webmanifest', () => {
     expect(dados).not.toHaveProperty('screenshots');
     // O ícone recortável vai à parte, para o Android não cortar a marca.
     expect(dados.icons?.map((icone) => icone.purpose)).toEqual(['any', 'any', 'maskable']);
+    // E os três são desenhados na cor da região, pela rota dela — não os
+    // ficheiros fixos da raiz, que eram turquesa em todas.
+    expect(dados.icons?.map((icone) => icone.src)).toEqual([
+      '/icone-da-aplicacao/192',
+      '/icone-da-aplicacao/512',
+      '/icone-da-aplicacao/512-mascara',
+    ]);
   });
 
   it('o atalho do mapa conta os concelhos por extenso — e cala a contagem quando não a sabe', async () => {
@@ -111,5 +136,9 @@ describe('GET /manifest.webmanifest', () => {
     expect(await atalhoDoMapa(REGIAO_DE_RECURSO)).toBe(
       'Os concelhos e o que está marcado em cada um.',
     );
+    // E com um concelho só, no singular — nada de «Os um concelhos» (C1-031).
+    expect(
+      await atalhoDoMapa({ ...TRAVESSIA, concelhosDeclarados: 1, concelhosPorExtenso: 'um' }),
+    ).toBe('O concelho e o que está marcado nele.');
   });
 });

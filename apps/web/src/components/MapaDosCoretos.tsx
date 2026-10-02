@@ -17,6 +17,9 @@ import type { ConcelhoNoMapa, CoretoNoMapa } from '@/src/lib/mapa';
  */
 const ALTURA = 'h-[50vh] max-h-[480px] min-h-[300px]';
 
+/** Onde está o mesmo sem o mapa: na pergunta da rede lenta e na caixa sem JavaScript. */
+const ALTERNATIVA = 'A lista a seguir tem os coretos todos, concelho a concelho.';
+
 /**
  * O MapLibre não renderiza no servidor e são trezentos quilobytes que só os
  * mapas pedem: carregado à parte, o resto do sítio não os paga. Sem
@@ -25,7 +28,7 @@ const ALTURA = 'h-[50vh] max-h-[480px] min-h-[300px]';
  */
 const MapaDosCoretosVivo = dynamic(
   () => import('@/src/components/MapaDosCoretosVivo').then((m) => m.MapaDosCoretosVivo),
-  { ssr: false, loading: () => <EsperaDoMapa altura={ALTURA} /> },
+  { ssr: false, loading: () => <EsperaDoMapa altura={ALTURA} alternativa={ALTERNATIVA} /> },
 );
 
 interface Props {
@@ -57,7 +60,8 @@ export function MapaDosCoretos({
         Mapa dos coretos
       </h2>
 
-      <p className="mb-2 text-sm text-muted">
+      {/* Sem JavaScript não há mapa em que tocar, e a instrução sai com ele. */}
+      <p className="ct-so-com-js mb-2 text-sm text-muted">
         Toque num coreto para o ver na lista. Um número junta coretos que, a esta distância, ficam
         uns por cima dos outros: tocar-lhe aproxima o mapa.
       </p>
@@ -72,14 +76,11 @@ export function MapaDosCoretos({
       </a>
 
       {montar === false ? (
-        <PerguntaDoMapa
-          alternativa="A lista a seguir tem os coretos todos, concelho a concelho."
-          onPedir={pedir}
-        />
+        <PerguntaDoMapa alternativa={ALTERNATIVA} onPedir={pedir} />
       ) : montar ? (
         <MapaDosCoretosVivo coretos={coretos} concelhos={concelhos} altura={ALTURA} />
       ) : (
-        <EsperaDoMapa altura={ALTURA} />
+        <EsperaDoMapa altura={ALTURA} alternativa={ALTERNATIVA} />
       )}
 
       <div className="mt-2 text-sm text-muted">

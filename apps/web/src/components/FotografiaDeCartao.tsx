@@ -21,6 +21,10 @@ import { fonteDaFotografia, fundoDaFotografia } from '@/src/lib/fotografia';
  * descarregada: é assim que um fundo escolhe a medida sem `srcset`. Os
  * escalões do Commons mais próximos são 330 e 500.
  *
+ * Com a letra a 200 %, a lista à volta (um contentor) põe o cartão de pé, e a
+ * moldura passa a ser a de cima, como num ecrã largo: a miniatura de 96
+ * píxeis deixava ao texto uma coluna onde o nome do espaço não cabia (C3-011).
+ *
  * As do Commons vêm do próprio sítio (`lib/fotografia.ts`): cada uma custava
  * três viagens à Wikimedia a partir do navegador de quem visitava, e
  * deixava-lhe cookies.
@@ -41,7 +45,7 @@ export function FotografiaDeCartao({
   const grande = url ? fundoDaFotografia(fonteDaFotografia(url, [500]).src) : undefined;
 
   return (
-    <div className="relative aspect-square w-24 shrink-0 self-stretch overflow-hidden border-r border-border sm:aspect-[5/3] sm:w-full sm:border-r-0 sm:border-b">
+    <div className="ct-sem-impressao relative aspect-square w-24 shrink-0 self-stretch overflow-hidden border-r border-border @max-[17rem]:aspect-[5/3] @max-[17rem]:w-full @max-[17rem]:border-r-0 @max-[17rem]:border-b sm:aspect-[5/3] sm:w-full sm:border-r-0 sm:border-b">
       <CapaDoEspaco kind={kind} isAssociation={isAssociation} semRotulo={semRotulo} />
       {pequena ? (
         <div

@@ -29,8 +29,10 @@ describe('mesesDecorridos', () => {
 
 describe('a declaração de acessibilidade', () => {
   it('caduca ao fim de doze meses, e não antes', () => {
-    expect(declaracaoCaducada('2027-08-28')).toBe(false);
-    expect(declaracaoCaducada('2027-08-29')).toBe(true);
+    // Revista a 2 de outubro de 2026 (C3-010, com as medições de novo).
+    expect(REVISAO_ACESSIBILIDADE).toBe('2026-10-02');
+    expect(declaracaoCaducada('2027-10-01')).toBe(false);
+    expect(declaracaoCaducada('2027-10-02')).toBe(true);
   });
 
   /**

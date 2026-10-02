@@ -198,16 +198,21 @@ export default async function CoretosPage({ params }: Props) {
                   className="flex items-center gap-3 ct-heading"
                 >
                   <span aria-hidden="true" className="ct-octagon size-2 shrink-0 bg-highlight" />
+                  {/* O nome pode partir, e o traço pode sumir: com a letra a
+                      200 %, «Entroncamento» e o traço ao lado pediam 460 px
+                      numa janela de 360 (C3-011). */}
                   <Link
                     href={`/concelho/${group.municipality.id}`}
-                    className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 min-w-0 items-center underline-offset-4 [overflow-wrap:anywhere] hover:underline"
                   >
                     {group.municipality.name}
                   </Link>
-                  <span aria-hidden="true" className="ct-rule min-w-8 flex-1" />
+                  <span aria-hidden="true" className="ct-rule min-w-0 flex-1 basis-8" />
                 </h2>
 
-                <ul className="mt-3 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+                {/* Um contentor, para os cartões se porem de pé quando a letra
+                    cresce — ver `FotografiaDeCartao`. */}
+                <ul className="@container mt-3 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                   {group.coretos.map((coreto) => {
                     const detail = describe(coreto);
                     const venueName = coreto.venue_id ? venueNames[coreto.venue_id] : undefined;
@@ -218,7 +223,7 @@ export default async function CoretosPage({ params }: Props) {
                       <li
                         key={coreto.id}
                         id={ancoraDoCoreto(coreto.id)}
-                        className={`ct-lift flex h-full overflow-hidden rounded-lg border border-border bg-surface sm:flex-col ${ALVO_DO_MAPA}`}
+                        className={`ct-lift flex h-full overflow-hidden rounded-lg border border-border bg-surface @max-[17rem]:flex-col sm:flex-col ${ALVO_DO_MAPA}`}
                       >
                         {/* A moldura existe sempre, com fotografia ou sem ela.
                           Com metade dos coretos por fotografar, deixar o

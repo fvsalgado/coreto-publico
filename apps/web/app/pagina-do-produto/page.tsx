@@ -7,7 +7,9 @@ import { ThemeToggle } from '@/src/components/ThemeToggle';
 import { REGIAO_DA_FICHA } from '@/src/lib/analytics/posthog';
 import { FORNECEDOR, identidadeNumaLinha } from '@/src/lib/fornecedor';
 import { CORES_DO_TOLDO } from '@/src/lib/marca';
-import { AUTOR, PRODUTO } from '@/src/lib/produto';
+import { lerNumerosDaDemonstracao } from '@/src/lib/demonstracao';
+import { AUTOR, PRODUTO, origemDaDemonstracao } from '@/src/lib/produto';
+import { ORIGEM_DA_MONTRA } from './montra';
 
 /**
  * O que se serve a um anfitrião que não é de nenhuma região: o produto.
@@ -49,16 +51,31 @@ import { AUTOR, PRODUTO } from '@/src/lib/produto';
  * do HTML, e ganhava-lhe também no endereço onde queremos ser encontrados.
  */
 
+/*
+ * A descrição é a primeira frase que um motor de busca mostra da ficha, e
+ * dizia «lê todas as noites»: a recolha corre uma vez por dia, a horas que
+ * não se prometem (o cron está às 03:20 UTC e as execuções medidas caíram de
+ * manhã e à tarde). A ficha já o dizia certo — «Uma recolha por dia» —, e era
+ * só aqui, no `<head>`, que a frase antiga sobrevivia; o `check:afirmacoes`
+ * passa a ler também este ficheiro.
+ */
 export const metadata: Metadata = {
   title: 'Coreto — toda a programação cultural do seu território, numa agenda só.',
   description:
-    'O Coreto lê todas as noites o que as câmaras, os teatros, as bibliotecas e as coletividades ' +
+    'O Coreto lê uma vez por dia o que as câmaras, os teatros, as bibliotecas e as coletividades ' +
     'publicam, e arruma tudo numa agenda só — para municípios, comunidades intermunicipais e ' +
     'associações, cada um no seu domínio.',
   alternates: { canonical: 'https://coreto.org/' },
 };
 
 export const dynamic = 'error';
+
+/*
+ * Uma hora, como o estado da demonstração que a faixa «a funcionar» lê: a
+ * página continua estática — servida de cache, sem base de dados —, e
+ * refaz-se de hora a hora com os números do momento.
+ */
+export const revalidate = 3600;
 
 /*
  * A barra do sistema no telemóvel, pintada antes de haver CSS: aqui é o
@@ -73,7 +90,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function PaginaDoProduto() {
+export default async function PaginaDoProduto() {
+  // A demonstração e os números dela: um endereço público e um pedido HTTP
+  // guardado uma hora — a base de dados não entra aqui (ver o cabeçalho). Parte
+  // da origem do produto, e nunca do `SITE_URL` (ver `origemDaDemonstracao`).
+  const demonstracao = origemDaDemonstracao(ORIGEM_DA_MONTRA);
+  const numeros = await lerNumerosDaDemonstracao(demonstracao);
+
   /*
    * O toldo, o lambrequim e o rodapé vêm daqui e não de um layout: por cima
    * desta página só está o esqueleto de raiz (documento, letra, tema), porque
@@ -110,12 +133,12 @@ export default function PaginaDoProduto() {
             {PRODUTO.nome}
           </Link>
           <div className="flex items-center gap-1.5">
-            <a
-              href={`mailto:${PRODUTO.email}`}
+            <Link
+              href="/contacto"
               className="inline-flex min-h-11 items-center rounded-full border border-on-brand/60 px-4 text-sm font-medium hover:bg-on-brand/10"
             >
               Falar connosco
-            </a>
+            </Link>
             <ThemeToggle />
           </div>
         </div>
@@ -123,7 +146,7 @@ export default function PaginaDoProduto() {
       <div className="ct-lambrequim ct-lambrequim-marca" aria-hidden="true" />
 
       <main id="conteudo" className="ct-goteira mx-auto w-full max-w-5xl flex-1 py-8 sm:py-10">
-        <PaginaDaMontra />
+        <PaginaDaMontra demonstracao={demonstracao} numeros={numeros} />
       </main>
 
       <footer className="mt-14 sm:mt-16">

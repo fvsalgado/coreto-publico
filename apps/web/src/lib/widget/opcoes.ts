@@ -150,113 +150,141 @@ export interface DefinicaoOpcao {
   descricao: string;
 }
 
-export const CATALOGO: readonly DefinicaoOpcao[] = [
-  {
-    atributo: 'data-concelho',
-    parametro: '(no endereço)',
-    valores: 'tomar, abrantes, ourem, …',
-    omissao: 'obrigatório',
-    descricao: 'O concelho cuja programação aparece na caixa.',
-  },
-  {
-    atributo: 'data-espaco',
-    parametro: 'venue',
-    valores: 'teatro-virginia, miaa, …',
-    omissao: 'o concelho todo',
-    descricao:
-      'Restringe a caixa a um espaço. É esta a opção para um museu ou uma coletividade que só quer mostrar a sua própria programação.',
-  },
-  {
-    atributo: 'data-ciclo',
-    parametro: 'series',
-    valores: 'caminhos, volver, …',
-    omissao: 'todos',
-    descricao:
-      'Restringe a caixa a um ciclo ou festival. Serve a quem organiza um: a caixa passa a mostrar só o programa dele, no concelho escolhido.',
-  },
-  {
-    atributo: 'data-categoria',
-    parametro: 'category',
-    valores: 'musica, teatro, exposicoes, …',
-    omissao: 'todas',
-    descricao: 'Restringe a caixa a uma categoria.',
-  },
-  {
-    atributo: 'data-limit',
-    parametro: 'limit',
-    valores: '1 a 20',
-    omissao: '5',
-    descricao: 'Quantos eventos mostrar.',
-  },
-  {
-    atributo: 'data-gratis',
-    parametro: 'free',
-    valores: 'sim',
-    omissao: 'desligado',
-    descricao: 'Mostra apenas eventos de entrada livre.',
-  },
-  {
-    atributo: 'data-disposicao',
-    parametro: 'layout',
-    valores: 'cartazes, lista, mural',
-    omissao: 'cartazes',
-    descricao:
-      'Cartazes para uma coluna normal, lista para uma coluna estreita sem espaço para imagens, mural para uma faixa larga.',
-  },
-  {
-    atributo: 'data-cor',
-    parametro: 'color',
-    valores: '#14676b, #b0122a, …',
-    omissao: 'o turquesa do Coreto',
-    descricao:
-      'A cor da instituição. Onde é texto, é escurecida ou aclarada até se ler sobre o fundo — a caixa nunca fica ilegível por causa de uma cor de marca.',
-  },
-  {
-    atributo: 'data-tema',
-    parametro: 'theme',
-    valores: 'auto, light, dark',
-    omissao: 'auto',
-    descricao:
-      'Com auto, a caixa segue a preferência de quem visita. Fixe light ou dark se o seu sítio tiver um fundo só.',
-  },
-  {
-    atributo: 'data-letra',
-    parametro: 'font',
-    valores: 'Open Sans, Georgia, serif, …',
-    omissao: 'a letra do Coreto',
-    descricao:
-      'O tipo de letra do seu sítio, para a caixa deixar de se distinguir do resto da página. Escreva a pilha como a tem no CSS. (Herdar não dá: um iframe tem documento próprio e o CSS não atravessa a fronteira.)',
-  },
-  {
-    atributo: 'data-cabecalho',
-    parametro: 'header',
-    valores: 'sim, nao',
-    omissao: 'sim',
-    descricao: 'Desligue se a sua página já tiver um título por cima da caixa.',
-  },
-  {
-    atributo: 'data-moldura',
-    parametro: 'frame',
-    valores: 'sim, nao',
-    omissao: 'sim',
-    descricao: 'A linha à volta da caixa. Desligue para a fundir com o seu fundo.',
-  },
-  {
-    atributo: 'data-titulo',
-    parametro: '(só no script)',
-    valores: 'texto',
-    omissao: 'Agenda cultural — Coreto',
-    descricao: 'O nome que os leitores de ecrã anunciam ao encontrar a caixa.',
-  },
-  {
-    atributo: 'data-pesquisa',
-    parametro: 'q',
-    valores: 'texto',
-    omissao: 'sem pesquisa',
-    descricao:
-      'Só eventos com estas palavras no título, no subtítulo, no sítio ou no resumo — sem acentos e pelo radical: «fado» encontra «fados». É a opção para uma filarmónica ou um festival que quer mostrar só o que é seu.',
-  },
-];
+/**
+ * Os exemplos que a tabela das opções dá, tirados da região que a serve.
+ *
+ * Eram do Médio Tejo, escritos à mão — «tomar, abrantes, ourem», «teatro-
+ * virginia, miaa», «caminhos, volver» —, e a página é servida em todas as
+ * regiões: na demonstração, o técnico copiava o exemplo e a caixa saía vazia,
+ * e a página de uma agenda mostrava os lugares de outra (C4-021), contra a
+ * regra da casa de nem um byte de uma região dentro de outra. Saem agora da
+ * própria região, e quando ela não tem com que dar um exemplo diz-se o que o
+ * valor é, em vez de inventar um.
+ */
+export interface ExemplosDoWidget {
+  /** Identificadores de concelhos da região, os que mais têm por acontecer primeiro. */
+  concelhos: readonly string[];
+  /** Identificadores de espaços da região com programação. */
+  espacos: readonly string[];
+  /** Identificadores de ciclos da região com programação. */
+  ciclos: readonly string[];
+  /** A cor com que a caixa nasce, e como se chama. */
+  cor: { valor: string; nome: string };
+}
+
+function exemplos(lista: readonly string[], seNenhum: string): string {
+  return lista.length > 0 ? `${lista.join(', ')}, …` : seNenhum;
+}
+
+export function catalogoDoWidget(exemplo: ExemplosDoWidget): readonly DefinicaoOpcao[] {
+  return [
+    {
+      atributo: 'data-concelho',
+      parametro: '(no endereço)',
+      valores: exemplos(exemplo.concelhos, 'o identificador do concelho'),
+      omissao: 'obrigatório',
+      descricao: 'O concelho cuja programação aparece na caixa.',
+    },
+    {
+      atributo: 'data-espaco',
+      parametro: 'venue',
+      valores: exemplos(exemplo.espacos, 'o identificador do espaço'),
+      omissao: 'o concelho todo',
+      descricao:
+        'Restringe a caixa a um espaço. É esta a opção para um museu ou uma coletividade que só quer mostrar a sua própria programação.',
+    },
+    {
+      atributo: 'data-ciclo',
+      parametro: 'series',
+      valores: exemplos(exemplo.ciclos, 'o identificador do ciclo'),
+      omissao: 'todos',
+      descricao:
+        'Restringe a caixa a um ciclo ou festival. Serve a quem organiza um: a caixa passa a mostrar só o programa dele, no concelho escolhido.',
+    },
+    {
+      atributo: 'data-categoria',
+      parametro: 'category',
+      valores: 'musica, teatro, exposicoes, …',
+      omissao: 'todas',
+      descricao: 'Restringe a caixa a uma categoria.',
+    },
+    {
+      atributo: 'data-limit',
+      parametro: 'limit',
+      valores: '1 a 20',
+      omissao: '5',
+      descricao: 'Quantos eventos mostrar.',
+    },
+    {
+      atributo: 'data-gratis',
+      parametro: 'free',
+      valores: 'sim',
+      omissao: 'desligado',
+      descricao: 'Mostra apenas eventos de entrada livre.',
+    },
+    {
+      atributo: 'data-disposicao',
+      parametro: 'layout',
+      valores: 'cartazes, lista, mural',
+      omissao: 'cartazes',
+      descricao:
+        'Cartazes para uma coluna normal, lista para uma coluna estreita sem espaço para imagens, mural para uma faixa larga.',
+    },
+    {
+      atributo: 'data-cor',
+      parametro: 'color',
+      valores: `${exemplo.cor.valor}, #b0122a, …`,
+      omissao: exemplo.cor.nome,
+      descricao:
+        'A cor da instituição. Onde é texto, é escurecida ou aclarada até se ler sobre o fundo — a caixa nunca fica ilegível por causa de uma cor de marca.',
+    },
+    {
+      atributo: 'data-tema',
+      parametro: 'theme',
+      valores: 'auto, light, dark',
+      omissao: 'auto',
+      descricao:
+        'Com auto, a caixa segue a preferência de quem visita. Fixe light ou dark se o seu sítio tiver um fundo só.',
+    },
+    {
+      atributo: 'data-letra',
+      parametro: 'font',
+      valores: 'Open Sans, Georgia, serif, …',
+      omissao: 'a letra do Coreto',
+      descricao:
+        'O tipo de letra do seu sítio, para a caixa deixar de se distinguir do resto da página. Escreva a pilha como a tem no CSS. (Herdar não dá: um iframe tem documento próprio e o CSS não atravessa a fronteira.)',
+    },
+    {
+      atributo: 'data-cabecalho',
+      parametro: 'header',
+      valores: 'sim, nao',
+      omissao: 'sim',
+      descricao: 'Desligue se a sua página já tiver um título por cima da caixa.',
+    },
+    {
+      atributo: 'data-moldura',
+      parametro: 'frame',
+      valores: 'sim, nao',
+      omissao: 'sim',
+      descricao: 'A linha à volta da caixa. Desligue para a fundir com o seu fundo.',
+    },
+    {
+      atributo: 'data-titulo',
+      parametro: '(só no script)',
+      valores: 'texto',
+      omissao: 'Agenda cultural — Coreto',
+      descricao: 'O nome que os leitores de ecrã anunciam ao encontrar a caixa.',
+    },
+    {
+      atributo: 'data-pesquisa',
+      parametro: 'q',
+      valores: 'texto',
+      omissao: 'sem pesquisa',
+      descricao:
+        'Só eventos com estas palavras no título, no subtítulo, no sítio ou no resumo — sem acentos e pelo radical: «fado» encontra «fados». É a opção para uma filarmónica ou um festival que quer mostrar só o que é seu.',
+    },
+  ];
+}
 
 /** O que o construtor tem em mãos, antes de virar endereço ou código. */
 export interface Escolhas {

@@ -190,14 +190,30 @@ export const ALTURA_DO_MAPA = 'h-[60vh] max-h-[560px] min-h-[320px]';
  * Era um bloco cinzento a pulsar, escondido de quem ouve e mudo para quem vê:
  * numa rede móvel ficava assim dez segundos, e quem lá estava não sabia se a
  * página tinha parado (C3-012). Agora diz o que está a acontecer.
+ *
+ * **E sem JavaScript diz outra coisa**, porque aí o mapa nunca chega: a caixa
+ * dizia «A carregar o mapa…» para sempre, a quem não tinha como o ver. Diz que
+ * o mapa precisa de JavaScript e manda para o que tem o mesmo sem ele — a
+ * `alternativa`, a mesma frase que a pergunta da rede lenta já usa. As duas
+ * frases estão no HTML, e é o CSS que mostra uma (`.ct-so-com-js`,
+ * `.ct-so-sem-js`): o servidor não sabe se quem pede tem JavaScript.
  */
-export function EsperaDoMapa({ altura = ALTURA_DO_MAPA }: { altura?: string }) {
+export function EsperaDoMapa({
+  altura = ALTURA_DO_MAPA,
+  alternativa,
+}: {
+  altura?: string;
+  alternativa: string;
+}) {
   return (
     <div
       role="status"
       className={`ct-grain grid ${altura} w-full place-items-center rounded-lg border border-border bg-paper px-4 text-center text-sm text-muted`}
     >
-      A carregar o mapa…
+      <p className="ct-so-com-js">A carregar o mapa…</p>
+      <p className="ct-so-sem-js max-w-sm">
+        O mapa precisa de JavaScript, que está desligado neste navegador. {alternativa}
+      </p>
     </div>
   );
 }

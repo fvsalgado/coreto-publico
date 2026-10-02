@@ -816,6 +816,18 @@ jobs:
           BASE_URL: http://127.0.0.1:3000
         run: node scripts/check-mapa.mjs
 
+      # O mapa dos coretos é o segundo mapa da casa, com o seu próprio
+      # invólucro e o seu próprio arranque (`MapaDosCoretosVivo`), e passou a
+      # assentar no mesmo mapa de base. Verificava-se só à mão, e o que só se
+      # verifica à mão parte sem ninguém dar por isso — que é exatamente o que
+      # o passo de cima existe para impedir no outro mapa.
+      - name: O mapa dos coretos desenha
+        if: always() && steps.servidor.outcome == 'success'
+        env:
+          BASE_URL: http://127.0.0.1:3000
+          MAPA_CAMINHO: /coretos
+        run: node scripts/check-mapa.mjs
+
       # As listas do Selo de Usabilidade e Acessibilidade, na parte que uma
       # máquina consegue provar (docs/SELO.md §1). Correu à mão desde 15 de
       # setembro de 2026 e nunca aqui: uma verificação que só corre quando

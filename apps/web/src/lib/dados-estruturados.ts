@@ -1,6 +1,6 @@
 import { addDays, horaDeInicioConhecida, isoWithLisbonOffset, type VenueKind } from '@coreto/core';
 import { migalhasDoConcelho, migalhasDoEspaco, migalhasDoEvento, type Migalha } from './migalhas';
-import { descricaoInstitucional, tituloDoSitio, type Regiao } from './regiao';
+import { deNome, descricaoInstitucional, emNome, tituloDoSitio, type Regiao } from './regiao';
 import type { EventDetail, Venue } from './queries/types';
 
 /**
@@ -215,6 +215,8 @@ function entradaLivre(evento: EventDetail): boolean | undefined {
 interface Concelho {
   id: string;
   name: string;
+  /** O artigo do nome (0165), para «Agenda cultural do Entroncamento». */
+  article?: string | null;
   district?: string | null;
 }
 
@@ -658,7 +660,7 @@ export function construirConcelho({
         '@type': 'CollectionPage',
         '@id': url,
         url,
-        name: `Agenda cultural de ${concelho.name}`,
+        name: `Agenda cultural ${deNome(concelho.name, concelho.article)}`,
         inLanguage: 'pt-PT',
         isPartOf: { '@id': idDoSitio(origem) },
         about: { '@id': idTerritorio },
@@ -673,7 +675,7 @@ export function construirConcelho({
       {
         '@type': 'ItemList',
         '@id': `${url}#lista`,
-        name: `Eventos em ${concelho.name}`,
+        name: `Eventos ${emNome(concelho.name, concelho.article)}`,
         numberOfItems: eventos.length,
         itemListElement: eventos.map((evento, indice) => ({
           '@type': 'ListItem',

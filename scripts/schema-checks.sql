@@ -122,6 +122,22 @@ begin
     assert n >= 20,
       format('%s: a montra tem %s eventos por acontecer, esperavam-se pelo menos 20', r.id, n);
 
+    -- E o fim de semana em curso tem programa (0168, C2-045): é a primeira
+    -- coisa que se mostra a quem vai comprar, e um sábado vazio vende uma
+    -- agenda vazia. A janela é a de `janelaDoFimDeSemana`, em `dates.ts`.
+    select count(distinct e.id) into n
+      from public.events e
+      join public.municipalities m on m.id = e.municipality_id
+      join public.event_sessions s on s.event_id = e.id
+     where m.region_id = r.id and e.status = 'published'
+       and (s.session_date between greatest(current_date + (5 - extract(isodow from current_date)::integer), current_date)
+                               and current_date + (7 - extract(isodow from current_date)::integer)
+            or (e.is_ongoing
+                and e.date_start <= current_date + (7 - extract(isodow from current_date)::integer)
+                and e.date_end >= current_date));
+    assert n >= 4,
+      format('%s: o fim de semana da montra tem %s eventos, esperavam-se pelo menos 4', r.id, n);
+
     select count(*) into n
       from public.events e
       join public.municipalities m on m.id = e.municipality_id
@@ -809,7 +825,8 @@ rollback;
 --
 -- Recua-se um evento da montra cem dias, para o passado, e chama-se
 -- `renovar_montra()`: ele tem de voltar ao futuro no menor salto múltiplo de
--- 60 dias, com as mesmas sessões e o mesmo espaçamento entre elas, com a
+-- 63 dias — nove semanas, para o dia da semana não rodar (0168) —, com as
+-- mesmas sessões, o mesmo espaçamento e o mesmo dia da semana, com a
 -- impressão digital a acompanhar a data nova — e mais nenhum evento se pode
 -- mexer, nem os que já passaram de verdade nas regiões a sério. A segunda
 -- chamada não tem nada para fazer.
@@ -847,10 +864,12 @@ begin
 
   select date_end into v_depois from public.events where id = v_evento;
   assert v_depois >= current_date, 'o evento continua no passado depois de renovar';
-  assert (v_depois - v_antes) % 60 = 0 and v_depois - v_antes > 0,
-    format('o salto foi de %s dias, e tinha de ser um múltiplo de 60', v_depois - v_antes);
-  assert v_depois - 60 < current_date,
+  assert (v_depois - v_antes) % 63 = 0 and v_depois - v_antes > 0,
+    format('o salto foi de %s dias, e tinha de ser um múltiplo de 63', v_depois - v_antes);
+  assert v_depois - 63 < current_date,
     format('o salto de %s dias não foi o menor que devolvia o evento ao futuro', v_depois - v_antes);
+  assert extract(isodow from v_depois) = extract(isodow from v_antes),
+    'a renovação mudou o dia da semana do evento';
 
   select count(*) into n from public.event_sessions where event_id = v_evento;
   assert n = v_sessoes, format('a renovação deixou o evento com %s sessões em vez de %s', n, v_sessoes);
@@ -1723,6 +1742,46 @@ begin
   assert n = 1,
     'events.is_free deixou de ser «not null»: o filtro «sem preço» de /admin/eventos '
     'passa a perder os eventos em que ela é nula, que a vista também não conta';
+end
+$$;
+
+-- O glossário interno não chega aos textos da casa que a base serve (0166).
+--
+-- «Montra» escorregou para o lema e para as «Informações» da demonstração, e
+-- para a nota pública de duas fontes — textos semeados por migrações, que o
+-- `check:afirmacoes` (que lê o código) não vê. A lista é a de
+-- `scripts/glossario-interno.mjs`; aqui só os textos que são da casa: os da
+-- região, as notas públicas e os nomes das fontes, os ciclos. O que quem
+-- organiza escreveu fica de fora de propósito — «uma história guardada numa
+-- gaveta» é português, e «rematada a lambrequim» é a arquitetura de um coreto.
+do $$
+declare
+  v_glossario constant text :=
+    '\m(montra|toldo|lambrequim|goteira|sobrancelha|gaveta|disjuntor|multi-inquilino|impressão digital|deriva de layout)\M';
+  v_onde text;
+begin
+  select string_agg(r.id || '.' || coluna, ', ') into v_onde
+    from public.regions r,
+         lateral (values
+           ('tagline', r.tagline), ('about_intro', r.about_intro), ('about_story', r.about_story),
+           ('funding_statement', r.funding_statement), ('funding_logo_alt', r.funding_logo_alt),
+           ('og_image_alt', r.og_image_alt), ('cim_name', r.cim_name), ('name', r.name)
+         ) as t(coluna, texto)
+   where texto ~* v_glossario;
+  assert v_onde is null,
+    format('o glossário interno está no texto servido de uma região: %s — ver a 0166', v_onde);
+
+  select string_agg(id, ', ') into v_onde
+    from public.sources
+   where public_note ~* v_glossario or name ~* v_glossario;
+  assert v_onde is null,
+    format('o glossário interno está no nome ou na nota pública das fontes %s — ver a 0166', v_onde);
+
+  select string_agg(id, ', ') into v_onde
+    from public.series
+   where description ~* v_glossario or name ~* v_glossario;
+  assert v_onde is null,
+    format('o glossário interno está na descrição dos ciclos %s — ver a 0166', v_onde);
 end
 $$;
 

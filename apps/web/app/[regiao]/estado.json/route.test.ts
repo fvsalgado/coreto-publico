@@ -16,12 +16,14 @@ const exigirRegiao = vi.hoisted(() => vi.fn<(id: string) => Promise<Regiao>>());
 const listPublicSources = vi.hoisted(() => vi.fn());
 const listMunicipalities = vi.hoisted(() => vi.fn());
 const countEventsByMunicipality = vi.hoisted(() => vi.fn());
+const listVenues = vi.hoisted(() => vi.fn());
 
 vi.mock('@/src/lib/queries/regioes', () => ({ exigirRegiao }));
 vi.mock('@/src/lib/queries/events', () => ({
   listPublicSources,
   listMunicipalities,
   countEventsByMunicipality,
+  listVenues,
 }));
 
 const { GET } = await import('./route');
@@ -70,6 +72,7 @@ async function corpo(resposta: Response) {
 beforeEach(() => {
   vi.clearAllMocks();
   exigirRegiao.mockResolvedValue(REGIAO);
+  listVenues.mockResolvedValue([{ id: 'cine-teatro-paraiso' }, { id: 'biblioteca-de-tomar' }]);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -98,7 +101,13 @@ describe('/estado.json', () => {
       paradas: 1,
       porEstrear: 0,
     });
-    expect(dados['agenda']).toEqual({ total: 40, concelhosAZero: ['ourem'] });
+    // Os dois números que a página do produto lê da demonstração (C4-001).
+    expect(dados['agenda']).toEqual({
+      total: 40,
+      concelhosAZero: ['ourem'],
+      concelhos: 2,
+      espacos: 2,
+    });
   });
 
   it('com tudo em ordem, o grau é bom', async () => {
@@ -112,7 +121,7 @@ describe('/estado.json', () => {
       }),
     );
     expect(dados['grau']).toBe('bom');
-    expect(dados['agenda']).toEqual({ total: 128, concelhosAZero: [] });
+    expect(dados['agenda']).toEqual({ total: 128, concelhosAZero: [], concelhos: 1, espacos: 2 });
   });
 
   it('com a base em baixo responde 503, e não um 200 tranquilizador', async () => {

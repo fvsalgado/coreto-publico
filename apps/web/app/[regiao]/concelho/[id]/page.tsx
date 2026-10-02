@@ -35,7 +35,7 @@ import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { migalhasDoConcelho } from '@/src/lib/migalhas';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import type { Municipality } from '@/src/lib/queries/types';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { deNome, emNome, urlDoSitio } from '@/src/lib/regiao';
 
 export const revalidate = 3600;
 
@@ -120,8 +120,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // responde é «o que há para fazer em Tomar», e é essa a pergunta que
     // alguém escreve num motor de busca. O sufixo «· Coreto» vem do modelo do
     // layout.
-    title: `Agenda cultural de ${municipality.name}`,
-    description: `O que há para fazer em ${municipality.name}: concertos, teatro, exposições, festas, cinema e visitas. Espaços, coretos e feeds do concelho.`,
+    title: `Agenda cultural ${deNome(municipality.name, municipality.article)}`,
+    description: `O que há para fazer ${emNome(municipality.name, municipality.article)}: concertos, teatro, exposições, festas, cinema e visitas. Espaços, coretos e feeds do concelho.`,
     // Os feeds são os do concelho e não os globais, e é por isso que esta
     // página passa os seus ao ajudante em vez de aceitar os de omissão. O
     // caminho vai por extenso: um `./` resolvia contra o caminho interno
@@ -269,7 +269,7 @@ export default async function MunicipalityPage({ params }: Props) {
         grande
         lead={
           regiao.promotor
-            ? `Concelho do distrito de ${municipality.district}, na ${regiao.promotor.nome}.`
+            ? `Concelho do distrito de ${municipality.district}, ${emNome(regiao.promotor.nome, regiao.promotor.artigo)}.`
             : `Concelho do distrito de ${municipality.district}.`
         }
       >
@@ -309,7 +309,7 @@ export default async function MunicipalityPage({ params }: Props) {
         {/* Também num concelho sem nada marcado: uma subscrição é do que vier,
             e é a forma de saber quando passar a haver sem ter de voltar aqui
             a ver. */}
-        <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <p className="ct-sem-impressao mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
           <BotaoDeSubscrever nome={municipality.name} enderecos={calendario} />
           <a
             href="#levar"
@@ -370,7 +370,7 @@ export default async function MunicipalityPage({ params }: Props) {
             />
           ) : (
             <EmptyState
-              {...vazioDoConcelho(municipality.name, leitura, formatLongDate)}
+              {...vazioDoConcelho(municipality.name, leitura, formatLongDate, municipality.article)}
               action={{ href: '/submeter', label: 'Enviar um evento' }}
             />
           )}
@@ -386,13 +386,14 @@ export default async function MunicipalityPage({ params }: Props) {
         chamada «Calendário iCal», que no telemóvel descarregava uma cópia do
         dia que nunca mais se atualizava.
       */}
-      <section aria-labelledby="levar" className="mt-12 scroll-mt-6">
+      <section aria-labelledby="levar" className="ct-sem-impressao mt-12 scroll-mt-6">
         <h2 id="levar" className="ct-heading">
           Levar esta agenda
         </h2>
         <p className="mt-2 max-w-2xl text-muted">
-          A programação de {municipality.name} sai daqui em formato aberto — para o calendário do
-          telemóvel, para o sítio da câmara ou para um leitor de notícias.
+          A programação {deNome(municipality.name, municipality.article)} sai daqui em formato
+          aberto — para o calendário do telemóvel, para o sítio da câmara, para um leitor de
+          notícias, e para a porta do café.
         </p>
 
         <h3 className="mt-5 font-semibold">No calendário</h3>
@@ -424,10 +425,24 @@ export default async function MunicipalityPage({ params }: Props) {
               href={`/feed/${municipality.id}.xml`}
               className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
             >
-              O feed RSS de {municipality.name}, para um leitor de notícias
+              O feed RSS {deNome(municipality.name, municipality.article)}, para um leitor de
+              notícias
             </a>
           </li>
         </ul>
+
+        {/* Em papel (C2-032, C4-022): é o que uma junta ou uma biblioteca
+            podem fazer sem sítio nenhum, e era o que faltava. */}
+        <h3 className="mt-6 font-semibold">Em papel</h3>
+        <p className="mt-2">
+          <Link
+            href={`/cartaz-semanal/${municipality.id}`}
+            prefetch={false}
+            className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
+          >
+            O cartaz desta semana, numa folha A4 para imprimir e afixar
+          </Link>
+        </p>
       </section>
 
       <section aria-labelledby="espacos" className="mt-12">
@@ -444,7 +459,7 @@ export default async function MunicipalityPage({ params }: Props) {
         </div>
 
         {orderedVenues.length > 0 ? (
-          <ul className="mt-4 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+          <ul className="@container mt-4 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             {orderedVenues.map((venue) => (
               <VenueCard
                 key={venue.id}
@@ -477,11 +492,11 @@ export default async function MunicipalityPage({ params }: Props) {
           </div>
 
           {localCoretos.length > 0 ? (
-            <ul className="mt-4 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+            <ul className="@container mt-4 grid gap-3 sm:auto-rows-fr sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
               {localCoretos.map((coreto) => (
                 <li
                   key={coreto.id}
-                  className={`flex h-full overflow-hidden rounded-lg border bg-surface sm:flex-col ${
+                  className={`flex h-full overflow-hidden rounded-lg border bg-surface @max-[17rem]:flex-col sm:flex-col ${
                     coreto.is_confirmed ? 'border-border' : 'border-dashed border-border'
                   }`}
                 >

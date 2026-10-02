@@ -37,6 +37,7 @@ import {
 import { type Descritor } from '@/src/lib/sinais';
 import {
   diaPorExtenso,
+  diaUnicoPorVir,
   estadoDaFicha,
   localSoATerra,
   novaDataDoAdiado,
@@ -50,7 +51,7 @@ import { migalhasDoEvento } from '@/src/lib/migalhas';
 import { exigirRegiao, planeadorDaRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import type { EventDetail } from '@/src/lib/queries/types';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { emNome, urlDoSitio } from '@/src/lib/regiao';
 
 export const revalidate = 3600;
 
@@ -319,7 +320,12 @@ export default async function EventPage({ params }: Props) {
   }
   const description = paragraphsOf(event.description);
   const updatedAt = lisbonDate(event.updated_at);
-  const originLabel = ORIGIN_LABELS[event.origin] ?? 'Origem por identificar';
+  // Na demonstração, a origem é a verdade dela (C4-007): «introduzido à mão
+  // pela equipa» lia-se como um evento a sério que alguém escreveu.
+  const originLabel =
+    regiao.tipo === 'montra'
+      ? 'Inventado para a demonstração: nem o evento nem o sítio existem'
+      : (ORIGIN_LABELS[event.origin] ?? 'Origem por identificar');
   const calendarHref = eventCalendarPath(event.slug);
   /*
    * Do **estado primeiro, e da data quando o estado não decidiu**.
@@ -353,7 +359,7 @@ export default async function EventPage({ params }: Props) {
   const maisPerto = municipality
     ? {
         href: `/agenda?municipality=${municipality.id}`,
-        rotulo: `Ver o que vem aí em ${municipality.name}`,
+        rotulo: `Ver o que vem aí ${emNome(municipality.name, municipality.article)}`,
       }
     : { href: '/agenda', rotulo: 'Ver o que vem aí' };
   // «Corrigir» leva o evento consigo (C2-031): sem email da região, cai para a
@@ -479,8 +485,15 @@ export default async function EventPage({ params }: Props) {
             </p>
           ) : null}
 
-          <dl className="mt-5 grid gap-3 rounded-lg border border-border bg-surface p-4 sm:p-5">
-            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+          {/* As três respostas em duas colunas — o nome à esquerda, a
+              resposta à direita —, e numa só quando a letra cresce (C3-011):
+              com a letra a 200 %, os 4,5 rem do nome eram 144 px e sobravam
+              130 para a resposta, e «Espetáculos» saía da janela. A pergunta é
+              feita em `rem`, como nos cartões: abaixo de 15 rem de caixa, o
+              nome sobe para cima da resposta. À letra de sempre isso são
+              240 px, que nenhum telemóvel deixa de ter. */}
+          <dl className="@container mt-5 grid gap-3 rounded-lg border border-border bg-surface p-4 sm:p-5">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3 @max-[15rem]:grid-cols-1 @max-[15rem]:gap-0.5">
               <dt className="text-sm text-muted">Quando</dt>
               <dd className={jaAconteceu && !novaData ? 'text-muted' : 'font-semibold'}>
                 {estado === 'cancelado' || (estado === 'adiado' && !novaData)
@@ -504,7 +517,7 @@ export default async function EventPage({ params }: Props) {
                 ) : null}
               </dd>
             </div>
-            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3 @max-[15rem]:grid-cols-1 @max-[15rem]:gap-0.5">
               <dt className="text-sm text-muted">Onde</dt>
               <dd>
                 {venue ? (
@@ -543,7 +556,7 @@ export default async function EventPage({ params }: Props) {
               </dd>
             </div>
             {estado === 'cancelado' || estado === 'ja-aconteceu' ? null : (
-              <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+              <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3 @max-[15rem]:grid-cols-1 @max-[15rem]:gap-0.5">
                 <dt className="text-sm text-muted">Preço</dt>
                 <dd
                   className={
@@ -762,6 +775,7 @@ export default async function EventPage({ params }: Props) {
           longitude={event.longitude ?? venue?.longitude ?? null}
           planeador={planeador}
           soATerra={soATerra}
+          dia={diaUnicoPorVir(event, today)}
         />
       </section>
 

@@ -1,5 +1,8 @@
 import { numeroPorExtenso } from '@coreto/core';
+import { deNome } from './artigos';
 import { PRODUTO } from './produto';
+
+export { aNome, contracao, deNome, emNome, porNome } from './artigos';
 
 /**
  * A identidade de uma região, tal como o código a usa.
@@ -17,11 +20,17 @@ import { PRODUTO } from './produto';
  *    região declara o artigo (coluna `article`, migração 0104) e as formas
  *    compostas ficam pré-calculadas no objeto (`doNome`, `noNome`).
  *
- * 2. O promotor é uma CIM, e a prosa assume o feminino de «Comunidade» —
- *    «promovido pela …», «a agenda dos N concelhos da …». Todas as entidades
- *    plausíveis deste produto (Comunidade Intermunicipal, Área Metropolitana,
- *    Associação de Municípios) são femininas; se um dia o promotor puder ser
- *    «um Município», o artigo do promotor passa a coluna, como o do nome.
+ * 2. O artigo de quem promove. Esteve aqui escrito que a prosa assumia o
+ *    feminino de «Comunidade» — «promovido pela …», «a agenda dos N concelhos
+ *    da …» — e que, no dia em que o promotor pudesse ser «um Município», o
+ *    artigo dele passava a coluna, como o do nome. O produto licencia-se a uma
+ *    câmara sozinha, e esse dia chegou: `cim_article` (0169), «a» por omissão,
+ *    em `promotor.artigo` (C1-031).
+ *
+ * E uma de aritmética: **um concelho não é «um concelhos»**. A contagem por
+ * extenso entrava nas frases sem concordância, e uma região de um município
+ * escreveria «Um concelhos, um palco» e «os um concelhos». As frases que
+ * contam concelhos passam por `osConcelhos`, que sabe o singular.
  */
 
 export type ArtigoDeRegiao = 'o' | 'a' | 'os' | 'as';
@@ -61,6 +70,11 @@ export interface Cofinanciamento {
  */
 export interface PromotorDaRegiao {
   nome: string;
+  /**
+   * O artigo do nome (0169): «a» Comunidade Intermunicipal, «o» Município. É
+   * o que compõe «promovido pela/pelo …» — ver `deNome`, `emNome`, `porNome`.
+   */
+  artigo: ArtigoDeRegiao;
   url: string;
   /**
    * A menção da operação e de quem a financia (artigo 50.º do Regulamento
@@ -154,6 +168,11 @@ export interface LinhaDeRegiao {
   article: string;
   kind: string;
   cim_name: string;
+  /**
+   * 0169 — o artigo do promotor. Opcional porque se lê à parte e degrada (ver
+   * `queries/regioes.ts`): sem a coluna, vale «a», que era o que a prosa dizia.
+   */
+  cim_article?: string | null;
   cim_url: string;
   domain: string;
   contact_email: string;
@@ -192,6 +211,11 @@ export interface LinhaDeRegiao {
 
 function artigoValido(article: string): ArtigoDeRegiao {
   return article === 'a' || article === 'os' || article === 'as' ? article : 'o';
+}
+
+/** O do promotor: o que a base declarar, e «a» — o de «Comunidade» — sem ela. */
+function artigoDoPromotor(article: string | null | undefined): ArtigoDeRegiao {
+  return article === 'o' || article === 'os' || article === 'as' ? article : 'a';
 }
 
 // Um valor que este build não conhece vale «cim»: a tabela pode ir à frente
@@ -261,6 +285,7 @@ export function regiaoDaLinha(linha: LinhaDeRegiao): Regiao {
     aboutStory: linha.about_story,
     promotor: {
       nome: linha.cim_name,
+      artigo: artigoDoPromotor(linha.cim_article),
       url: linha.cim_url,
       declaracaoDeFinanciamento: linha.funding_statement,
       cofinanciamento,
@@ -363,7 +388,7 @@ export function tituloDoSitio(regiao: Regiao): string {
 export function descricaoDoSitio(regiao: Regiao): string {
   if (regiao.tagline !== null) return regiao.tagline;
   return (
-    `Tudo o que há para fazer nos ${regiao.concelhosPorExtenso} concelhos ` +
+    `Tudo o que há para fazer ${osConcelhosDaRegiao(regiao, 'em')} ` +
     `${regiao.doNome}: música, teatro, exposições, festas, cinema e visitas. ` +
     'Da cidade-sede à aldeia.'
   );
@@ -371,15 +396,61 @@ export function descricaoDoSitio(regiao: Regiao): string {
 
 /**
  * «A agenda cultural dos onze concelhos da Comunidade Intermunicipal do
- * Médio Tejo.» — a frase institucional do rodapé e do JSON-LD do sítio.
+ * Médio Tejo.» — a frase institucional do rodapé e do JSON-LD do sítio. Com
+ * um município: «A agenda cultural do concelho do Município do Mirante.»
  */
 export function descricaoInstitucional(regiao: Regiao): string {
   if (regiao.promotor === null || regiao.concelhosDeclarados === 0) {
     return `A agenda cultural ${regiao.doNome}.`;
   }
   return (
-    `A agenda cultural dos ${regiao.concelhosPorExtenso} concelhos ` + `da ${regiao.promotor.nome}.`
+    `A agenda cultural ${osConcelhosDaRegiao(regiao, 'de')} ` +
+    `${deNome(regiao.promotor.nome, regiao.promotor.artigo)}.`
   );
+}
+
+type Preposicao = '' | 'de' | 'em';
+
+const ARTIGO_DO_SINGULAR: Record<Preposicao, string> = { '': 'o', de: 'do', em: 'no' };
+const ARTIGO_DO_PLURAL: Record<Preposicao, string> = { '': 'os', de: 'dos', em: 'nos' };
+
+/**
+ * Os concelhos, com o número e o artigo a concordar (C1-031).
+ *
+ * «os onze concelhos», «dos onze concelhos», «nos onze concelhos» — e, com
+ * um só, «o concelho», «do concelho», «no concelho». Sem contagem (a região
+ * de recurso declara zero), «os concelhos», sem um número inventado. Os
+ * algarismos, quando a frase os prefere (`extenso: false`), dizem «os 11
+ * concelhos» e nunca «os 1 concelhos».
+ */
+export function osConcelhos(
+  quantos: number,
+  { preposicao = '', extenso = true }: { preposicao?: Preposicao; extenso?: boolean } = {},
+): string {
+  if (quantos === 1) return `${ARTIGO_DO_SINGULAR[preposicao]} concelho`;
+  const artigo = ARTIGO_DO_PLURAL[preposicao];
+  if (quantos <= 0) return `${artigo} concelhos`;
+  return `${artigo} ${extenso ? numeroPorExtenso(quantos) : quantos} concelhos`;
+}
+
+/** Os concelhos que a região declara — «dos onze concelhos», «do concelho». */
+export function osConcelhosDaRegiao(
+  regiao: Pick<Regiao, 'concelhosDeclarados'>,
+  preposicao: Preposicao = '',
+): string {
+  return osConcelhos(regiao.concelhosDeclarados, { preposicao });
+}
+
+/**
+ * «Onze concelhos, um palco», «Um concelho, um palco» — a sobrancelha da
+ * entrada; `null` sem contagem, e quem a mostra escolhe a frase sem número.
+ */
+export function concelhosUmPalco(regiao: Pick<Regiao, 'concelhosDeclarados'>): string | null {
+  const n = regiao.concelhosDeclarados;
+  if (n <= 0) return null;
+  return n === 1
+    ? 'Um concelho, um palco'
+    : `${comInicialMaiuscula(numeroPorExtenso(n))} concelhos, um palco`;
 }
 
 /** «onze» → «Onze», para a única frase que começa pela contagem. */

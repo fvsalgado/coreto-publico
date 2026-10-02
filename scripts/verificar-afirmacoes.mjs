@@ -48,6 +48,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { GLOSSARIO_INTERNO, palavraInteira } from './glossario-interno.mjs';
 import { semComentarios } from './sem-comentarios.mjs';
 import http from 'node:http';
 import https from 'node:https';
@@ -219,20 +220,7 @@ function presente(ficheiro, padrao, { afirmacao, porque }) {
  * corrigir — e o guião avisa quando uma delas já não acerta em nada, para não
  * ficar aqui a proteger o que já não existe.
  */
-const PENDENTES = [
-  {
-    chave: 'glossario:apps/web/app/[regiao]/acessibilidade/page.tsx:gaveta',
-    desde: '2026-09-07',
-    porque:
-      'a declaração exigida pelo DL 83/2018 descreve «a gaveta de navegação»; é jargão interno num documento lido por quem fiscaliza',
-  },
-  {
-    chave: 'glossario:apps/web/src/components/PaginaDaMontra.tsx:disjuntor',
-    desde: '2026-09-07',
-    porque:
-      'a ficha do produto diz «disjuntor por fonte» a quem decide; em texto público é «a pausa automática de uma fonte»',
-  },
-];
+const PENDENTES = [];
 
 const pendentesUsadas = new Set();
 
@@ -304,31 +292,8 @@ function* prosaDe(fonte) {
   }
 }
 
-/**
- * Uma palavra inteira, e não um pedaço de identificador.
- *
- * O `ct-goteira` é um nome de classe, o `data-paleta="montra"` é um atributo e
- * o `./montra` é um caminho de módulo: nenhum deles é texto que alguém leia. O
- * que os separa de uma palavra escrita numa frase é o que vem imediatamente
- * antes e depois.
- */
-function palavraInteira(termo) {
-  return new RegExp(`(?<![\\p{L}\\p{N}_"'\`\\-/])${termo}(?![\\p{L}\\p{N}_\\-])`, 'iu');
-}
-
-/** O glossário interno de `docs/NARRATIVA.md` §9 — nunca em texto público. */
-const GLOSSARIO_INTERNO = [
-  'montra',
-  'toldo',
-  'lambrequim',
-  'goteira',
-  'sobrancelha',
-  'gaveta',
-  'disjuntor',
-  'impressão digital',
-  'multi-inquilino',
-  'deriva de layout',
-];
+// `palavraInteira` e o `GLOSSARIO_INTERNO` vivem em `glossario-interno.mjs`:
+// o `verificar-regioes.mjs` aplica a mesma lista ao texto que o sítio serve.
 
 /** As palavras proibidas de `docs/NARRATIVA.md` §7. */
 const PALAVRAS_PROIBIDAS = [
@@ -452,6 +417,19 @@ function conta(corpo, frase) {
   return corpo.split(frase).length - 1;
 }
 
+/**
+ * Quantas vezes uma frase aparece no que a página mostra — sem os `<script>`.
+ *
+ * O App Router serve cada página com a carga dos componentes de servidor
+ * embutida no HTML, e o texto que se vê vai lá outra vez: uma frase que a
+ * página mostra uma vez conta duas no corpo inteiro. Para «aparece uma vez»
+ * conta-se só o que se vê; para «não aparece» continua a contar-se tudo, que
+ * é o mais estrito.
+ */
+function contaVisivel(corpo, frase) {
+  return conta(corpo.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''), frase);
+}
+
 // =============================================================================
 // No repositório — correm sempre, sem rede e sem segredos
 // =============================================================================
@@ -497,6 +475,16 @@ ausente(FICHA, /todas as noites/i, {
   afirmacao: 'a ficha não promete uma recolha todas as noites',
   porque:
     'o cron do scrape.yml está às 03:20 UTC e as execuções medidas caíram às 08:2x, 10:11 e 15:28 de Lisboa — a hora não se promete',
+  prosa: true,
+});
+
+// A descrição da ficha vive no `<head>`, escrita nos metadados da página e não
+// no componente: foi aí que «lê todas as noites» sobreviveu à correção da
+// prosa, e só a medição contra o sítio servido o apanhou (2 de outubro).
+ausente('apps/web/app/pagina-do-produto/page.tsx', /todas as noites/i, {
+  afirmacao: 'a descrição da ficha não promete uma recolha todas as noites',
+  porque:
+    'é a frase que um motor de busca mostra da ficha; a recolha corre uma vez por dia, a horas que não se prometem',
   prosa: true,
 });
 
@@ -785,15 +773,18 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
 });
 
 {
-  // A lista fechada do anfitrião sem região: cinco endereços e mais nenhum.
+  // A lista fechada do anfitrião sem região: seis endereços e mais nenhum.
   // A /fontes entrou a 19 de setembro de 2026: é o destino do endereço que a
-  // recolha traz em cada pedido, e não mostra a agenda de ninguém.
+  // recolha traz em cada pedido, e não mostra a agenda de ninguém. O
+  // /contacto entrou a 2 de outubro (C4-002): o endereço do produto escrito
+  // por extenso, e também não mostra a agenda de ninguém.
   const fonte = ler('apps/web/middleware.ts');
   const bloco = fonte.split('const CAMINHOS_DA_MONTRA')[1]?.split(']);')[0] ?? '';
   const servidos = [...bloco.matchAll(/\['([^']+)',/g)].map((m) => m[1]).sort();
   const esperados = [
     '/',
     '/.well-known/security.txt',
+    '/contacto',
     '/fontes',
     '/seguranca',
     '/sitemap.xml',
@@ -830,7 +821,7 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
   });
 
   afirmar({
-    afirmacao: 'o anfitrião sem região tem uma lista fechada de cinco endereços',
+    afirmacao: 'o anfitrião sem região tem uma lista fechada de seis endereços',
     porque:
       'é a lista que impede um domínio apontado para cá antes de a região existir de ver a agenda de outra CIM',
     onde: origem('apps/web/middleware.ts', /const CAMINHOS_DA_MONTRA/),
@@ -847,24 +838,35 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
   const feito =
     semComentarios(fonte).split('export const FEITO')[1]?.split('export const')[0] ?? '';
   const temReflow = /deslocamento horizontal|ecrãs estreitos/.test(feito);
+  /*
+   * «O que está feito» afirma o reflow desde 2 de outubro de 2026 (C3-010),
+   * e só pode porque duas verificações o medem a cada alteração. Esteve aqui
+   * a regra contrária — FEITO não podia dizê-lo —, porque a medição de 7 de
+   * setembro o desmentia: a 320 px a entrada pedia 561. A regra de agora é a
+   * mesma ao contrário: a frase fica enquanto as medições a guardarem.
+   */
+  const seloMede320 = /4\.2 · o layout é adaptável sem varrimento horizontal \(320px\)/.test(
+    ler('scripts/check-selo.mjs'),
+  );
+  const a11yMede320 = /const LARGURA = 320;/.test(ler('scripts/check-a11y.mjs'));
   afirmar({
-    afirmacao: '«O que está feito» não afirma ausência de deslocamento horizontal',
+    afirmacao: '«O que está feito» só afirma o reflow com as medições que o guardam',
     porque:
-      'a medição de 7 de setembro de 2026 desmentiu-a: a 320 px a entrada pede 561 px de largura — a declaração é lida por quem fiscaliza',
+      'a frase esteve desmentida pela medição de 7 de setembro (561 px a 320); voltou a 2 de outubro, medida, e uma declaração lida por quem fiscaliza não pode afirmar o que nada verifica',
     onde: origem('apps/web/src/components/informacoes/acessibilidade.ts', /export const FEITO/),
-    ok: !temReflow,
-    esperava: 'nada sobre reflow dentro de FEITO',
-    encontrei: 'FEITO afirma o que a medição desmente',
+    ok: !temReflow || (seloMede320 && a11yMede320),
+    esperava:
+      'o check:selo a medir os 320 px (Conteúdo 4.2) e o check:a11y a medir os 320 px com a letra a 200 %',
+    encontrei: `check:selo ${seloMede320 ? 'mede' : 'não mede'} · check:a11y ${a11yMede320 ? 'mede' : 'não mede'}`,
   });
   presente('apps/web/src/components/informacoes/acessibilidade.ts', /1\.4\.10/, {
-    afirmacao: 'a declaração nomeia a falha do critério 1.4.10',
-    porque:
-      'uma limitação sem o critério nomeado não serve a quem fiscaliza nem a quem a vai corrigir',
+    afirmacao: 'a declaração nomeia o critério 1.4.10',
+    porque: 'um critério sem nome não serve a quem fiscaliza nem a quem tem de o manter cumprido',
   });
-  presente('apps/web/src/components/informacoes/acessibilidade.ts', /de setembro de 2026/, {
-    afirmacao: 'a limitação do reflow está datada',
+  presente('apps/web/src/components/informacoes/acessibilidade.ts', /2 de outubro de 2026/, {
+    afirmacao: 'a medição do reflow e dos alvos de toque está datada',
     porque:
-      'a casa escreve a limitação com data; sem data ninguém sabe se ainda é verdade — e é assim que uma ressalva envelhece em silêncio',
+      'a casa escreve a medição com data; sem data ninguém sabe se ainda é verdade — e é assim que uma afirmação envelhece em silêncio',
   });
 }
 
@@ -2284,11 +2286,11 @@ if (!BASE) {
         'é o par que apanha uma regressão nos dois sentidos: a mesma página tem de dizer números diferentes em domínios diferentes',
       onde: onde(ORIGENS.regiao, '/submeter', SUBMETER),
       ok:
-        conta(daRegiao.corpo, 'num dos onze concelhos') === 1 &&
-        conta(daMontra.corpo, 'num dos dois concelhos') === 1 &&
+        contaVisivel(daRegiao.corpo, 'num dos onze concelhos') === 1 &&
+        contaVisivel(daMontra.corpo, 'num dos dois concelhos') === 1 &&
         conta(daMontra.corpo, 'onze') === 0,
       esperava: 'onze no Médio Tejo, dois na demonstração, e nenhum «onze» na demonstração',
-      encontrei: `região: ${conta(daRegiao.corpo, 'num dos onze concelhos')} · montra: ${conta(daMontra.corpo, 'num dos dois concelhos')} · «onze» na montra: ${conta(daMontra.corpo, 'onze')}`,
+      encontrei: `região: ${contaVisivel(daRegiao.corpo, 'num dos onze concelhos')} · montra: ${contaVisivel(daMontra.corpo, 'num dos dois concelhos')} · «onze» na montra: ${conta(daMontra.corpo, 'onze')}`,
     });
     for (const [papel, resposta] of [
       ['região', daRegiao],
@@ -2366,8 +2368,11 @@ if (!BASE) {
         '/sitemap.xml',
         'apps/web/app/pagina-do-produto/sitemap-xml/route.ts',
       ),
-      ok: mapa.estado === 200 && conta(mapa.corpo, '<loc>') === 2 && fugas.length === 0,
-      esperava: '200, dois <loc>, e nem uma palavra de uma região',
+      // Quatro: a ficha, o contacto, a política de segurança e as fontes — as
+      // páginas que o middleware deixa responder neste domínio. Dizia dois,
+      // desde antes de as fontes e o contacto lá entrarem.
+      ok: mapa.estado === 200 && conta(mapa.corpo, '<loc>') === 4 && fugas.length === 0,
+      esperava: '200, quatro <loc>, e nem uma palavra de uma região',
       encontrei: `${mapa.estado}, ${conta(mapa.corpo, '<loc>')} <loc>, fugas: ${fugas.join(', ') || 'nenhuma'}`,
     });
   }
@@ -2558,32 +2563,38 @@ if (!BASE) {
   {
     const pagina = await pedir(ORIGENS.regiao, '/acessibilidade');
     afirmar({
-      afirmacao: 'a declaração nomeia a falha do critério 1.4.10 com números e com data',
+      afirmacao: 'a declaração nomeia o critério 1.4.10 com a data da medição',
       porque:
-        'é o documento que quem fiscaliza lê; uma limitação sem critério e sem data não serve para nada',
+        'é o documento que quem fiscaliza lê; um critério sem nome e sem data não serve para nada',
       onde: onde(
         ORIGENS.regiao,
         '/acessibilidade',
         'apps/web/src/components/informacoes/acessibilidade.ts',
       ),
-      ok: pagina.corpo.includes('1.4.10') && pagina.corpo.includes('7 de setembro de 2026'),
+      ok: pagina.corpo.includes('1.4.10') && pagina.corpo.includes('2 de outubro de 2026'),
       esperava: '«1.4.10» e a data da medição',
-      encontrei: `1.4.10 ${pagina.corpo.includes('1.4.10') ? 'sim' : 'não'} · data ${pagina.corpo.includes('7 de setembro de 2026') ? 'sim' : 'não'}`,
+      encontrei: `1.4.10 ${pagina.corpo.includes('1.4.10') ? 'sim' : 'não'} · data ${pagina.corpo.includes('2 de outubro de 2026') ? 'sim' : 'não'}`,
     });
+    /*
+     * A declaração não se contradiz (C3-010): dizia no que estava feito que o
+     * texto ampliava a 200 % «sem partir a página», e nas limitações que a
+     * página partia. Agora a frase está no que está feito, e as limitações
+     * não podem dizer o contrário.
+     */
     const limitacoes = pagina.corpo.indexOf('Limitações conhecidas');
-    const reflow = pagina.corpo.indexOf('deslocamento horizontal');
+    const naoCumprido = pagina.corpo.indexOf('não está cumprido');
     afirmar({
-      afirmacao: '«deslocamento horizontal» aparece nas limitações e nunca no que está feito',
+      afirmacao: 'a declaração não diz o reflow feito e por fazer ao mesmo tempo',
       porque:
-        'esteve escrito em «O que está feito» e a medição desmentiu-o: a 320 px a entrada pede 561 px de largura',
+        'dizia as duas coisas na mesma página, e uma declaração que se contradiz mostra que não é lida contra o sítio',
       onde: onde(
         ORIGENS.regiao,
         '/acessibilidade',
         'apps/web/src/components/informacoes/acessibilidade.ts',
       ),
-      ok: reflow === -1 || (limitacoes !== -1 && reflow > limitacoes),
-      esperava: 'a frase depois de «Limitações conhecidas»',
-      encontrei: reflow === -1 ? 'a frase não aparece' : 'a frase aparece antes das limitações',
+      ok: naoCumprido === -1 || naoCumprido < limitacoes,
+      esperava: 'nenhum «não está cumprido» nas limitações',
+      encontrei: naoCumprido === -1 ? 'nenhum' : 'há um critério dado por não cumprido',
     });
   }
 
@@ -2595,9 +2606,14 @@ if (!BASE) {
       porque:
         'sem a ressalva, um zero lê-se como «não há nada acessível» — e não é isso que o filtro mede',
       onde: onde(ORIGENS.regiao, '/agenda', 'apps/web/src/components/FilterBar.tsx'),
+      // A frase é a de hoje (C2-011, C3-004): a caixa das cadeiras de rodas lê
+      // o evento ou, quando ele se cala, o espaço. Esta verificação procurava
+      // ainda a nota de antes da 0129 — «mostra só os eventos que o
+      // declaram» —, que já não é verdade para esta caixa.
       ok:
-        agenda.corpo.includes('filtro-acessivel-nota') &&
-        agenda.corpo.includes('mostra só os eventos que o declaram'),
+        agenda.corpo.includes('aria-describedby="filtro-acessivel-nota"') &&
+        agenda.corpo.includes('id="filtro-acessivel-nota"') &&
+        agenda.corpo.includes('inclui os eventos em espaços que declaram acesso'),
       esperava: 'a nota ligada à caixa por aria-describedby',
       encontrei: 'a caixa sem a ressalva',
     });

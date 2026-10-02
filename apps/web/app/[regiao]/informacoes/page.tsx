@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { listMunicipalityNames } from '@coreto/core';
+import { listMunicipalityNames, numeroPorExtenso } from '@coreto/core';
 import { PageHeader } from '@/src/components/PageHeader';
 import { FaqStructuredData } from '@/src/components/StructuredData';
 import {
@@ -16,10 +16,16 @@ import { PRIVACIDADE } from '@/src/components/informacoes/privacidade';
 import { SITE_URL } from '@/src/lib/env';
 import { formatLongDate } from '@/src/lib/format';
 import { AUTOR } from '@/src/lib/produto';
-import { listMunicipalities } from '@/src/lib/queries/events';
+import { listCoretos, listMunicipalities } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { exigirSeccao, seccaoLigada } from '@/src/lib/queries/seccoes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import {
+  comInicialMaiuscula,
+  deNome,
+  osConcelhos,
+  osConcelhosDaRegiao,
+  urlDoSitio,
+} from '@/src/lib/regiao';
 import { REVISAO_PAGINA } from '@/src/lib/revisao';
 
 export const metadata: Metadata = {
@@ -97,13 +103,16 @@ const LEVANTAMENTO = {
  * que aqui cabe em quatro linhas. O argumento longo tem lugar — mas não à
  * frente de quem só quer perceber o que é isto.
  */
-function regras(concelhosPorExtenso: string): readonly Ponto[] {
+function regras(concelhos: number): readonly Ponto[] {
   // A contagem entra na prosa por extenso; sem contagem (build sem base), as
-  // frases dizem «os concelhos» e não inventam número nenhum.
-  const cartazes = concelhosPorExtenso ? `${concelhosPorExtenso} cartazes` : 'cartazes';
-  const todos = concelhosPorExtenso
-    ? `Os ${concelhosPorExtenso} concelhos aparecem sempre todos`
-    : 'Os concelhos aparecem sempre todos';
+  // frases dizem «os concelhos» e não inventam número nenhum. E com um
+  // concelho só (C1-031) não há «um cartazes» nem concelhos «todos» para
+  // aparecer: a primeira frase perde o número, e a segunda não se diz.
+  const cartazes = concelhos >= 2 ? `${numeroPorExtenso(concelhos)} cartazes` : 'cartazes';
+  const todos =
+    concelhos === 1
+      ? ''
+      : ` ${comInicialMaiuscula(osConcelhos(concelhos))} aparecem sempre todos, mesmo os que ainda não têm nada.`;
   return [
     {
       Icone: IcRegiao,
@@ -113,7 +122,7 @@ function regras(concelhosPorExtenso: string): readonly Ponto[] {
     {
       Icone: IcIgual,
       titulo: 'A aldeia ao lado da cidade',
-      texto: `Um filme numa junta de freguesia ocupa aqui o mesmo espaço que uma estreia no cine-teatro municipal. ${todos}, mesmo os que ainda não têm nada.`,
+      texto: `Um filme numa junta de freguesia ocupa aqui o mesmo espaço que uma estreia no cine-teatro municipal.${todos}`,
     },
     {
       Icone: IcFonte,
@@ -142,9 +151,12 @@ function LerPorExtenso({ href, children }: { href: string; children: React.React
     <p className="mt-5">
       <Link
         href={href}
-        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-surface px-4 font-medium underline-offset-4 hover:underline"
+        className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-lg border border-border bg-surface px-4 font-medium underline-offset-4 hover:underline"
       >
-        {children}
+        {/* O texto num `span` que pode encolher: solto, era um item do flex
+            que não descia abaixo da palavra mais longa, e com a letra a 200 %
+            «acessibilidade» empurrava a seta para fora da janela (C3-011). */}
+        <span className="min-w-0">{children}</span>
         <span aria-hidden="true">→</span>
       </Link>
     </p>
@@ -158,11 +170,16 @@ export default async function InformacoesPage({ params }: { params: Promise<{ re
   // Desligada no painel, esta página não existe. O guarda vem antes de
   // qualquer leitura: não vale a pena ir à base buscar o que não se mostra.
   await exigirSeccao(regiao.id, 'informacoes');
-  const [haCoretos, haFontes, concelhos] = await Promise.all([
+  const [seccaoDosCoretos, haFontes, concelhos, coretos] = await Promise.all([
     seccaoLigada(regiao.id, 'coretos'),
     seccaoLigada(regiao.id, 'fontes'),
     listMunicipalities(regiao.id),
+    listCoretos(regiao.id),
   ]);
+  // «O levantamento que fizemos está aqui» só com levantamento (C4-031): uma
+  // região acabada de nascer tinha a secção ligada e a página vazia, e a frase
+  // mandava para lá quem lesse.
+  const haCoretos = seccaoDosCoretos && coretos.length > 0;
   const EMAIL = regiao.email;
   const promotor = regiao.promotor;
 
@@ -172,12 +189,12 @@ export default async function InformacoesPage({ params }: { params: Promise<{ re
   const nomesDosConcelhos = listMunicipalityNames(concelhos);
   const aberturaDoQueE =
     promotor && regiao.concelhosDeclarados > 0
-      ? `É a agenda cultural dos ${regiao.concelhosPorExtenso} concelhos da ${promotor.nome}`
+      ? `É a agenda cultural ${osConcelhosDaRegiao(regiao, 'de')} ${deNome(promotor.nome, promotor.artigo)}`
       : `É a agenda cultural ${regiao.doNome}`;
   const fraseDoQueE = `${aberturaDoQueE}${nomesDosConcelhos ? `: ${nomesDosConcelhos}` : ''}.`;
 
   const historiaDoNome = regiao.aboutStory ?? HA_CORETOS_ASSIM;
-  const pontosDasRegras = regras(regiao.concelhosPorExtenso);
+  const pontosDasRegras = regras(regiao.concelhosDeclarados);
 
   /*
    * As três primeiras secções, ditadas à máquina.
@@ -364,7 +381,7 @@ export default async function InformacoesPage({ params }: { params: Promise<{ re
           <p className="mt-4">
             <a
               href={`mailto:${EMAIL}`}
-              className="font-display inline-flex min-h-11 items-center rounded-lg bg-accent px-5 py-3 text-lg font-semibold text-on-accent"
+              className="font-display inline-flex min-h-11 max-w-full items-center rounded-lg bg-accent px-5 py-3 text-lg font-semibold text-on-accent"
             >
               {EMAIL}
             </a>

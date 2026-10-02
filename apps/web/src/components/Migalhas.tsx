@@ -40,6 +40,7 @@ export function Migalhas({
             {indice > 0 ? <span aria-hidden="true">›</span> : null}
             <Link
               href={migalha.href}
+              prefetch={false}
               className="inline-flex min-h-11 items-center underline-offset-4 hover:text-ink hover:underline sm:min-h-0"
             >
               {migalha.label}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 40" width="248" height="40">
+  <title>Comunidade Intermunicipal do Vale do Coreto</title>
+  <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 13 18 5l12 8"/>
+    <path d="M10 14v8M26 14v8"/>
+    <path d="M4 29c5-5 9-5 14 0s9 5 14 0"/>
+    <path d="M4 36c5-5 9-5 14 0s9 5 14 0"/>
+  </g>
+  <text x="44" y="27" fill="#ffffff" font-family="Georgia, 'Times New Roman', serif" font-size="19" font-weight="700" letter-spacing="0.2">CIM Vale do Coreto</text>
+</svg>

@@ -1127,6 +1127,10 @@ export interface RegionAdminRow {
    * base a coluna simplesmente não vem.
    */
   transit_planner_url?: string | null;
+  /** 0167 — a cor da marca. Opcional pela mesma razão do planeador. */
+  brand_color?: string;
+  /** 0169 — o artigo do promotor. Opcional pela mesma razão. */
+  cim_article?: string;
   expected_municipality_count: number;
   bbox_lat_min: number;
   bbox_lat_max: number;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CATALOGO,
+  catalogoDoWidget,
   type Escolhas,
   codigoDoScript,
   consultaDoWidget,
@@ -143,7 +143,29 @@ describe('codigoDoScript', () => {
   });
 });
 
-describe('CATALOGO', () => {
+const EXEMPLOS = {
+  concelhos: ['vila-da-charamela', 'ponte-do-bombo'],
+  espacos: ['museu-do-bombo'],
+  ciclos: [],
+  cor: { valor: '#1f5c4a', nome: 'a cor desta agenda' },
+};
+const CATALOGO = catalogoDoWidget(EXEMPLOS);
+
+describe('catalogoDoWidget', () => {
+  it('dá os exemplos da região que serve a página, e diz o que é o valor quando ela não tem', () => {
+    // Os exemplos eram do Médio Tejo em todas as regiões, e na demonstração a
+    // caixa copiada do exemplo saía vazia (C4-021).
+    const por = (atributo: string) => CATALOGO.find((o) => o.atributo === atributo);
+    expect(por('data-concelho')?.valores).toBe('vila-da-charamela, ponte-do-bombo, …');
+    expect(por('data-espaco')?.valores).toBe('museu-do-bombo, …');
+    expect(por('data-ciclo')?.valores).toBe('o identificador do ciclo');
+    expect(por('data-cor')?.valores).toContain('#1f5c4a');
+    expect(por('data-cor')?.omissao).toBe('a cor desta agenda');
+    expect(JSON.stringify(CATALOGO)).not.toMatch(
+      /tomar|abrantes|teatro-virginia|caminhos|turquesa/,
+    );
+  });
+
   it('documenta cada atributo uma vez só', () => {
     const atributos = CATALOGO.map((o) => o.atributo);
     expect(new Set(atributos).size).toBe(atributos.length);

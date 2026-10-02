@@ -41,6 +41,7 @@ export function ConcelhosDoRodape({ items }: Props) {
           <li key={item.id}>
             <Link
               href={`/concelho/${item.id}`}
+              prefetch={false}
               className="inline-flex min-h-11 items-center gap-2 text-sm whitespace-nowrap underline-offset-4 hover:underline sm:text-base"
             >
               <span aria-hidden="true" className="ct-octagon size-1.5 shrink-0 bg-highlight" />

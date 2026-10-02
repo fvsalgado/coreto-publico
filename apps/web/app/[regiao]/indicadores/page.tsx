@@ -77,7 +77,7 @@ export default async function IndicadoresPage({ params }: Props) {
           ))}
 
           {bloco.universo || bloco.periodicidade || bloco.deOndeVem ? (
-            <dl className="mt-3 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+            <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-sm [overflow-wrap:anywhere] sm:grid-cols-[auto_1fr]">
               {bloco.universo ? (
                 <>
                   <dt className="font-semibold">Universo</dt>

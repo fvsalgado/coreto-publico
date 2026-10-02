@@ -61,6 +61,29 @@ export function ultimoDia(evento: EventoDaFicha): string | null {
   return dias.at(-1) ?? null;
 }
 
+/**
+ * O dia do evento, quando é um só e ainda está por vir — para o planeador de
+ * transportes abrir as ligações desse dia (`irDeTransportes`).
+ *
+ * Um só dia de propósito: numa exposição de três meses, ou num ciclo com
+ * sessões em quatro sábados, não há «o dia» — e escolher o primeiro mandava
+ * quem lê para uma data que talvez não seja a dele. Aí o planeador parte
+ * «agora», e o dia escolhe-se lá. Hoje também fica de fora: «agora» é o que
+ * serve a quem lê a ficha no próprio dia, e `dia` sem hora começava à meia-noite.
+ */
+export function diaUnicoPorVir(evento: EventoDaFicha, hoje: string): string | null {
+  if (evento.is_ongoing || estadoDaFicha(evento, hoje) !== 'por-acontecer') return null;
+  const vivas = evento.sessions.filter((sessao) => !sessao.is_cancelled);
+  const dias = new Set(
+    vivas.length > 0
+      ? vivas.map((sessao) => sessao.session_date)
+      : [evento.date_start, evento.date_end].filter((dia): dia is string => Boolean(dia)),
+  );
+  if (dias.size !== 1) return null;
+  const [dia] = [...dias];
+  return dia !== undefined && dia > hoje ? dia : null;
+}
+
 export function estadoDaFicha(evento: EventoDaFicha, hoje: string): EstadoDaFicha {
   if (evento.status === 'cancelled') return 'cancelado';
   if (evento.status === 'postponed') return 'adiado';

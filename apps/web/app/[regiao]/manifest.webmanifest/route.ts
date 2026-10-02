@@ -1,7 +1,11 @@
 import type { MetadataRoute } from 'next';
-import { CORES_DO_TOLDO } from '@/src/lib/marca';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
-import { descricaoDoSitio, tituloDoSitio } from '@/src/lib/regiao';
+import { exigirRegiao, toldoDaRegiao } from '@/src/lib/queries/regioes';
+import {
+  comInicialMaiuscula,
+  descricaoDoSitio,
+  osConcelhosDaRegiao,
+  tituloDoSitio,
+} from '@/src/lib/regiao';
 
 /**
  * O manifesto que faz da agenda uma aplicação instalável.
@@ -25,25 +29,31 @@ import { descricaoDoSitio, tituloDoSitio } from '@/src/lib/regiao';
  *   está muitas vezes a decidir se ainda chega ao concerto.
  * - Nada de `orientation`: prender a aplicação ao retrato parte o mapa num
  *   tablet e não serve ninguém. Manda o equipamento, como manda no browser.
- * - `background_color` é o papel e `theme_color` é a cor do toldo — turquesa
- *   nas regiões, vermelho na montra. O primeiro é o ecrã de arranque, que
- *   dura décimos de segundo; o segundo é a barra do sistema enquanto a
+ * - `background_color` é o papel e `theme_color` é a cor do toldo — a que a
+ *   região declarou (0167), ou, enquanto não declara, o turquesa da casa e o
+ *   vermelho do produto na demonstração. O primeiro é o ecrã de arranque,
+ *   que dura décimos de segundo; o segundo é a barra do sistema enquanto a
  *   aplicação está aberta. São os mesmos valores de `--color-paper` e
- *   `--color-brand`, à mão (o toldo por `marca.ts`) porque um manifesto é
- *   JSON e não lê tokens.
+ *   `--color-brand`, lidos à parte (o toldo por `toldoDaRegiao`) porque um
+ *   manifesto é JSON e não lê tokens.
  * - Sem `screenshots`: davam o convite de instalação em versão grande no
  *   Android, mas uma captura de uma agenda mostra eventos com data, e uma
  *   captura de setembro a convidar alguém em janeiro está a mentir. A casa não
  *   publica datas que já passaram como se fossem programa.
- * - Sem *service worker*, e é decisão e não esquecimento. O Chrome deixou de
- *   o exigir para instalar, e numa agenda que muda de hora a hora uma cache
- *   velha é pior do que uma página que não abre: uma página que não abre não
- *   engana ninguém, uma sessão que já acabou engana.
+ * - Um *service worker* que guarda uma página só, e é a que diz que está sem
+ *   rede (ver `sw.js/route.ts`, C3-015). Esteve aqui escrito «sem service
+ *   worker», com uma razão que continua certa: numa agenda que muda de hora a
+ *   hora uma cache velha é pior do que uma página que não abre, porque uma
+ *   sessão que já acabou engana. Por isso nenhuma página da agenda se guarda.
+ *   O que mudou foi o outro lado: uma aplicação instalada que sem rede mostra
+ *   o erro do navegador parece avariada, e os guardados — que existem para o
+ *   «mais tarde» — não se viam onde mais faziam falta.
  *
- * Os ícones saem de `scripts/gerar-icones.mjs`, a partir da mesma marca que
- * está no cabeçalho. O `maskable` é um ficheiro à parte porque o Android
- * recorta o ícone à forma do fabricante: o mesmo desenho, mais pequeno dentro
- * da caixa, para nada ser cortado.
+ * Os ícones desenham-se na cor da região, pela rota `icone-da-aplicacao/`, a
+ * partir da mesma marca que está no cabeçalho (os de `scripts/gerar-icones.mjs`
+ * ficam para a raiz, que não é de região nenhuma). O `maskable` é um tamanho à
+ * parte porque o Android recorta o ícone à forma do fabricante: o mesmo
+ * desenho, mais pequeno dentro da caixa, para nada ser cortado.
  */
 export const revalidate = 3600;
 
@@ -56,7 +66,13 @@ export async function GET(
   const manifesto: MetadataRoute.Manifest = {
     id: '/',
     name: tituloDoSitio(regiao),
-    short_name: 'Coreto',
+    /*
+     * O nome que fica por baixo do ícone, no ecrã do telemóvel: o da região
+     * (C4-027). Era «Coreto» em todas — quem instalava a agenda da sua CIM
+     * ficava com o nome do produto e não com o da agenda que instalou. O
+     * produto continua no `name` completo, que é o que a instalação mostra.
+     */
+    short_name: regiao.nome,
     description: descricaoDoSitio(regiao),
     lang: 'pt-PT',
     dir: 'ltr',
@@ -64,15 +80,16 @@ export async function GET(
     scope: '/',
     display: 'standalone',
     background_color: '#f6fafb',
-    theme_color: CORES_DO_TOLDO[regiao.tipo],
+    theme_color: await toldoDaRegiao(regiao),
     // A lista de categorias que o W3C mantém não tem «events» — tinha-a aqui,
     // a prometer arrumação a quem cataloga e a não arrumar em lado nenhum.
     categories: ['entertainment', 'travel', 'lifestyle'],
+    // Na cor da região — ver `icone-da-aplicacao/[tamanho]/route.tsx`.
     icons: [
-      { src: '/icones/coreto-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icones/coreto-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icone-da-aplicacao/192', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icone-da-aplicacao/512', sizes: '512x512', type: 'image/png', purpose: 'any' },
       {
-        src: '/icones/coreto-512-mascara.png',
+        src: '/icone-da-aplicacao/512-mascara',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',
@@ -88,10 +105,11 @@ export async function GET(
       {
         name: 'Mapa',
         short_name: 'Mapa',
+        // «O concelho e o que está marcado nele», com um só (C1-031).
         description:
-          regiao.concelhosDeclarados > 0
-            ? `Os ${regiao.concelhosPorExtenso} concelhos e o que está marcado em cada um.`
-            : 'Os concelhos e o que está marcado em cada um.',
+          regiao.concelhosDeclarados === 1
+            ? 'O concelho e o que está marcado nele.'
+            : `${comInicialMaiuscula(osConcelhosDaRegiao(regiao))} e o que está marcado em cada um.`,
         url: '/mapa',
       },
       {

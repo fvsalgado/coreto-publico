@@ -133,6 +133,46 @@ const ICONES_MAIS: Record<IconeDeAtalho, (props: { className: string }) => React
 };
 
 /**
+ * O destino que passa para a gaveta quando a letra é grande (C3-011).
+ *
+ * Com o tamanho de letra do navegador a 200 %, os cinco rótulos pediam 442 px
+ * numa janela de 360 — medido a 2 de outubro —, e o «Mais» ficava quase todo
+ * fora do ecrã: a gaveta, e com ela o envio, o widget e o tema, deixavam de
+ * se alcançar. Encolher a letra dos rótulos era tirar a quem a aumentou o
+ * que pediu, e cortá-los com reticências era deixar «Espa…».
+ *
+ * Os Espaços saem da barra e entram no topo da gaveta, com o mesmo desenho.
+ * A pergunta é uma consulta de média em `em`, que se mede pelo tamanho de
+ * letra do navegador e não pelo da página: abaixo de 15 em de janela. À letra
+ * de sempre isso são 240 px, e nenhum telemóvel chega lá; a 200 % são 480, e
+ * todos chegam.
+ *
+ * Esteve aqui escrito que com quatro destinos os rótulos cabiam até numa
+ * janela de 320, e a medição de 2 de outubro desmentiu-o: a 320 e a 200 %, o
+ * «Mais» acabava aos 328 px. Abaixo de 11 em — 352 px a 200 %, 176 à letra de
+ * sempre — sai também o Início, e ficam três. Esse **não vai para a gaveta**:
+ * o caminho para a entrada é o nome do sítio no toldo, que está em todas as
+ * páginas, e a gaveta passava a dez opções, uma acima das nove que o Selo
+ * pede a cada nível de navegação (3.1, medido pelo `check:selo`). As classes
+ * vão por extenso, uma a uma: o Tailwind só gera o que encontra escrito.
+ */
+const RECOLHIDOS = [
+  {
+    href: '/espacos',
+    nota: 'Os teatros, os museus e as salas da região',
+    naBarra: 'flex-1 max-[15em]:hidden',
+    naGaveta: 'hidden max-[15em]:block',
+    acende: 'max-[15em]:text-white',
+    fundo: 'max-[15em]:bg-white/18',
+  },
+] as const;
+
+/** Os que saem da barra com a letra ainda maior, sem irem para a gaveta. */
+const SAEM_COM_LETRA_MAIOR: Readonly<Record<string, string>> = {
+  '/': 'flex-1 max-[11em]:hidden',
+};
+
+/**
  * A barra de baixo, só no telemóvel.
  *
  * O cabeçalho desta casa foi desenhado para um ecrã largo: num telemóvel a
@@ -207,21 +247,87 @@ export function BarraInferior({
         // O foco volta ao botão que a abriu: quem navega por teclado não
         // pode ficar com o foco num sítio que deixou de existir.
         gaveta.current?.querySelector('summary')?.focus();
+        return;
+      }
+      /*
+       * O foco fica na gaveta enquanto ela está aberta (C3-002).
+       *
+       * Era um `<details>` sem mais nada, e o Tab seguia a ordem do documento:
+       * depois do tema saía para a página de trás — a que o véu escurece e o
+       * painel tapa —, e o foco passava a andar por ligações que não se viam,
+       * com a gaveta ainda aberta por cima delas. Medido a 1 de outubro: cinco
+       * Tab depois do último item, o foco estava na fila de concelhos, por
+       * baixo do painel (o 2.4.11 da WCAG 2.2).
+       *
+       * O véu diz «isto é uma camada por cima», e o teclado passa a dizer o
+       * mesmo: do último item volta-se ao «Mais», e do «Mais» para trás vai-se
+       * ao último. Sai-se como se entrou — o «Mais», o Escape, ou um toque
+       * fora. O `<details>` fica: sem JavaScript abre e fecha na mesma, e o
+       * foco segue a ordem do documento, que é o que um `<details>` faz.
+       */
+      if (evento.key !== 'Tab' || !gaveta.current) return;
+      const focaveis = [
+        ...gaveta.current.querySelectorAll<HTMLElement>('summary, a[href], button:not([disabled])'),
+      ].filter((elemento) => elemento.getClientRects().length > 0);
+      const primeiro = focaveis[0];
+      const ultimo = focaveis.at(-1);
+      if (!primeiro || !ultimo) return;
+      const ativo = document.activeElement;
+      const dentro = ativo instanceof Node && gaveta.current.contains(ativo);
+      if (!dentro) {
+        evento.preventDefault();
+        primeiro.focus();
+      } else if (!evento.shiftKey && ativo === ultimo) {
+        evento.preventDefault();
+        primeiro.focus();
+      } else if (evento.shiftKey && ativo === primeiro) {
+        evento.preventDefault();
+        ultimo.focus();
       }
     };
     const aoTocar = (evento: PointerEvent) => {
       if (!gaveta.current?.contains(evento.target as Node)) setAberta(false);
     };
+    /*
+     * E se o foco sair por outro caminho — um leitor de ecrã que salta para
+     * um marco, um atalho do navegador —, a gaveta fecha-se atrás dele, em
+     * vez de ficar aberta por cima do sítio para onde ele foi.
+     */
+    const aoFocar = (evento: FocusEvent) => {
+      if (evento.target instanceof Node && !gaveta.current?.contains(evento.target)) {
+        setAberta(false);
+      }
+    };
 
     document.addEventListener('keydown', aoTeclar);
     document.addEventListener('pointerdown', aoTocar);
+    document.addEventListener('focusin', aoFocar);
     return () => {
       document.removeEventListener('keydown', aoTeclar);
       document.removeEventListener('pointerdown', aoTocar);
+      document.removeEventListener('focusin', aoFocar);
     };
   }, [aberta]);
 
   const naGaveta = estaEmMais(pathname);
+  // Os destinos que a letra grande leva para a gaveta, com o que a barra sabe
+  // deles. Com a letra grande, quem está num deles está na gaveta: o «+»
+  // acende-se — só abaixo da largura em que aquele sai.
+  const recolhidos = RECOLHIDOS.flatMap((recolhe) => {
+    const destino = BARRA.find((d) => d.href === recolhe.href);
+    const Icone = ICONES[recolhe.href];
+    return destino && Icone
+      ? [{ ...recolhe, destino, Icone, aqui: estaEm(pathname, destino) }]
+      : [];
+  });
+  const acendeNaGaveta = recolhidos
+    .filter((recolhido) => recolhido.aqui)
+    .map((recolhido) => recolhido.acende)
+    .join(' ');
+  const fundoNaGaveta = recolhidos
+    .filter((recolhido) => recolhido.aqui)
+    .map((recolhido) => recolhido.fundo)
+    .join(' ');
 
   return (
     <nav
@@ -244,7 +350,7 @@ export function BarraInferior({
        * debaixo dela. O `viewportFit: 'cover'` do layout é o que dá valor a
        * este `env()` — sem ele responde sempre zero.
        */
-      className="ct-bloco-escuro fixed inset-x-0 bottom-0 z-40 bg-accent-deep pb-[env(safe-area-inset-bottom)] text-white sm:hidden"
+      className="ct-bloco-escuro ct-sem-impressao fixed inset-x-0 bottom-0 z-40 bg-accent-deep pb-[env(safe-area-inset-bottom)] text-white sm:hidden"
       /*
        * O gancho de que a auditoria precisa para saber qual é a barra.
        *
@@ -265,11 +371,16 @@ export function BarraInferior({
        * contenção de pintura, e um `position: fixed` lá dentro deixaria de
        * se medir pelo ecrã. Sem JavaScript não há véu — e a gaveta abre na
        * mesma, que é o que interessa.
+       *
+       * Na cor do grafite e não na da tinta: no tema escuro a tinta é quase
+       * branca, e o véu clareava a página em vez de a escurecer — o toldo
+       * ficava desbotado por trás da gaveta, que é o contrário de «isto está
+       * por baixo». O grafite é escuro nos dois temas.
        */}
       {aberta ? (
         <div
           aria-hidden="true"
-          className="fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] bg-ink/45"
+          className="fixed inset-x-0 top-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] bg-accent-deep/55"
         />
       ) : null}
 
@@ -280,7 +391,14 @@ export function BarraInferior({
           if (!Icone) return null;
 
           return (
-            <li key={destino.href} className="flex-1">
+            <li
+              key={destino.href}
+              className={
+                recolhidos.find((recolhido) => recolhido.href === destino.href)?.naBarra ??
+                SAEM_COM_LETRA_MAIOR[destino.href] ??
+                'flex-1'
+              }
+            >
               <Link
                 href={destino.href}
                 aria-current={activo ? 'page' : undefined}
@@ -313,12 +431,12 @@ export function BarraInferior({
           >
             <summary
               className={`ct-sem-marca flex h-14 cursor-pointer flex-col items-center justify-center gap-1 px-0.5 ${
-                aberta || naGaveta ? 'text-white' : 'text-on-deep-muted'
+                aberta || naGaveta ? 'text-white' : `text-on-deep-muted ${acendeNaGaveta}`
               }`}
             >
               <span
                 className={`ct-octagon grid size-7 place-items-center ${
-                  aberta || naGaveta ? 'bg-white/18' : 'bg-transparent'
+                  aberta || naGaveta ? 'bg-white/18' : `bg-transparent ${fundoNaGaveta}`
                 }`}
               >
                 <svg
@@ -346,6 +464,29 @@ export function BarraInferior({
              * superfície clara).
              */}
             <ul className="absolute inset-x-2 bottom-full mb-2 max-h-[70dvh] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 text-ink shadow-2xl [&_:focus-visible]:outline-focus">
+              {/* Os destinos que a letra grande tira da barra — ver
+                  `RECOLHIDOS`. À letra de sempre estas linhas não existem
+                  para ninguém: `display: none` tira-as também ao leitor de
+                  ecrã e ao Tab. */}
+              {recolhidos.map(({ href, nota, naGaveta: classe, destino, Icone, aqui }) => (
+                <li key={href} className={classe}>
+                  <Link
+                    href={href}
+                    aria-current={aqui ? 'page' : undefined}
+                    className={`flex min-h-14 items-center gap-3 rounded-lg px-2.5 py-2 ${
+                      aqui ? 'bg-accent-soft' : ''
+                    }`}
+                  >
+                    <span className="ct-octagon grid size-9 shrink-0 place-items-center bg-accent-soft text-accent">
+                      <Icone className="size-5" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-medium">{destino.label}</span>
+                      <span className="block text-xs text-muted">{nota}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
               {gavetaVisivel.map((atalho) => {
                 const Icone = ICONES_MAIS[atalho.icone];
                 // Os prefixos contam. `/ciclos` é a lista e `/ciclo/caminhos`

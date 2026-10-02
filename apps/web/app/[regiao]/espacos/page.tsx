@@ -18,7 +18,7 @@ import {
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { osConcelhosDaRegiao, urlDoSitio } from '@/src/lib/regiao';
 import type { Municipality, Venue } from '@/src/lib/queries/types';
 
 export const revalidate = 3600;
@@ -124,7 +124,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const regiao = await exigirRegiao(regiaoId);
   return {
     title: 'Espaços',
-    description: `Teatros, museus, bibliotecas, coletividades, filarmónicas e coretos dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}, concelho a concelho.`,
+    description: `Teatros, museus, bibliotecas, coletividades, filarmónicas e coretos ${osConcelhosDaRegiao(regiao, 'de')} ${regiao.doNome}, concelho a concelho.`,
     alternates: enderecos(urlDoSitio(regiao, SITE_URL), '/espacos'),
   };
 }
@@ -419,13 +419,13 @@ export default async function VenuesPage({ params, searchParams }: Props) {
                     que se toca, e o check:selo mediu-a com dados (5.2). */}
                 <Link
                   href={`/concelho/${group.municipality.id}`}
-                  className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
+                  className="inline-flex min-h-11 max-w-full items-center underline-offset-4 [overflow-wrap:anywhere] hover:underline"
                 >
                   {group.municipality.name}
                 </Link>
               </h2>
 
-              <ul className="mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+              <ul className="@container mt-4 grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                 {group.venues.map((venue) => (
                   <VenueCard
                     key={venue.id}

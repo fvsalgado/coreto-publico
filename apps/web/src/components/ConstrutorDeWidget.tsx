@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { deNome } from '@/src/lib/artigos';
 import {
   DISPOSICOES,
   type Disposicao,
@@ -27,6 +28,8 @@ import {
 interface Concelho {
   id: string;
   name: string;
+  /** O artigo do nome (0165): «do Entroncamento» no título da caixa. */
+  article: string | null;
 }
 
 interface Espaco {
@@ -51,6 +54,11 @@ interface Props {
   espacos: readonly Espaco[];
   ciclos: readonly Ciclo[];
   categorias: readonly Categoria[];
+  /**
+   * A cor da região (0167), que é a primeira sugestão e a de partida: a caixa
+   * de uma câmara de uma CIM vermelha não começava turquesa.
+   */
+  corDaAgenda: string;
 }
 
 /** As larguras onde uma caixa destas costuma ir parar. */
@@ -66,8 +74,11 @@ const NOMES_DISPOSICAO: Record<Disposicao, { nome: string; nota: string }> = {
   mural: { nome: 'Mural', nota: 'Grelha de cartazes, para uma faixa larga.' },
 };
 
-/** Sugestões, não uma paleta fechada: a cor certa é a da instituição. */
-const CORES_SUGERIDAS = ['#14676b', '#b0122a', '#2f6fb5', '#7a3b8f', '#a85a10', '#2d3a45'];
+/**
+ * Sugestões, não uma paleta fechada: a cor certa é a da instituição. A
+ * primeira é a da agenda, que entra à cabeça desta lista no componente.
+ */
+const CORES_SUGERIDAS = ['#b0122a', '#2f6fb5', '#7a3b8f', '#a85a10', '#2d3a45', '#14676b'];
 
 const rotulo = 'block text-sm font-medium';
 const campo =
@@ -100,8 +111,16 @@ function Copiar({ texto, etiqueta }: { texto: string; etiqueta: string }) {
   );
 }
 
-export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categorias }: Props) {
-  const [concelho, setConcelho] = useState(concelhos[0]?.id ?? 'tomar');
+export function ConstrutorDeWidget({
+  base,
+  concelhos,
+  espacos,
+  ciclos,
+  categorias,
+  corDaAgenda,
+}: Props) {
+  const sugeridas = [corDaAgenda, ...CORES_SUGERIDAS.filter((cor) => cor !== corDaAgenda)];
+  const [concelho, setConcelho] = useState(concelhos[0]?.id ?? '');
   const [espaco, setEspaco] = useState('');
   const [ciclo, setCiclo] = useState('');
   const [categoria, setCategoria] = useState('');
@@ -109,7 +128,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
   const [gratis, setGratis] = useState(false);
   const [disposicao, setDisposicao] = useState<Disposicao>('cartazes');
   const [usarCor, setUsarCor] = useState(false);
-  const [cor, setCor] = useState('#14676b');
+  const [cor, setCor] = useState(corDaAgenda);
   const [tema, setTema] = useState<'auto' | 'light' | 'dark'>('auto');
   const [letra, setLetra] = useState('');
   const [pesquisa, setPesquisa] = useState('');
@@ -142,8 +161,9 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
   };
 
   const endereco = enderecoDoWidget(base, escolhas);
-  const nomeDoConcelho = concelhos.find((c) => c.id === concelho)?.name ?? concelho;
-  const tituloIframe = `Agenda cultural de ${nomeDoConcelho}`;
+  const escolhido = concelhos.find((c) => c.id === concelho);
+  // «Agenda cultural do Entroncamento», com o artigo que a base declara (0165).
+  const tituloIframe = `Agenda cultural ${deNome(escolhido?.name ?? concelho, escolhido?.article)}`;
 
   /*
    * `*:min-w-0` nas grelhas, e não é arrumação.
@@ -319,7 +339,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
                 className="min-h-11 w-28 rounded border border-field bg-surface px-3 font-mono text-sm"
               />
               <span className="flex gap-1.5">
-                {CORES_SUGERIDAS.map((sugestao) => (
+                {sugeridas.map((sugestao) => (
                   <button
                     key={sugestao}
                     type="button"

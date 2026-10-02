@@ -1113,8 +1113,8 @@ export async function criarRegiao(formData: FormData): Promise<void> {
     comAviso(
       `/admin/regioes/${encodeURIComponent(dados.id)}`,
       `Região «${dados.name}» criada, com ${n} ${n === 1 ? 'concelho' : 'concelhos'} — cada um com um ` +
-        'espaço provisório e uma fonte desligada. O domínio no Vercel e no DNS é o passo seguinte ' +
-        'do guia docs/NOVA-CIM.md.',
+        'espaço provisório e uma fonte desligada. O que falta para abrir ao público está na lista de ' +
+        'arranque, aqui em cima; o domínio é um passo de quem opera (docs/NOVA-CIM.md, passo 2).',
     ),
   );
 }

@@ -1,10 +1,10 @@
 import { ImageResponse } from 'next/og';
 import { notFound } from 'next/navigation';
-import { CORES_DO_TOLDO } from '@/src/lib/marca';
 import { MARCA_GRELHA, MARCA_TRACOS } from '@/src/lib/marca';
+import { paletaDaMarca } from '@/src/lib/paleta';
 import { formatDateRange } from '@/src/lib/format';
 import { getEvent, listMunicipalities } from '@/src/lib/queries/events';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { exigirRegiao, toldoDaRegiao } from '@/src/lib/queries/regioes';
 
 /**
  * O cartão de partilha de um evento que não tem cartaz.
@@ -91,7 +91,11 @@ export async function GET(
     ? `${formatDateRange(evento.date_start, evento.date_end)} ${ano}`.trim()
     : formatDateRange(evento.date_start, evento.date_end);
   const onde = evento.location_name ?? concelho?.name ?? regiao.nome;
-  const toldo = CORES_DO_TOLDO[regiao.tipo];
+  // A cor da região, à luz a que se lê sobre o fundo escuro do cartão: o
+  // acento do tema escuro, que a paleta já calcula a 5:1 sobre o grafite. O
+  // toldo tal e qual podia ser uma cor escura, e a data desaparecia nele.
+  const corDaRegiao = await toldoDaRegiao(regiao);
+  const toldo = paletaDaMarca(corDaRegiao)?.escuro.accent ?? corDaRegiao;
 
   return new ImageResponse(
     <div

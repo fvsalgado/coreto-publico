@@ -18,6 +18,7 @@ import type { EventDetail } from '@/src/lib/queries/types';
  */
 
 const exigirRegiao = vi.hoisted(() => vi.fn<(id: string) => Promise<Regiao>>());
+const toldoDaRegiao = vi.hoisted(() => vi.fn<() => Promise<string>>());
 const getEvent = vi.hoisted(() => vi.fn());
 const listMunicipalities = vi.hoisted(() => vi.fn());
 const notFound = vi.hoisted(() =>
@@ -26,7 +27,7 @@ const notFound = vi.hoisted(() =>
   }),
 );
 
-vi.mock('@/src/lib/queries/regioes', () => ({ exigirRegiao }));
+vi.mock('@/src/lib/queries/regioes', () => ({ exigirRegiao, toldoDaRegiao }));
 vi.mock('@/src/lib/queries/events', () => ({ getEvent, listMunicipalities }));
 vi.mock('next/navigation', () => ({ notFound }));
 
@@ -55,6 +56,7 @@ const ASSINATURA_PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 describe('GET /cartaz/[slug]', () => {
   beforeEach(() => {
     exigirRegiao.mockReset().mockResolvedValue(REGIAO_DE_RECURSO);
+    toldoDaRegiao.mockReset().mockResolvedValue('#40c0c4');
     getEvent.mockReset().mockResolvedValue(EVENTO);
     listMunicipalities
       .mockReset()
@@ -73,6 +75,18 @@ describe('GET /cartaz/[slug]', () => {
     // Um PNG de 1200×630 com texto não cabe em dois kilobytes; um erro
     // serializado cabe. É o que separa «desenhou» de «devolveu qualquer coisa».
     expect(bytes.byteLength).toBeGreaterThan(2000);
+  }, 30_000);
+
+  it('desenha na cor que a região declarou, clara ou escura', async () => {
+    // A faixa do cartão leva o acento da paleta da região (0167): uma cor
+    // escura como a da demonstração tem de desenhar tão bem como o turquesa.
+    for (const cor of ['#1f5c4a', '#c2281c']) {
+      toldoDaRegiao.mockResolvedValueOnce(cor);
+      const resposta = await GET(PEDIDO, contexto('medio-tejo', 'concerto-no-coreto'));
+      expect(resposta.status).toBe(200);
+      const bytes = new Uint8Array(await resposta.arrayBuffer());
+      expect([...bytes.slice(0, 8)]).toEqual(ASSINATURA_PNG);
+    }
   }, 30_000);
 
   it('um título comprido não parte o desenho', async () => {

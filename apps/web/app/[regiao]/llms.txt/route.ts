@@ -9,7 +9,7 @@ import {
 } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { deNome, osConcelhos, porNome, urlDoSitio } from '@/src/lib/regiao';
 
 /**
  * O que um motor de resposta precisa de saber antes de responder por nós.
@@ -54,14 +54,16 @@ export async function GET(
 
   // «dos 11 concelhos da Comunidade…» — em algarismos, como sempre foi aqui:
   // a contagem sai da lista viva, não de uma constante.
-  const quemServe = regiao.promotor ? `da ${regiao.promotor.nome}` : regiao.doNome;
+  const quemServe = regiao.promotor
+    ? deNome(regiao.promotor.nome, regiao.promotor.artigo)
+    : regiao.doNome;
 
   const texto = `# Coreto
 
-> A agenda cultural dos ${concelhos.length} concelhos ${quemServe}, em Portugal. Reúne num sítio só a programação que está espalhada por dezenas de agendas municipais, de espaços e de coletividades, e publica-a em formatos abertos.
+> A agenda cultural ${osConcelhos(concelhos.length, { preposicao: 'de', extenso: false })} ${quemServe}, em Portugal. Reúne num sítio só a programação que está espalhada por dezenas de agendas municipais, de espaços e de coletividades, e publica-a em formatos abertos.
 
 Endereço canónico: ${origem}
-${regiao.promotor ? `Promovido pela ${regiao.promotor.nome} (${regiao.promotor.url}).\n` : ''}Software: ${PRODUTO.nome}, desenvolvido por ${AUTOR.nome} (${AUTOR.url}).
+${regiao.promotor ? `Promovido ${porNome(regiao.promotor.nome, regiao.promotor.artigo)} (${regiao.promotor.url}).\n` : ''}Software: ${PRODUTO.nome}, desenvolvido por ${AUTOR.nome} (${AUTOR.url}).
 Língua: português de Portugal. Fuso: Europe/Lisbon.
 
 ## O que a agenda cobre

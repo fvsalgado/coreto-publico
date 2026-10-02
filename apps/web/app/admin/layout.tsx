@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { BandstandMark } from '@/src/components/BandstandMark';
 import { headers } from 'next/headers';
 import { currentAdmin } from '@/src/lib/admin/auth';
 import { endSession } from '@/src/lib/admin/auth';
@@ -11,17 +12,22 @@ export const dynamic = 'force-dynamic';
 
 /*
  * O título do separador diz a página e depois a área — «Fila de moderação ·
- * Administração». Treze páginas com o mesmo título eram treze separadores
+ * Painel · Coreto». Treze páginas com o mesmo título eram treze separadores
  * iguais para quem tem três abertos, e um só nome para quem navega por
  * títulos com um leitor de ecrã (WCAG 2.4.2). Cada página declara o seu.
+ *
+ * A área chama-se «Painel», e não «Administração», como no Paragem.pt (C4-026):
+ * os dois produtos vendem-se às mesmas entidades, e quem modera os dois não
+ * tem de aprender duas palavras para a mesma coisa. A primeira entrada da
+ * barra passou a «Início», que «Painel» já é o nome da área.
  */
 export const metadata: Metadata = {
-  title: { default: 'Administração', template: '%s · Administração' },
+  title: { default: 'Painel · Coreto', template: '%s · Painel · Coreto' },
   robots: { index: false, follow: false },
 };
 
 const NAV = [
-  { href: '/admin', label: 'Painel' },
+  { href: '/admin', label: 'Início' },
   { href: '/admin/fila', label: 'Fila' },
   { href: '/admin/eventos', label: 'Eventos' },
   { href: '/admin/estatisticas', label: 'Estatísticas' },
@@ -43,7 +49,7 @@ async function sair(): Promise<void> {
 
 /**
  * A ligação da barra que corresponde à página aberta — ou a uma ficha debaixo
- * dela: em `/admin/fila/…` é a Fila que está aberta. O Painel só é o Painel,
+ * dela: em `/admin/fila/…` é a Fila que está aberta. O Início só é o Início,
  * porque todas as outras também começam por `/admin`.
  */
 function estaAberta(caminho: string | null, href: string): boolean {
@@ -101,7 +107,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <header className="ct-sem-impressao border-b border-border">
           {/* `ct-sem-impressao`: o relatório mensal imprime-se sem a barra. */}
           <div className="ct-goteira mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 py-1">
-            <p className="text-sm font-semibold">Administração</p>
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <BandstandMark className="size-5" />
+              Coreto · Painel
+            </p>
             {/*
               No telemóvel a barra desce para a linha de baixo, à largura
               toda, e o «Sair» fica ao lado do nome; a partir do tablet é uma
@@ -109,7 +118,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               sempre a navegação antes do «Sair».
             */}
             <nav
-              aria-label="Administração"
+              aria-label="Painel"
               className="order-last basis-full sm:order-none sm:flex-1 sm:basis-auto"
             >
               <ul className="flex flex-wrap gap-x-4 text-sm">

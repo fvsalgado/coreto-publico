@@ -6,6 +6,7 @@ import { loadFeed, resolveMunicipality } from '@/src/lib/feeds/load';
 import { buildRss } from '@/src/lib/feeds/rss';
 import { listMunicipalities } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { emNome } from '@/src/lib/regiao';
 
 /**
  * RSS de um concelho — `/feed/tomar.xml`.
@@ -56,7 +57,7 @@ export async function GET(
     {
       title: `Coreto — ${municipality.name}`,
       link: `${feedContext.siteUrl}/concelho/${municipality.id}`,
-      description: `O que há para fazer em ${municipality.name}: concertos, teatro, exposições, festas, cinema e visitas.`,
+      description: `O que há para fazer ${emNome(municipality.name, municipality.article)}: concertos, teatro, exposições, festas, cinema e visitas.`,
       selfUrl: `${feedContext.siteUrl}/feed/${municipality.id}.xml`,
       ttlMinutes: 60,
       copyright: FEED_COPYRIGHT,

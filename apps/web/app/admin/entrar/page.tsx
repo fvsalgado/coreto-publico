@@ -10,7 +10,7 @@ import { env } from '@/src/lib/env';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = { title: 'Entrar' };
+export const metadata: Metadata = { title: 'Entrar no painel' };
 
 interface Props {
   searchParams: Promise<{ destino?: string; erro?: string }>;
@@ -56,7 +56,7 @@ async function entrar(formData: FormData): Promise<void> {
 const MESSAGES: Record<string, string> = {
   credenciais: 'Palavra-passe incorreta.',
   demasiadas: 'Demasiadas tentativas. Tenta daqui a um quarto de hora.',
-  configuracao: 'A área de administração ainda não está configurada.',
+  configuracao: 'O painel ainda não está configurado.',
 };
 
 export default async function Entrar({ searchParams }: Props) {
@@ -68,7 +68,7 @@ export default async function Entrar({ searchParams }: Props) {
   if (gate.reason === 'unconfigured') {
     return (
       <>
-        <PageHeader title="Administração por configurar" />
+        <PageHeader title="Painel por configurar" eyebrow="Coreto" />
         <p className="max-w-prose text-muted">
           Faltam as variáveis <code>ADMIN_PASSWORD_HASH</code> e <code>ADMIN_SESSION_SECRET</code>.
           A primeira gera-se com <code>pnpm dlx tsx scripts/hash-password.ts</code>; a segunda é uma
@@ -83,7 +83,9 @@ export default async function Entrar({ searchParams }: Props) {
 
   return (
     <>
-      <PageHeader title="Entrar" />
+      {/* Com a marca do produto e o nome da área (C4-026): a página dizia só
+          «Entrar», sem dizer onde. */}
+      <PageHeader title="Entrar no painel" eyebrow="Coreto" />
 
       {erro ? (
         <p role="alert" className="mb-4 rounded border border-highlight px-3 py-2 text-highlight">

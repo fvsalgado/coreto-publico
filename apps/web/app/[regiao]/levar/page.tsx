@@ -7,15 +7,17 @@ import { PageHeader } from '@/src/components/PageHeader';
 import { SITE_URL } from '@/src/lib/env';
 import { API_PARAMETERS } from '@/src/lib/feeds/params';
 import {
+  countEventsByMunicipality,
   countEventsBySeries,
+  countEventsByVenue,
   listCategories,
   listMunicipalities,
   listSeries,
   listVenues,
 } from '@/src/lib/queries/events';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
-import { urlDoSitio } from '@/src/lib/regiao';
-import { CATALOGO } from '@/src/lib/widget/opcoes';
+import { exigirRegiao, toldoDaRegiao } from '@/src/lib/queries/regioes';
+import { osConcelhos, urlDoSitio } from '@/src/lib/regiao';
+import { catalogoDoWidget } from '@/src/lib/widget/opcoes';
 
 export const revalidate = 3600;
 
@@ -70,7 +72,7 @@ function feedsGlobais(concelhos: number): readonly FeedRow[] {
   return [
     {
       path: '/feed.xml',
-      description: `RSS 2.0 com os próximos ${FEED_LIMIT} eventos dos ${concelhos} concelhos.`,
+      description: `RSS 2.0 com os próximos ${FEED_LIMIT} eventos ${osConcelhos(concelhos, { preposicao: 'de', extenso: false })}.`,
     },
     {
       path: '/agenda.ics',
@@ -92,23 +94,39 @@ function feedsGlobais(concelhos: number): readonly FeedRow[] {
     },
     {
       path: '/sitemap.xml',
-      description: `Mapa do sítio: as páginas fixas, os ${concelhos} concelhos, os espaços, os ciclos com programação e os eventos por acontecer. O que já passou não entra — um mapa do sítio é para o que se pode visitar.`,
+      description: `Mapa do sítio: as páginas fixas, ${osConcelhos(concelhos, { extenso: false })}, os espaços, os ciclos com programação e os eventos por acontecer. O que já passou não entra — um mapa do sítio é para o que se pode visitar.`,
     },
   ];
 }
 
-const exemploDePedido = (origem: string) =>
-  `${origem}/api/events?municipality=tomar&category=musica&free=1&limit=10`;
+/**
+ * Os exemplos da API saem da região que serve a página (C4-021).
+ *
+ * Eram de Tomar, escritos à mão — o pedido, o concelho, a sala —, e a página é
+ * servida em todas as regiões: na demonstração o exemplo publicado devolvia
+ * `total 0`, e quem integra escreve o primeiro pedido a partir dele. O
+ * concelho do exemplo é o que mais tem por acontecer, para o pedido responder
+ * com alguma coisa; o resto do evento de exemplo é a forma, e não um evento.
+ */
+interface ConcelhoDoExemplo {
+  id: string;
+  name: string;
+}
 
-const exemploDeResposta = (origem: string) => `{
+const exemploDePedido = (origem: string, concelho: ConcelhoDoExemplo | null) =>
+  concelho
+    ? `${origem}/api/events?municipality=${concelho.id}&limit=10`
+    : `${origem}/api/events?limit=10`;
+
+const exemploDeResposta = (origem: string, concelho: ConcelhoDoExemplo | null) => `{
   "events": [
     {
       "id": "…",
-      "slug": "concerto-de-ano-novo-tomar",
-      "title": "Concerto de Ano Novo",
-      "description_short": "A Banda dos Bombeiros abre o ano no Cine-Teatro.",
-      "municipality_id": "tomar",
-      "venue_id": "cine-teatro-paraiso",
+      "slug": "…",
+      "title": "…",
+      "description_short": "…",
+      "municipality_id": "${concelho?.id ?? '…'}",
+      "venue_id": "…",
       "location_name": null,
       "category_slug": "musica",
       "category_confidence": 0.95,
@@ -129,10 +147,10 @@ const exemploDeResposta = (origem: string) => `{
       "has_subtitles": false,
       "is_relaxed_performance": false,
       "audience": "all_ages",
-      "url": "${origem}/evento/concerto-de-ano-novo-tomar",
-      "municipality_name": "Tomar",
+      "url": "${origem}/evento/…",
+      "municipality_name": "${concelho?.name ?? '…'}",
       "category_name": "Música",
-      "venue_name": "Cine-Teatro Paraíso",
+      "venue_name": "…",
       "updated_at": "2026-12-20T03:12:44.000Z",
       "sessions": [{ "date": "2027-01-01", "start_time": "21:30", "end_time": null }]
     }
@@ -158,17 +176,40 @@ export default async function LevarPage({ params }: Props) {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
   const origem = urlDoSitio(regiao, SITE_URL);
-  const [municipalities, espacos, categorias, series, contagens] = await Promise.all([
-    listMunicipalities(regiao.id),
-    listVenues(regiao.id),
-    listCategories(),
-    listSeries(regiao.id),
-    countEventsBySeries(regiao.id),
-  ]);
+  const [municipalities, espacos, categorias, series, contagens, porConcelho, porEspaco] =
+    await Promise.all([
+      listMunicipalities(regiao.id),
+      listVenues(regiao.id),
+      listCategories(),
+      listSeries(regiao.id),
+      countEventsBySeries(regiao.id),
+      countEventsByMunicipality(regiao.id),
+      countEventsByVenue(regiao.id),
+    ]);
 
   // Só os ciclos com programa por acontecer: oferecer uma caixa de agenda de um
   // ciclo que não tem nada marcado é oferecer uma caixa vazia.
   const ciclos = series.filter((ciclo) => (contagens[ciclo.id]?.porAcontecer ?? 0) > 0);
+
+  // Os exemplos da tabela das opções e da API, da própria região (C4-021): os
+  // concelhos e os espaços que mais têm por acontecer, para o exemplo copiado
+  // responder com alguma coisa.
+  const concelhosComProgramacao = municipalities
+    .filter((concelho) => (porConcelho[concelho.id] ?? 0) > 0)
+    .sort((a, b) => (porConcelho[b.id] ?? 0) - (porConcelho[a.id] ?? 0));
+  const espacosComProgramacao = espacos
+    .filter((espaco) => (porEspaco[espaco.id] ?? 0) > 0)
+    .sort((a, b) => (porEspaco[b.id] ?? 0) - (porEspaco[a.id] ?? 0));
+  const toldo = await toldoDaRegiao(regiao);
+  const catalogo = catalogoDoWidget({
+    concelhos: (concelhosComProgramacao.length > 0 ? concelhosComProgramacao : municipalities)
+      .slice(0, 3)
+      .map((concelho) => concelho.id),
+    espacos: espacosComProgramacao.slice(0, 2).map((espaco) => espaco.id),
+    ciclos: ciclos.slice(0, 2).map((ciclo) => ciclo.id),
+    cor: { valor: toldo, nome: 'a cor desta agenda' },
+  });
+  const concelhoDoExemplo = concelhosComProgramacao[0] ?? municipalities[0] ?? null;
 
   return (
     <>
@@ -190,11 +231,41 @@ export default async function LevarPage({ params }: Props) {
         </h2>
         <ConstrutorDeWidget
           base={origem}
-          concelhos={municipalities.map(({ id, name }) => ({ id, name }))}
+          concelhos={municipalities.map(({ id, name, article }) => ({ id, name, article }))}
           espacos={espacos.map(({ id, name, municipality_id }) => ({ id, name, municipality_id }))}
           ciclos={ciclos.map(({ id, name }) => ({ id, name }))}
           categorias={categorias.map(({ slug, name }) => ({ slug, name }))}
+          corDaAgenda={toldo}
         />
+      </section>
+
+      {/*
+        Em papel (C2-032, C4-022): o cartaz da semana de cada concelho. É a
+        maneira de levar a agenda que não precisa de sítio nenhum — e, no
+        interior, a que chega a quem não a procura na internet.
+      */}
+      <section aria-labelledby="em-papel" className="mt-14">
+        <h2 id="em-papel" className="ct-heading">
+          Em papel
+        </h2>
+        <p className="mt-2 max-w-2xl text-muted">
+          O cartaz da semana de cada concelho: uma folha A4, a preto e branco, com o que há nos
+          próximos sete dias e o código QR para a agenda. Para a porta do café, da junta, da
+          biblioteca ou do lar.
+        </p>
+        <ul aria-label="O cartaz da semana, por concelho" className="mt-3 flex flex-wrap gap-x-5">
+          {municipalities.map((concelho) => (
+            <li key={concelho.id}>
+              <Link
+                href={`/cartaz-semanal/${concelho.id}`}
+                prefetch={false}
+                className="inline-flex min-h-11 items-center underline underline-offset-4"
+              >
+                {concelho.name}
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section aria-labelledby="opcoes" className="mt-14">
@@ -232,7 +303,7 @@ export default async function LevarPage({ params }: Props) {
               </tr>
             </thead>
             <tbody>
-              {CATALOGO.map((opcao) => (
+              {catalogo.map((opcao) => (
                 <tr key={opcao.atributo} className="border-b border-border align-top">
                   <th scope="row" className="py-2 pr-4 text-left font-normal">
                     <code>{opcao.atributo}</code>
@@ -332,7 +403,9 @@ export default async function LevarPage({ params }: Props) {
           >
             <table className="w-full border-collapse text-sm">
               <caption className="sr-only">
-                Endereços de RSS e de calendário para cada um dos {municipalities.length} concelhos
+                {municipalities.length === 1
+                  ? 'Endereços de RSS e de calendário do concelho'
+                  : `Endereços de RSS e de calendário para cada um dos ${municipalities.length} concelhos`}
               </caption>
               <thead>
                 <tr className="border-b border-border text-left">
@@ -442,7 +515,7 @@ export default async function LevarPage({ params }: Props) {
           className="mt-4 overflow-x-auto rounded border border-border bg-surface p-3 text-xs"
           tabIndex={0}
         >
-          <code>{exemploDePedido(origem)}</code>
+          <code>{exemploDePedido(origem, concelhoDoExemplo)}</code>
         </pre>
 
         <details className="mt-3 rounded-lg border border-border bg-surface">
@@ -454,7 +527,7 @@ export default async function LevarPage({ params }: Props) {
             className="overflow-x-auto border-t border-border p-3 text-xs leading-relaxed"
             tabIndex={0}
           >
-            <code>{exemploDeResposta(origem)}</code>
+            <code>{exemploDeResposta(origem, concelhoDoExemplo)}</code>
           </pre>
         </details>
 

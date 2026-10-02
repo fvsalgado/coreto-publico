@@ -43,7 +43,7 @@ import {
   type SearchParams,
 } from '@/src/lib/agenda';
 import { descreverFiltro, saidasDoVazio, type PropostaDoVazio } from '@/src/lib/agenda-servidor';
-import { urlDoSitio, type Regiao } from '@/src/lib/regiao';
+import { osConcelhosDaRegiao, urlDoSitio, type Regiao } from '@/src/lib/regiao';
 import { formatCategory } from '@/src/lib/format';
 
 interface Props {
@@ -107,7 +107,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title: description.rotulo ? `Agenda: ${description.rotulo}` : 'Agenda',
     description:
       description.frase ||
-      `Todos os eventos dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}, com filtros por data, categoria, concelho, entrada livre e acessibilidade.`,
+      `Todos os eventos ${osConcelhosDaRegiao(regiao, 'de')} ${regiao.doNome}, com filtros por data, categoria, concelho, entrada livre e acessibilidade.`,
     // O canónico sai do filtro já validado, e não do endereço tal como veio:
     // assim os campos vazios, o `page=1` e um `limit` escrito à mão colapsam
     // todos no mesmo endereço.
@@ -283,7 +283,7 @@ export default async function AgendaPage({ params, searchParams }: Props) {
       {afirmaAListaInteira ? (
         <ListagemStructuredData
           nome="Agenda"
-          descricao={`A programação dos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}.`}
+          descricao={`A programação ${osConcelhosDaRegiao(regiao, 'de')} ${regiao.doNome}.`}
           url={`${origem}${PATH}`}
           origem={origem}
           total={result.total}

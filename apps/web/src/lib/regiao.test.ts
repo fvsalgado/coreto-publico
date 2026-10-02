@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   REGIAO_DE_RECURSO,
   comInicialMaiuscula,
+  concelhosUmPalco,
   descricaoDoSitio,
   descricaoInstitucional,
+  osConcelhos,
   regiaoDaLinha,
   tituloDoSitio,
   urlDoSitio,
@@ -139,6 +141,8 @@ describe('regiaoDaLinha', () => {
   it('monta o promotor completo quando os ficheiros existem', () => {
     expect(mt.promotor).toEqual({
       nome: 'Comunidade Intermunicipal do Médio Tejo',
+      // Sem a coluna lida (0169), vale «a» — o que a prosa sempre disse.
+      artigo: 'a',
       url: 'https://mediotejo.pt',
       declaracaoDeFinanciamento: LINHA_DO_MEDIO_TEJO.funding_statement,
       cofinanciamento: {
@@ -268,6 +272,75 @@ describe('uma segunda região não deixa fugir o Médio Tejo', () => {
     expect(descricaoInstitucional(travessia)).toBe(
       'A agenda cultural dos dois concelhos da Comunidade Intermunicipal da Travessia do Zêzere.',
     );
+  });
+});
+
+/**
+ * Uma região de um município sozinho, promovida pela câmara (C1-031).
+ *
+ * O produto licencia-se a uma câmara, e nenhuma das regiões que existiam a
+ * provava: o Médio Tejo tem onze concelhos e a Travessia dois, ambas
+ * promovidas por uma Comunidade. Com um concelho, a contagem por extenso
+ * entrava nas frases sem concordância — «Um concelhos, um palco», «os um
+ * concelhos» —, e o artigo do promotor estava escrito «da» à mão: «a agenda
+ * dos um concelhos da Município do Mirante».
+ */
+const LINHA_DO_MIRANTE: LinhaDeRegiao = {
+  ...LINHA_DA_TRAVESSIA,
+  id: 'mirante',
+  name: 'Mirante',
+  article: 'o',
+  cim_name: 'Município do Mirante',
+  cim_article: 'o',
+  cim_url: 'https://mirante.example',
+  domain: 'coreto.mirante.example',
+  expected_municipality_count: 1,
+};
+
+describe('uma região de um município sozinho escreve-se no singular e no masculino', () => {
+  const mirante = regiaoDaLinha(LINHA_DO_MIRANTE);
+
+  it('o promotor leva o artigo que declarou', () => {
+    expect(mirante.promotor?.artigo).toBe('o');
+    // Um valor que este código não conhece vale «a», o de «Comunidade».
+    expect(regiaoDaLinha({ ...LINHA_DO_MIRANTE, cim_article: 'lo' }).promotor?.artigo).toBe('a');
+  });
+
+  it('as frases geradas concordam com um concelho e com «o Município»', () => {
+    expect(descricaoDoSitio(mirante)).toBe(
+      'Tudo o que há para fazer no concelho do Mirante: música, teatro, exposições, festas, cinema e visitas. Da cidade-sede à aldeia.',
+    );
+    expect(descricaoInstitucional(mirante)).toBe(
+      'A agenda cultural do concelho do Município do Mirante.',
+    );
+    expect(concelhosUmPalco(mirante)).toBe('Um concelho, um palco');
+    for (const frase of [descricaoDoSitio(mirante), descricaoInstitucional(mirante)]) {
+      expect(frase).not.toMatch(/\bum concelhos\b|\bos um\b|da Município/i);
+    }
+  });
+});
+
+describe('osConcelhos', () => {
+  it('concorda o artigo e o número, com e sem preposição', () => {
+    expect(osConcelhos(11)).toBe('os onze concelhos');
+    expect(osConcelhos(11, { preposicao: 'de' })).toBe('dos onze concelhos');
+    expect(osConcelhos(2, { preposicao: 'em' })).toBe('nos dois concelhos');
+    expect(osConcelhos(1)).toBe('o concelho');
+    expect(osConcelhos(1, { preposicao: 'de' })).toBe('do concelho');
+    expect(osConcelhos(1, { preposicao: 'em' })).toBe('no concelho');
+  });
+
+  it('sem contagem não inventa número, e em algarismos também concorda', () => {
+    expect(osConcelhos(0)).toBe('os concelhos');
+    expect(osConcelhos(0, { preposicao: 'de' })).toBe('dos concelhos');
+    expect(osConcelhos(11, { preposicao: 'em', extenso: false })).toBe('nos 11 concelhos');
+    expect(osConcelhos(1, { preposicao: 'em', extenso: false })).toBe('no concelho');
+  });
+
+  it('a sobrancelha da entrada conta por extenso, e cala-se sem contagem', () => {
+    expect(concelhosUmPalco({ concelhosDeclarados: 11 })).toBe('Onze concelhos, um palco');
+    expect(concelhosUmPalco({ concelhosDeclarados: 1 })).toBe('Um concelho, um palco');
+    expect(concelhosUmPalco({ concelhosDeclarados: 0 })).toBeNull();
   });
 });
 

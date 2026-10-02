@@ -7,7 +7,7 @@ import { EmptyState } from '@/src/components/EmptyState';
 import { PageHeader } from '@/src/components/PageHeader';
 import { edicoesDoCiclo } from '@/src/lib/ciclo';
 import { SITE_URL } from '@/src/lib/env';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { deNome, urlDoSitio } from '@/src/lib/regiao';
 import { formatCategory, formatEventDates, formatSeriesKind } from '@/src/lib/format';
 import {
   countEventsBySeries,
@@ -101,54 +101,59 @@ function CartaoDoCiclo({
   const past = event.status !== 'published';
   const href = past ? event.source_url : `/evento/${event.slug}`;
 
+  // De pé quando a letra cresce, pela regra do `EventCard` (C3-011): o cartão
+  // é um contentor, e abaixo de 17 rem a capa sobe para cima do texto.
   return (
-    <article className="ct-lift relative flex gap-4 rounded-lg border border-border bg-surface p-3 sm:p-4">
-      <Capa event={event} today={today} className="w-21 shrink-0 self-start sm:w-27" />
+    <article className="ct-lift relative @container rounded-lg border border-border bg-surface p-3 sm:p-4">
+      <div className="flex gap-4 @max-[17rem]:flex-col @max-[17rem]:gap-3">
+        <Capa event={event} today={today} className="w-21 shrink-0 self-start sm:w-27" />
 
-      <div className="min-w-0 flex-1 py-0.5">
-        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted">
-          <time dateTime={event.date_start ?? undefined} className="font-medium text-highlight">
-            {formatEventDates(event.date_start, event.date_end, today)}
-          </time>
-          {category ? (
-            <span className="flex items-center gap-1.5">
-              <span aria-hidden="true" className={`ct-octagon size-2 ${category.dot}`} />
-              {category.label}
-            </span>
-          ) : null}
-        </p>
+        <div className="min-w-0 flex-1 py-0.5">
+          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted">
+            <time dateTime={event.date_start ?? undefined} className="font-medium text-highlight">
+              {formatEventDates(event.date_start, event.date_end, today)}
+            </time>
+            {category ? (
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden="true" className={`ct-octagon size-2 ${category.dot}`} />
+                {category.label}
+              </span>
+            ) : null}
+          </p>
 
-        <h3 className="font-display mt-1 text-lg leading-snug font-semibold sm:text-xl">
-          {href ? (
-            <Link
-              href={href}
-              className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
-              {...(past ? { target: '_blank', rel: 'noreferrer' } : {})}
-            >
-              {event.title}
-              {/* A seta à vista, e não só a frase para quem ouve (C2-023): este
+          <h3 className="font-display mt-1 text-lg leading-snug font-semibold [overflow-wrap:anywhere] sm:text-xl">
+            {href ? (
+              <Link
+                href={href}
+                prefetch={false}
+                className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
+                {...(past ? { target: '_blank', rel: 'noreferrer' } : {})}
+              >
+                {event.title}
+                {/* A seta à vista, e não só a frase para quem ouve (C2-023): este
                   título sai do Coreto para a página de quem organizou, noutro
                   separador, e quem vê tem o mesmo direito de saber antes de
                   carregar. */}
-              {past ? (
-                <>
-                  <span aria-hidden="true">&nbsp;↗</span>
-                  <span className="sr-only"> (abre a página oficial noutro separador)</span>
-                </>
-              ) : null}
-            </Link>
-          ) : (
-            event.title
-          )}
-        </h3>
+                {past ? (
+                  <>
+                    <span aria-hidden="true">&nbsp;↗</span>
+                    <span className="sr-only"> (abre a página oficial noutro separador)</span>
+                  </>
+                ) : null}
+              </Link>
+            ) : (
+              event.title
+            )}
+          </h3>
 
-        {where || municipalityName ? (
-          <p className="mt-1 text-sm text-muted">
-            {[where, municipalityName !== where ? municipalityName : null]
-              .filter((part): part is string => Boolean(part))
-              .join(' · ')}
-          </p>
-        ) : null}
+          {where || municipalityName ? (
+            <p className="mt-1 text-sm text-muted">
+              {[where, municipalityName !== where ? municipalityName : null]
+                .filter((part): part is string => Boolean(part))
+                .join(' · ')}
+            </p>
+          ) : null}
+        </div>
       </div>
     </article>
   );
@@ -201,7 +206,7 @@ export default async function CicloPage({ params }: Props) {
   } else if (cycle.is_regional) {
     partes.push(
       regiao.promotor
-        ? `Programação em rede da ${regiao.promotor.nome}`
+        ? `Programação em rede ${deNome(regiao.promotor.nome, regiao.promotor.artigo)}`
         : 'Programação em rede da região',
     );
   }

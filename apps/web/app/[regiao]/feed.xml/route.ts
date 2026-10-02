@@ -4,7 +4,7 @@ import { FEED_COPYRIGHT } from '@/src/lib/produto';
 import { rssResponse } from '@/src/lib/feeds/http';
 import { loadFeed } from '@/src/lib/feeds/load';
 import { buildRss } from '@/src/lib/feeds/rss';
-import { tituloDoSitio } from '@/src/lib/regiao';
+import { osConcelhosDaRegiao, tituloDoSitio } from '@/src/lib/regiao';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 
 /**
@@ -34,7 +34,7 @@ export async function GET(
     {
       title: tituloDoSitio(regiao),
       link: `${context.siteUrl}/agenda`,
-      description: `Concertos, teatro, exposições, festas, cinema e visitas nos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}.`,
+      description: `Concertos, teatro, exposições, festas, cinema e visitas ${osConcelhosDaRegiao(regiao, 'em')} ${regiao.doNome}.`,
       selfUrl: `${context.siteUrl}/feed.xml`,
       ttlMinutes: 60,
       copyright: FEED_COPYRIGHT,

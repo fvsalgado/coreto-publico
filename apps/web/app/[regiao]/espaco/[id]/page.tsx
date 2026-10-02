@@ -30,7 +30,7 @@ import {
 import { exigirRegiao, planeadorDaRegiao } from '@/src/lib/queries/regioes';
 import { migalhasDoEspaco } from '@/src/lib/migalhas';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
-import { urlDoSitio } from '@/src/lib/regiao';
+import { emNome, urlDoSitio } from '@/src/lib/regiao';
 import { sinaisDeAcessibilidade } from '@/src/lib/sinais';
 import { telefones } from '@/src/lib/telefone';
 
@@ -60,7 +60,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const municipalities = await listMunicipalities(regiao.id);
   const municipality = municipalities.find((item) => item.id === venue.municipality_id);
-  const where = municipality ? ` em ${municipality.name}` : '';
+  const where = municipality ? ` ${emNome(municipality.name, municipality.article)}` : '';
   const description =
     venue.description ??
     `${formatVenueKind(venue.kind)}${where}. Programação, morada, contactos e acessibilidade.`;

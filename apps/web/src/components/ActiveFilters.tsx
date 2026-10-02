@@ -29,7 +29,9 @@ export function ActiveFilters({ filters, clearHref }: Props) {
   if (filters.length === 0) return null;
 
   return (
-    <div className="mt-4">
+    // Fora do papel: o recorte já vai escrito no cabeçalho («A mostrar: …»),
+    // e as fichas são para tirar filtros, que numa folha não se tiram.
+    <div className="ct-sem-impressao mt-4">
       {/* «Ativos» e não «a aplicar» (C2-020): estes já estão a valer, e «a
           aplicar» lia-se como uma lista de filtros à espera de um botão. */}
       <h2 className="sr-only">Filtros ativos</h2>
@@ -38,6 +40,7 @@ export function ActiveFilters({ filters, clearHref }: Props) {
           <li key={filter.label}>
             <Link
               href={filter.href}
+              prefetch={false}
               className="group inline-flex min-h-11 items-center gap-1.5 rounded-full border border-accent/40 bg-accent-soft pr-2 pl-3 text-sm text-accent underline-offset-4 hover:underline"
             >
               {filter.label}
@@ -55,6 +58,7 @@ export function ActiveFilters({ filters, clearHref }: Props) {
           <li>
             <Link
               href={clearHref}
+              prefetch={false}
               className="inline-flex min-h-11 items-center px-1 text-sm underline underline-offset-4"
             >
               Limpar tudo

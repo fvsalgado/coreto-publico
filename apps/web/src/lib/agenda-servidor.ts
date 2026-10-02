@@ -11,7 +11,7 @@ import {
 import { alargamentos, buildHref, descreverDatas, type NomesDosFiltros } from '@/src/lib/agenda';
 import { avaliarRecolha, leituraDoConcelho } from '@/src/lib/estado';
 import { formatLongDate, formatWeekdayDate } from '@/src/lib/format';
-import type { Regiao } from '@/src/lib/regiao';
+import { emNome, osConcelhosDaRegiao, type Regiao } from '@/src/lib/regiao';
 
 export interface DescricaoDoFiltro {
   /** Curto, para o título do separador e o cabeçalho da página. */
@@ -47,7 +47,7 @@ export async function descreverFiltro(
 
   const partes: string[] = [];
   if (category) partes.push(category.name);
-  if (municipality) partes.push(`em ${municipality.name}`);
+  if (municipality) partes.push(emNome(municipality.name, municipality.article));
   if (filter.familia) partes.push('para crianças e famílias');
   if (filter.free) partes.push('com entrada livre');
   if (filter.accessible) partes.push('com acesso a cadeiras de rodas');
@@ -62,7 +62,7 @@ export async function descreverFiltro(
   const onde =
     municipality || regiao.concelhosDeclarados === 0
       ? ''
-      : ` nos ${regiao.concelhosPorExtenso} concelhos ${regiao.doNome}`;
+      : ` ${osConcelhosDaRegiao(regiao, 'em')} ${regiao.doNome}`;
   return { rotulo, frase: rotulo ? `Eventos ${rotulo}${onde}.` : '' };
 }
 

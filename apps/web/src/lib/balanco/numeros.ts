@@ -1,3 +1,4 @@
+import { numeroPorExtenso } from '@coreto/core';
 import type { RelatorioMensal } from '../admin/relatorio';
 
 /**
@@ -46,15 +47,23 @@ export function numerosDoBalanco(r: RelatorioMensal): NumeroDoBalanco[] {
       'Mede o que a agenda conseguiu recolher. Um concelho a zero pode estar a programar e a publicá-lo num sítio que não responde.',
   };
 
+  // A soma das agendas é a desta região: estava escrito «onze», que é o
+  // Médio Tejo, e lia-se numa região de dois concelhos (C4-028).
+  const quantos = p.cohesion.municipalities;
+  // «dos onze concelhos», e não «de onze agendas»: o número por extenso é o
+  // masculino, e as agendas pediam «duas».
+  const soma =
+    quantos >= 2
+      ? `a soma das agendas dos ${numeroPorExtenso(quantos)} concelhos`
+      : 'a agenda do concelho sozinha';
   const rede: NumeroDoBalanco = {
     chave: 'rede',
     rotulo: 'Programação em rede',
     valor:
       p.network.events === 0
         ? 'nenhuma neste mês'
-        : `${contar(p.network.events)} em ${contar(p.network.municipalities_touched)} concelhos`,
-    frase:
-      'Eventos de séries que atravessam concelhos, tornados legíveis no mesmo sítio que o resto. É o que uma agenda regional faz e a soma de onze agendas municipais não faz.',
+        : `${contar(p.network.events)} em ${contar(p.network.municipalities_touched)} ${p.network.municipalities_touched === 1 ? 'concelho' : 'concelhos'}`,
+    frase: `Eventos de séries que atravessam concelhos, tornados legíveis no mesmo sítio que o resto. É o que uma agenda regional faz e ${soma} não faz.`,
   };
 
   // A soma dos cliques que devolvem alguém ao sítio de quem organiza. É a
@@ -90,14 +99,16 @@ export function numerosDoBalanco(r: RelatorioMensal): NumeroDoBalanco[] {
       'Aberturas de uma ficha de evento no mês, somadas por concelho. Sem cookies e sem identificar ninguém — é uma contagem, não um público.',
   };
 
+  // «Por programa» e não «formulário»: o canal `form` é o envio de outro
+  // sistema para a API, e no sítio não há formulário nenhum (C4-028).
   const submissoes: NumeroDoBalanco = {
     chave: 'entrada',
-    rotulo: 'Eventos entrados por email ou formulário e aprovados',
+    rotulo: 'Eventos enviados por email ou por programa, e aprovados',
     valor: contar(r.submissions.received_by_channel.email + r.submissions.received_by_channel.form),
     frase:
       'Eventos que chegaram porque alguém os mandou, e não porque um leitor os foi buscar. É a parte da agenda que nenhuma recolha automática traria.',
     ressalva:
-      'Não é «eventos que só existem aqui». O Coreto sabe de onde trouxe cada evento; não sabe que ele não estava em mais lado nenhum, e dizê-lo seria fabricar o argumento de venda.',
+      'Não dizemos «eventos que só existem aqui»: sabemos de onde veio cada evento, não sabemos se estava publicado noutro lado.',
   };
 
   const porPublicar: NumeroDoBalanco = {

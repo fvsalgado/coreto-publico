@@ -227,6 +227,14 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           alguém guardou o quê. Apaga-se em «Esquecer tudo», na página dos guardados, ou limpando os
           dados do sítio no navegador.
         </p>
+        <p>
+          Quem guardar um evento, ou instalar a agenda como aplicação, fica ainda com uma cópia da
+          página «Está sem rede» e dos ficheiros de que ela precisa, guardada pelo navegador para
+          abrir quando não há ligação — é ela que mostra os guardados à porta de uma sala sem rede.
+          É igual para toda a gente e não leva dados de ninguém; nenhuma página da agenda fica
+          guardada, porque uma agenda de outro dia passaria por atual. Sai com «Esquecer tudo», ou
+          limpando os dados do sítio.
+        </p>
 
         <h2 className="pt-2 font-semibold">Que dados são recolhidos</h2>
         <p>

@@ -79,7 +79,7 @@ export function FilterBar({
   const outros = eixos.filter((eixo) => eixo.chave !== 'accessible');
 
   return (
-    <details className="ct-recolhivel ct-recolhivel-sempre rounded border border-border bg-surface">
+    <details className="ct-recolhivel ct-recolhivel-sempre ct-sem-impressao rounded border border-border bg-surface">
       {/* A pesquisa saiu daqui para a caixa à vista (`CaixaDePesquisa`), e o
           resumo diz só o que fica. Sem `aria-label`: o `<details>` já se
           anuncia aberto ou fechado, e um nome que não contém o texto à vista
@@ -124,7 +124,11 @@ export function FilterBar({
           Cada filtro é uma ligação — dá para guardar nos favoritos e para partilhar tal como está.
         </p>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* `grid-cols-1` e não a coluna implícita: essa cresce até ao campo de
+            data mais largo, e com a letra a 200 % o formulário saía 24 px da
+            janela (C3-011). O `fieldset` tem, por omissão do navegador, a
+            largura mínima do conteúdo — o `min-w-0` tira-lha. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label htmlFor="filtro-de" className={LABEL_CLASS}>
               De
@@ -189,7 +193,7 @@ export function FilterBar({
             </select>
           </div>
 
-          <fieldset className="sm:col-span-2 lg:col-span-2">
+          <fieldset className="min-w-0 sm:col-span-2 lg:col-span-2">
             <legend className={LABEL_CLASS}>Mostrar apenas</legend>
             <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
               {/* O rótulo leva a altura toda: a caixa desenhada tem 20 px, mas

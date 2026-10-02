@@ -3,6 +3,7 @@ import {
   countEventsByMunicipality,
   listMunicipalities,
   listPublicSources,
+  listVenues,
 } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { reportarErro } from '@/src/lib/registo';
@@ -73,6 +74,16 @@ export interface EstadoEmJson {
     total: number;
     /** Os concelhos sem nada marcado, pelo id, por ordem alfabética. */
     concelhosAZero: string[];
+    /**
+     * Quantos concelhos a região tem, e quantos espaços tem no catálogo.
+     *
+     * Entraram para a página do produto (C4-001): a faixa «a funcionar» mostra
+     * os números da demonstração lidos daqui, e não escritos à mão — um número
+     * cravado numa página de venda é o primeiro a ficar velho. São campos
+     * acrescentados, e nenhum vigilante que leia os outros dá por eles.
+     */
+    concelhos: number;
+    espacos: number;
   };
   /**
    * Quando isto foi calculado.
@@ -115,10 +126,11 @@ export async function GET(
    * e é o que a sonda tem de ver.
    */
   try {
-    const [fontes, concelhos, contagens] = await Promise.all([
+    const [fontes, concelhos, contagens, espacos] = await Promise.all([
       listPublicSources(regiao.id),
       listMunicipalities(regiao.id),
       countEventsByMunicipality(regiao.id),
+      listVenues(regiao.id),
     ]);
 
     const recolha = avaliarRecolha(fontes);
@@ -167,6 +179,8 @@ export async function GET(
           .filter((concelho) => (contagens[concelho.id] ?? 0) === 0)
           .map((concelho) => concelho.id)
           .sort(),
+        concelhos: concelhos.length,
+        espacos: espacos.length,
       },
       calculadoEm: new Date().toISOString(),
     };

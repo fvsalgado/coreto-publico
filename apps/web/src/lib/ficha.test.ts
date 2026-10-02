@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  diaUnicoPorVir,
   estadoDaFicha,
   localSoATerra,
   novaDataDoAdiado,
@@ -247,5 +248,49 @@ describe('pedidoDeCorrecao', () => {
     expect(parametros.get('subject')).toBe('Correção: Almoço convívio (domingo, 4 out)');
     expect(parametros.get('body')).toContain('https://agenda.exemplo.pt/evento/almoco');
     expect(parametros.get('body')).toContain('O que está errado:');
+  });
+});
+
+describe('diaUnicoPorVir', () => {
+  const base: EventoDaFicha = {
+    status: 'published',
+    date_start: '2026-10-10',
+    date_end: null,
+    is_ongoing: false,
+    sessions: [],
+  };
+  const sessao = (session_date: string, is_cancelled = false): SessaoDaFicha => ({
+    session_date,
+    start_time: '21:30',
+    end_time: null,
+    is_cancelled,
+  });
+
+  it('um evento de um dia, depois de hoje, dá esse dia', () => {
+    expect(diaUnicoPorVir(base, HOJE)).toBe('2026-10-10');
+    expect(diaUnicoPorVir({ ...base, sessions: [sessao('2026-10-10')] }, HOJE)).toBe('2026-10-10');
+  });
+
+  it('hoje fica de fora: «agora» serve melhor do que a meia-noite', () => {
+    expect(diaUnicoPorVir({ ...base, date_start: HOJE }, HOJE)).toBeNull();
+  });
+
+  it('vários dias, uma exposição ou um evento que passou não têm «o dia»', () => {
+    expect(diaUnicoPorVir({ ...base, date_end: '2026-10-12' }, HOJE)).toBeNull();
+    expect(
+      diaUnicoPorVir({ ...base, sessions: [sessao('2026-10-10'), sessao('2026-10-17')] }, HOJE),
+    ).toBeNull();
+    expect(diaUnicoPorVir({ ...base, is_ongoing: true }, HOJE)).toBeNull();
+    expect(diaUnicoPorVir({ ...base, date_start: '2026-09-20' }, HOJE)).toBeNull();
+    expect(diaUnicoPorVir({ ...base, status: 'cancelled' }, HOJE)).toBeNull();
+  });
+
+  it('a sessão cancelada não conta como dia', () => {
+    expect(
+      diaUnicoPorVir(
+        { ...base, sessions: [sessao('2026-10-03', true), sessao('2026-10-10')] },
+        HOJE,
+      ),
+    ).toBe('2026-10-10');
   });
 });

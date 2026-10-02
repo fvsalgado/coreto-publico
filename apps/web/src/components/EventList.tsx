@@ -55,7 +55,10 @@ function Marca({ perto }: { perto: boolean }) {
   );
 }
 
-const Traco = () => <span aria-hidden="true" className="ct-rule min-w-8 flex-1" />;
+// `min-w-0`: o traço é enfeite, e cede o lugar todo ao dia quando a letra
+// cresce — com dois rem de mínimo, «Sexta-feira, 2 de outubro» a 200 % numa
+// janela de 320 empurrava a página 9 px para o lado.
+const Traco = () => <span aria-hidden="true" className="ct-rule min-w-0 flex-1" />;
 
 /**
  * Lista de eventos agrupada por dia, com o que está em cartaz numa prateleira.
@@ -199,7 +202,12 @@ function EmCartaz({
             return (
               <li key={evento.id} className="w-38 shrink-0 snap-start">
                 <article className="ct-lift relative flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-2">
-                  <Capa event={evento} today={today} className="w-full" semTitulo />
+                  <Capa
+                    event={evento}
+                    today={today}
+                    className="ct-sem-impressao w-full"
+                    semTitulo
+                  />
                   <p className="text-sm font-medium text-highlight">
                     <time dateTime={evento.date_end ?? evento.date_start ?? undefined}>
                       {formatEventDates(evento.date_start, evento.date_end, today)}
@@ -208,6 +216,7 @@ function EmCartaz({
                   <Titulo className="font-display line-clamp-3 text-base leading-snug font-semibold">
                     <Link
                       href={`/evento/${evento.slug}`}
+                      prefetch={false}
                       className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
                     >
                       {evento.title}

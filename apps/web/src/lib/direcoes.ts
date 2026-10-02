@@ -126,3 +126,61 @@ export function verNoGoogleMaps(sitio: SitioParaMapa): string | null {
 
   return null;
 }
+
+/** O que a ficha sabe para abrir o planeador de transportes com o destino. */
+export interface ViagemDeTransportes {
+  /** O endereço do planeador que a região declarou (0164). */
+  planeador: string;
+  latitude: number | null;
+  longitude: number | null;
+  /** O nome a mostrar no destino — o do espaço, ou o do sítio que a fonte deu. */
+  nome: string | null;
+  /** `AAAA-MM-DD`, só quando o evento é num dia só e ainda está por vir. */
+  dia?: string | null;
+}
+
+/**
+ * «Ir de transportes públicos», com o destino já escrito.
+ *
+ * O planeador da casa (a Paragem.pt) lê a viagem do endereço — a forma está em
+ * `docs/ENDERECOS.md` do repositório dela: `para=<latitude>,<longitude>` é um
+ * ponto qualquer, que ele trata como trata uma rua (a pé até à paragem mais
+ * perto), e `nome` é o que mostra no campo do destino. Antes disso aceitava só
+ * o nome exato de uma paragem, e a ficha abria o planeador vazio e pedia a quem
+ * carregava que escrevesse lá o destino — um espaço cultural, que o planeador
+ * não conhecia pelo nome.
+ *
+ * **Só com coordenadas.** Sem elas não há destino que se escreva: um nome de
+ * espaço como `para` aparecia no planeador como «ponta que não se reconhece», e
+ * é pior do que um campo vazio. Nesse caso a ligação abre o planeador como
+ * antes, e `comDestino` diz à ficha que tem de explicar o resto.
+ *
+ * **O dia vai quando ajuda.** Sem `dia` o planeador parte «agora», que é o que
+ * serve a quem lê a ficha no dia do evento; para um concerto de sábado lido na
+ * quarta, `dia` abre as ligações desse sábado. A hora fica de fora: o planeador
+ * pergunta a hora de partida, e a ficha só sabe a de chegada.
+ *
+ * O nome perde o parêntesis de catálogo, como na procura do Google — o campo do
+ * planeador corta aos 80 carateres, e «Convento de Cristo (Castelo Templário e
+ * Convento de Cristo)» é o nome repetido a ocupar o lugar.
+ */
+export function irDeTransportes(viagem: ViagemDeTransportes): {
+  href: string;
+  comDestino: boolean;
+} {
+  const { planeador, latitude, longitude } = viagem;
+  if (latitude === null || longitude === null) return { href: planeador, comDestino: false };
+  let endereco: URL;
+  try {
+    endereco = new URL(planeador);
+  } catch {
+    return { href: planeador, comDestino: false };
+  }
+  endereco.searchParams.set('para', `${coordenada(latitude)},${coordenada(longitude)}`);
+  const nome = viagem.nome ? nomeParaProcura(viagem.nome) : '';
+  if (nome) endereco.searchParams.set('nome', nome);
+  if (viagem.dia && /^\d{4}-\d{2}-\d{2}$/.test(viagem.dia)) {
+    endereco.searchParams.set('dia', viagem.dia);
+  }
+  return { href: endereco.toString(), comDestino: true };
+}

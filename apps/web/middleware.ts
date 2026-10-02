@@ -89,6 +89,9 @@ const CAMINHOS_DA_MONTRA = new Map<string, string>([
   // O destino do endereço que a recolha traz em cada pedido (`USER_AGENT`,
   // em `@coreto/core`): quem nos vê nos registos do servidor dele chega aqui.
   ['/fontes', `${PAGINA_DO_PRODUTO}/fontes`],
+  // Com quem se fala, com o endereço escrito (C4-002): um `mailto:` sozinho,
+  // numa câmara, muitas vezes não abre nada.
+  ['/contacto', `${PAGINA_DO_PRODUTO}/contacto`],
   ['/.well-known/security.txt', `${PAGINA_DO_PRODUTO}/seguranca-txt`],
   ['/sitemap.xml', `${PAGINA_DO_PRODUTO}/sitemap-xml`],
 ]);

@@ -46,6 +46,71 @@ export const PRODUTO = {
 } as const;
 
 /**
+ * O contacto que a página do produto mostra (C4-002, C4-026).
+ *
+ * A omissão é o `PRODUTO.email`, que já é público e recebe; quem instalar isto
+ * noutro sítio põe o seu em `NEXT_PUBLIC_CORETO_CONTACTO`, e o domínio não se
+ * crava no código. Uma variável que não seja um endereço — colada com
+ * `mailto:` à frente, com aspas, com o nome da pessoa — não chega à página:
+ * vale a omissão, em vez de um contacto partido em todas as linhas. É a mesma
+ * regra do Paragem.pt, que é da mesma casa.
+ */
+const ENDERECO_DE_CORREIO = /^[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[^\s@<>"'(),;:]+$/;
+
+export function contactoDoProduto(valor = process.env.NEXT_PUBLIC_CORETO_CONTACTO): string {
+  const limpo = (valor ?? '').trim();
+  return ENDERECO_DE_CORREIO.test(limpo) ? limpo : PRODUTO.email;
+}
+
+export const CONTACTO = contactoDoProduto();
+
+/**
+ * Um `mailto:` com o assunto já escrito — é o que separa um pedido de
+ * proposta de um email perdido entre os outros.
+ *
+ * O assunto vai por `encodeURIComponent`, e não por `URLSearchParams`: este
+ * escreve os espaços como `+`, e há clientes de correio que os deixam ficar.
+ */
+export function correioPara(assunto: string, endereco = CONTACTO): string {
+  return `mailto:${endereco}?subject=${encodeURIComponent(assunto)}`;
+}
+
+/**
+ * Onde está a demonstração (C4-003).
+ *
+ * `NEXT_PUBLIC_CORETO_DEMONSTRACAO`, quando a instalação a declara; sem ela, o
+ * subdomínio `demo.` da origem do produto que quem chama passa — o
+ * `ORIGEM_DA_MONTRA`, e daí o `demo.coreto.org` desta instalação, sem nenhum
+ * domínio escrito aqui. Uma variável que não seja um endereço `http(s)`
+ * inteiro não conta.
+ *
+ * **Não é o `demo.` do `SITE_URL`**, que seria a escolha instintiva: em
+ * produção o `NEXT_PUBLIC_SITE_URL` é o endereço da região principal do
+ * deployment, e a página do produto passava a mandar para o `demo.` do
+ * domínio de um cliente — que não existe, e que nomeava o cliente numa
+ * página que não nomeia nenhum. É a armadilha que o `montra.ts` já descreve
+ * para o sitemap.
+ */
+export function origemDaDemonstracao(
+  montra: string,
+  valor = process.env.NEXT_PUBLIC_CORETO_DEMONSTRACAO,
+): string {
+  try {
+    const declarada = new URL((valor ?? '').trim());
+    if (declarada.protocol === 'https:' || declarada.protocol === 'http:') {
+      return declarada.origin;
+    }
+  } catch {
+    // Sem variável, ou uma que não é endereço: vale o subdomínio do produto.
+  }
+  const base = new URL(montra);
+  return `${base.protocol}//demo.${base.host}`;
+}
+
+/** O produto irmão, da mesma casa, que se vende às mesmas entidades (C4-026). */
+export const PARAGEM = 'https://www.paragem.pt';
+
+/**
  * Quem desenvolve o Coreto e é titular dos direitos.
  *
  * A distinção está escrita nas páginas e é para levar a sério: cada região é

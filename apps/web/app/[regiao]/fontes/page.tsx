@@ -15,6 +15,7 @@ import {
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { exigirSeccao, seccaoLigada } from '@/src/lib/queries/seccoes';
 import type { PublicSource } from '@/src/lib/queries/types';
+import { comInicialMaiuscula, osConcelhos } from '@/src/lib/regiao';
 
 export const revalidate = 3600;
 
@@ -149,7 +150,9 @@ function SourceCard({
   estado: string | null;
 }) {
   return (
-    <li className="flex h-full flex-col rounded-lg border border-border bg-surface px-4 py-3.5">
+    // `overflow-wrap: anywhere` no cartão inteiro (C3-011): com a letra a 200 %,
+    // «Entroncamento» no nome da fonte é mais largo do que o cartão.
+    <li className="flex h-full flex-col rounded-lg border border-border bg-surface px-4 py-3.5 [overflow-wrap:anywhere]">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="font-display text-lg font-semibold">{source.name}</p>
         {where ? <p className="ct-eyebrow">{where}</p> : null}
@@ -260,15 +263,36 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
         lead="Esta agenda não organiza nada: recolhe. Aqui está de onde, com que regras, o que ainda fica de fora — e como levar estes dados daqui para outro sítio."
       />
 
-      <p className="max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
-        <strong>
-          {ligadas.length} fontes ligadas, {municipalities.length} concelhos, uma recolha por dia.
-        </strong>{' '}
-        Cada evento <em>recolhido</em> guarda o endereço de onde veio e leva-o na ficha, no botão
-        «Página oficial» — a agenda não se põe à frente de quem faz o trabalho. O que chega por
-        email não tem página de origem para apontar: tem quem o enviou, e passa por uma pessoa antes
-        de aparecer.
-      </p>
+      {/*
+        Numa demonstração, diz-se o que é verdade numa demonstração (C4-007):
+        «0 fontes ligadas» lia-se como uma agenda que não lê nada, quando é o
+        desenho dela — os eventos são escritos à mão, e as fontes desta página
+        são exemplos desligados, cujos endereços não existem. É a mesma frase
+        do `/estado` da demonstração, dita aqui do lado das fontes.
+      */}
+      {regiao.tipo === 'montra' ? (
+        <p className="max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
+          <strong>
+            Esta é uma demonstração: os eventos foram escritos à mão, e não há agendas para ler.
+          </strong>{' '}
+          As fontes desta página são exemplos, desligados — o endereço de cada uma não existe e
+          nunca é pedido. Numa região a funcionar, esta página diz que agendas lemos todos os dias,
+          de que câmaras, juntas e salas, com que regras, e o que ainda fica de fora.
+        </p>
+      ) : (
+        <p className="max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
+          <strong>
+            {/* No singular quando é um (C1-031): «1 concelhos» era a linha de uma câmara. */}
+            {`${ligadas.length} ${ligadas.length === 1 ? 'fonte ligada' : 'fontes ligadas'}, ` +
+              `${municipalities.length} ${municipalities.length === 1 ? 'concelho' : 'concelhos'}, ` +
+              'uma recolha por dia.'}
+          </strong>{' '}
+          Cada evento <em>recolhido</em> guarda o endereço de onde veio e leva-o na ficha, no botão
+          «Página oficial» — a agenda não se põe à frente de quem faz o trabalho. O que chega por
+          email não tem página de origem para apontar: tem quem o enviou, e passa por uma pessoa
+          antes de aparecer.
+        </p>
+      )}
 
       <section aria-labelledby="por-concelho" className="mt-10">
         <h2 id="por-concelho" className="ct-heading">
@@ -313,7 +337,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           );
         })}
 
-        {semFonte.length > 0 ? (
+        {regiao.tipo === 'montra' ? null : semFonte.length > 0 ? (
           <p className="mt-4 max-w-2xl rounded border border-dashed border-border px-4 py-3 text-sm">
             Sem fonte automática de momento:{' '}
             {semFonte.map((municipality) => municipality.name).join(', ')}. O que houver nestes
@@ -321,7 +345,9 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           </p>
         ) : (
           <p className="mt-4 max-w-2xl text-sm text-muted">
-            Os {municipalities.length} concelhos têm hoje, todos, pelo menos uma fonte ligada.
+            {municipalities.length === 1
+              ? 'O concelho tem hoje pelo menos uma fonte ligada.'
+              : `Os ${municipalities.length} concelhos têm hoje, todos, pelo menos uma fonte ligada.`}
           </p>
         )}
       </section>
@@ -332,15 +358,14 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
             Programação em rede
           </h2>
           <p className="mt-2 max-w-2xl text-muted">
-            Programação que já nasce intermunicipal e que, repartida por {municipalities.length}{' '}
-            agendas, nunca se lê como o que é.
+            {`Programação que já nasce intermunicipal e que, repartida por ${municipalities.length === 1 ? 'uma agenda' : `${municipalities.length} agendas`}, nunca se lê como o que é.`}
           </p>
           <ul className="mt-4 grid auto-rows-fr gap-3 sm:grid-cols-2">
             {regionais.map((source) => (
               <SourceCard
                 key={source.id}
                 source={source}
-                where={`Os ${municipalities.length} concelhos`}
+                where={comInicialMaiuscula(osConcelhos(municipalities.length, { extenso: false }))}
                 estado={estadoPorFonte.get(source.id) ?? null}
               />
             ))}

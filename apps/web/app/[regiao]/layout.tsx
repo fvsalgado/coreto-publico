@@ -6,15 +6,17 @@ import { BarraInferior } from '@/src/components/BarraInferior';
 import { LupaDoToldo } from '@/src/components/LupaDoToldo';
 import { MaisDoToldo } from '@/src/components/MaisDoToldo';
 import { NavegacaoDoToldo } from '@/src/components/NavegacaoDoToldo';
+import { RegistoSemRede } from '@/src/components/RegistoSemRede';
 import { RodapeDoSitio } from '@/src/components/RodapeDoSitio';
 import { SiteStructuredData } from '@/src/components/StructuredData';
 import { ThemeToggle } from '@/src/components/ThemeToggle';
+import { ORIGEM_DA_MONTRA } from '@/app/pagina-do-produto/montra';
 import { SITE_URL } from '@/src/lib/env';
-import { CORES_DO_TOLDO } from '@/src/lib/marca';
 import { DESTINOS, semAsDesligadas } from '@/src/lib/navegacao';
+import { COR_DO_TEMA, folhaDaPaleta, paletaDaMarca } from '@/src/lib/paleta';
 import { descricaoDoSitio, tituloDoSitio, urlDoSitio } from '@/src/lib/regiao';
 import { REGIAO_PRINCIPAL } from '@/src/lib/regiao-host';
-import { exigirRegiao, listRegioes } from '@/src/lib/queries/regioes';
+import { exigirRegiao, listRegioes, toldoDaRegiao } from '@/src/lib/queries/regioes';
 import { seccoesDesligadas } from '@/src/lib/queries/seccoes';
 
 /**
@@ -108,8 +110,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
      */
     appleWebApp: {
       capable: true,
-      title: 'Coreto',
+      // O nome por baixo do ícone, como o `short_name` do manifesto (C4-027).
+      title: regiao.nome,
       statusBarStyle: 'default',
+    },
+    // Os ícones na cor da região: o do separador e o do ecrã inicial do
+    // iPhone — os da aplicação instalada vêm no manifesto. Declarar `icons`
+    // aqui substitui os da raiz (`app/icon.svg`, `app/apple-icon.png`), e é o
+    // que se quer; o `favicon.ico` da raiz continua, para quem não lê SVG.
+    icons: {
+      icon: [{ url: '/icone.svg', type: 'image/svg+xml', sizes: 'any' }],
+      apple: [{ url: '/icone-da-aplicacao/180', sizes: '180x180', type: 'image/png' }],
     },
     other: {
       'apple-mobile-web-app-capable': 'yes',
@@ -127,14 +138,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 /*
  * A barra do sistema no telemóvel, que é pintada antes de haver CSS. A raiz
- * declara o turquesa para todos; aqui escolhe-se pelo tipo da região, para a
- * montra levar o vermelho dela. A forma é a mesma da raiz — duas entradas
- * com `media` e uma cor só — para uma região `cim` não mudar um byte.
+ * declara o turquesa para todos; aqui vai a cor que a região declarou (0167).
+ * A forma é a mesma da raiz — duas entradas com `media` e uma cor só — para
+ * uma região que tenha o turquesa não mudar um byte.
  */
 export async function generateViewport({ params }: Props): Promise<Viewport> {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
-  const toldo = CORES_DO_TOLDO[regiao.tipo];
+  const toldo = await toldoDaRegiao(regiao);
   return {
     themeColor: [
       { media: '(prefers-color-scheme: light)', color: toldo },
@@ -175,6 +186,35 @@ export default async function RegiaoLayout({ children, params }: Props) {
       </a>
 
       {/*
+        A faixa da demonstração (C4-008). Quem chegava por uma ligação
+        reencaminhada — um vereador a quem mandaram o endereço — não tinha
+        como saber que os eventos não existem: nenhuma frase o dizia. Uma
+        linha fina, por cima do cabeçalho, em todas as páginas, e a porta
+        para a página do produto, que é de onde quem chega aqui devia vir.
+      */}
+      {regiao.tipo === 'montra' ? (
+        /* Um marco com nome, e não um parágrafo solto antes do cabeçalho: o
+           texto de uma página vive dentro de marcos, e quem salta de marco em
+           marco ouve «Demonstração» antes de tudo o resto. */
+        <aside
+          aria-label="Demonstração"
+          className="ct-bloco-escuro ct-sem-impressao bg-accent-deep text-sm text-white"
+        >
+          <p className="ct-goteira mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-0.5 py-1">
+            <span>Demonstração do Coreto: território, promotor e eventos inventados.</span>
+            {/* A origem do produto, que é escrita e não deduzida: o `SITE_URL`
+                pode ser o domínio de uma região (ver `montra.ts`). */}
+            <a
+              href={ORIGEM_DA_MONTRA}
+              className="inline-flex min-h-11 items-center font-medium underline underline-offset-4"
+            >
+              Conhecer o produto
+            </a>
+          </p>
+        </aside>
+      ) : null}
+
+      {/*
         O toldo.
 
         O cabeçalho é o telhado do coreto, e um telhado de coreto não é
@@ -188,7 +228,7 @@ export default async function RegiaoLayout({ children, params }: Props) {
         antes do título, contra 56 nas agendas com que se compara, e cada
         pixel aqui em cima é um pixel a menos de programação no primeiro ecrã.
       */}
-      <header className="ct-bloco-marca ct-grain bg-brand text-on-brand">
+      <header className="ct-bloco-marca ct-grain ct-sem-impressao bg-brand text-on-brand">
         <div className="ct-goteira relative z-10 mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 py-2 sm:gap-x-5 sm:py-3.5">
           <Link
             href="/"
@@ -205,18 +245,27 @@ export default async function RegiaoLayout({ children, params }: Props) {
             CIM: a regra da casa é não fazer um único pedido a terceiros para
             desenhar uma página.
           */}
+          {/*
+            Sem `aria-label`, e o nome sai do que se vê (C3-003): o rótulo, o
+            logótipo pelo seu texto alternativo — ou o nome em texto —, e o
+            aviso do separador novo só para quem ouve. O nome que aqui esteve
+            escrito à parte não continha o texto à vista, porque «Promovido
+            por» e o nome eram duas caixas sem espaço entre elas — e quem usa
+            controlo por voz não conseguia chamar a ligação pelo que lia
+            (WCAG 2.5.3). O espaço entre as duas é texto e não desenho: numa
+            coluna flexível não ocupa lugar nenhum.
+          */}
           {promotor && (
             <a
               href={promotor.url}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Promovido por ${promotor.nome} (abre noutro separador)`}
-              className="flex min-h-11 flex-col items-start justify-center gap-0.5 rounded"
+              className="relative flex min-h-11 flex-col items-start justify-center gap-0.5 rounded"
             >
               {/* Onze píxeis, e não nove (C1-006, C3-018): era o primeiro
                   texto do cabeçalho de todas as páginas, e a nove não se lia
                   num telemóvel. Cabe na mesma linha de 44 px do logótipo. */}
-              <span className="text-[0.6875rem] leading-none font-medium">Promovido por</span>
+              <span className="text-[0.6875rem] leading-none font-medium">Promovido por</span>{' '}
               {promotor.logotipo ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
@@ -232,6 +281,7 @@ export default async function RegiaoLayout({ children, params }: Props) {
                 // não pode depender de um commit de ativos.
                 <span className="text-xs leading-none font-semibold">{promotor.nome}</span>
               )}
+              <span className="sr-only"> (abre noutro separador)</span>
             </a>
           )}
 
@@ -267,34 +317,65 @@ export default async function RegiaoLayout({ children, params }: Props) {
         </div>
       </header>
       {/* A saia do telhado, a assinatura da casa — na cor do telhado. */}
-      <div className="ct-lambrequim ct-lambrequim-marca" aria-hidden="true" />
+      <div className="ct-lambrequim ct-lambrequim-marca ct-sem-impressao" aria-hidden="true" />
 
-      <main id="conteudo" className="ct-goteira mx-auto w-full max-w-5xl flex-1 py-8 sm:py-10">
+      {/*
+        Em papel (C2-032, C4-022), o toldo, a barra de baixo e o rodapé não
+        saem — eram a primeira folha e meia de cada impressão —, e no lugar
+        deles fica uma linha só a dizer de onde é a folha. O `data-impressao`
+        é o âmbito das regras de impressão de `globals.css`: o painel também
+        tem um `#conteudo`, e os formulários dele não são para esconder.
+      */}
+      <p className="ct-goteira ct-linha-de-impressao mx-auto hidden w-full max-w-5xl pt-2 text-sm print:block">
+        {tituloDoSitio(regiao)} · {regiao.dominio}
+      </p>
+
+      <main
+        id="conteudo"
+        data-impressao="agenda"
+        className="ct-goteira mx-auto w-full max-w-5xl flex-1 py-8 sm:py-10"
+      >
         {children}
       </main>
 
       <BarraInferior desligadas={desligadas} email={regiao.email} regiao={regiao.id} />
+
+      {/* A página sem rede, para quem guardou um evento ou instalou a
+          aplicação — ver `RegistoSemRede` (C3-015). Não desenha nada. */}
+      <RegistoSemRede />
 
       <RodapeDoSitio desligadas={desligadas} regiao={regiao} />
     </>
   );
 
   /*
-   * A montra veste vermelho — é o sítio do produto, não a agenda de uma
-   * região, e não pode parecer a do Médio Tejo. É a montra inteira, entrada
-   * e demonstração: o toldo e o rodapé são deste layout, que não sabe em que
-   * página está, e um toldo turquesa por cima da página do produto era
-   * exatamente a confusão a evitar. O invólucro só diz o que isto é; a paleta
-   * está em `globals.css`, no âmbito `[data-paleta='montra']`. É `display:
-   * contents` para não criar caixa — o `<body>` da raiz continua a ser o
-   * contentor flex do `main`. Uma região `cim` fica como estava, byte a byte.
+   * Cada região veste a sua cor (C4-006, 0167).
+   *
+   * Vestiam todas o turquesa do Médio Tejo, que é o `@theme` de `globals.css`
+   * — e uma CIM criada no painel nascia com a cor de outra. A cor vem da base,
+   * a paleta sai dela (`lib/paleta.ts`, com o contraste verificado nos dois
+   * temas), e a folha declara os tokens no âmbito `[data-paleta='regiao']`.
+   * Os utilitários resolvem as cores por `var(--color-*)`, e uma variável
+   * herda-se do antepassado mais próximo que a declare: o invólucro chega.
+   *
+   * A folha vai com `href` e `precedence`, e o React leva-a para o `<head>`,
+   * como a do widget: um `<style>` solto no meio do corpo funciona e não é
+   * HTML válido. O invólucro é `display: contents` para não criar caixa — o
+   * `<body>` da raiz continua a ser o contentor flex do `main`.
+   *
+   * O turquesa da casa não leva invólucro nem folha: é o `@theme`, e uma região
+   * que o tenha fica como estava, byte a byte. A página do produto, que não é
+   * de região nenhuma, continua com o seu `[data-paleta='montra']`.
    */
-  if (regiao.tipo === 'montra') {
-    return (
-      <div data-paleta="montra" className="contents">
-        {sitio}
-      </div>
-    );
-  }
-  return sitio;
+  const toldo = await toldoDaRegiao(regiao);
+  const paleta = toldo === COR_DO_TEMA ? null : paletaDaMarca(toldo);
+  if (!paleta) return sitio;
+  return (
+    <div data-paleta="regiao" className="contents">
+      <style href={`coreto-paleta-${toldo.slice(1)}`} precedence="high">
+        {folhaDaPaleta(paleta)}
+      </style>
+      {sitio}
+    </div>
+  );
 }

@@ -267,7 +267,7 @@ export default async function SubmitPage({ params }: Props) {
         {/* No telemóvel, uma lista compacta — o ícone pequeno ao lado do texto
             —, e não três cartões de pé com octógonos de 44 píxeis: eram eles
             que empurravam o endereço para fora do primeiro ecrã (C1-020). */}
-        <ul className="mt-4 grid gap-3 sm:grid-cols-3">
+        <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {FORMAS.map(({ Icone, titulo, texto, nota }) => (
             <li
               key={titulo}
@@ -316,13 +316,18 @@ export default async function SubmitPage({ params }: Props) {
        */}
       <section
         aria-labelledby="nao-entra"
-        className="mt-10 max-w-2xl rounded-lg border border-highlight/40 bg-surface p-5"
+        className="@container mt-10 max-w-2xl rounded-lg border border-highlight/40 bg-surface p-5"
       >
-        <div className="flex items-start gap-3">
+        {/* O sinal sobe para cima do texto quando a letra cresce, pela regra
+            dos cartões de evento (C3-011): a 200 %, «Newsletters» não cabia ao
+            lado dele e a caixa saía do ecrã. E o endereço de email, que é uma
+            palavra só de vinte letras, parte onde for preciso — inteiro, a
+            200 %, era mais largo do que o ecrã. */}
+        <div className="flex items-start gap-3 @max-[17rem]:flex-col">
           <span className="ct-octagon grid size-11 shrink-0 place-items-center bg-highlight/12 text-highlight">
             <IcNao className="size-6" />
           </span>
-          <div>
+          <div className="max-w-full min-w-0 [overflow-wrap:anywhere]">
             <h2 id="nao-entra" className="ct-heading">
               Newsletters e mailing lists não entram
             </h2>
@@ -364,12 +369,14 @@ export default async function SubmitPage({ params }: Props) {
 
       <section
         aria-labelledby="na-duvida"
-        className="mt-8 flex max-w-2xl items-start gap-3 rounded-lg border border-border bg-surface p-5"
+        className="mt-8 flex max-w-2xl flex-wrap items-start gap-3 rounded-lg border border-border bg-surface p-5"
       >
+        {/* O texto desce para baixo do sinal quando a letra cresce — a regra dos
+            pontos das informações (`Pontos`, C3-011). */}
         <span className="ct-octagon grid size-11 shrink-0 place-items-center bg-accent-soft text-accent">
           <IcConversa className="size-6" />
         </span>
-        <div>
+        <div className="min-w-0 flex-1 basis-48">
           <h2 id="na-duvida" className="ct-heading">
             Na dúvida, escreva a perguntar
           </h2>

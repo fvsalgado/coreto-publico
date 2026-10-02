@@ -96,8 +96,11 @@ export function FilaDePilulas({
     const quantos = pilula.quantos ?? null;
     return (
       <li key={pilula.chave} className="flex-none snap-start">
+        {/* Sem pré-carregamento: uma fila são dezenas de ligações, e cada uma
+            era um pedido ao entrar no ecrã (C3-013, ver `EventCard`). */}
         <Link
           href={pilula.href}
+          prefetch={false}
           aria-current={pilula.activa ? 'page' : undefined}
           className={pilula.activa ? ACESA : destaque ? EM_DESTAQUE : APAGADA}
         >
@@ -185,7 +188,7 @@ export function FilaDePilulas({
     return (
       <nav
         aria-label={nome}
-        className={`relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
+        className={`ct-sem-impressao relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
       >
         {nomeAVista}
         <ul className="ct-fila-fichas min-w-0 flex-1">{ligacoes}</ul>
@@ -214,7 +217,7 @@ export function FilaDePilulas({
     // `relative` aqui, e não na navegação: ela vive dentro da fila que desliza,
     // e a lista do «Mais» tem de ter por bloco contentor alguém de fora dela.
     <div
-      className={`relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
+      className={`ct-sem-impressao relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
     >
       {nomeAVista}
       <div className="ct-fila-fichas min-w-0 flex-1">
@@ -233,7 +236,7 @@ export function FilaDePilulas({
           >
             {semEventos.map((item) => (
               <li key={item.chave} className="flex-none snap-start">
-                <Link href={item.href} className={SEM_NADA}>
+                <Link prefetch={false} href={item.href} className={SEM_NADA}>
                   {item.rotulo}
                   <span aria-hidden="true" className="text-xs tabular-nums">
                     0

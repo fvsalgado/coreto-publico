@@ -1,4 +1,5 @@
-import { verNoGoogleMaps } from '@/src/lib/direcoes';
+import { irDeTransportes, verNoGoogleMaps } from '@/src/lib/direcoes';
+
 interface Props {
   /** Texto livre do evento ou, na falta dele, do espaço. */
   text: string | null;
@@ -28,6 +29,11 @@ interface Props {
    * freguesia —, e não um sítio onde se chegue (`localSoATerra`).
    */
   soATerra?: boolean;
+  /**
+   * O dia do evento, quando é um só e está por vir (`diaUnicoPorVir`): o
+   * planeador abre as ligações desse dia em vez de partir «agora».
+   */
+  dia?: string | null;
 }
 
 /**
@@ -49,6 +55,7 @@ export function HowToArriveSection({
   longitude,
   planeador = null,
   soATerra = false,
+  dia = null,
 }: Props) {
   const paragraphs = text
     ? text
@@ -62,9 +69,20 @@ export function HowToArriveSection({
     .filter((part, index, all) => all.indexOf(part) === index);
 
   const hasCoordinates = latitude !== null && longitude !== null;
-  // O nome a escrever no planeador: o do sítio, mesmo quando a página não o
+  // O nome do destino no planeador: o do sítio, mesmo quando a página não o
   // imprime na morada (a ficha do espaço, onde é o título).
   const destino = searchName ?? placeName;
+  // Uma terra dada como sítio não é destino que se escreva: a coordenada dela
+  // é o meio da vila, e o planeador levava lá alguém como se fosse a porta.
+  const transportes = planeador
+    ? irDeTransportes({
+        planeador,
+        latitude: soATerra ? null : latitude,
+        longitude: soATerra ? null : longitude,
+        nome: destino,
+        dia,
+      })
+    : null;
 
   // As duas ligações de propósito: o Google Maps é o que quase toda a gente
   // tem no bolso, o OpenStreetMap é o que não pede conta nem rasto.
@@ -156,26 +174,33 @@ export function HowToArriveSection({
         C2-047). No interior, quem não conduz precisa de saber se há autocarro,
         e o campo «como chegar» existe desde o primeiro dia a pensar nisto.
 
-        O planeador abre sem o destino: aceita no endereço o nome exato de uma
-        paragem ou estação, e não uma coordenada nem o nome de um espaço. Diz-se
-        a quem carrega o que escrever lá, em vez de prometer um percurso que a
-        ligação não monta.
+        Com coordenadas, o planeador abre com o destino já escrito, e falta só
+        a partida — que é de quem vai, e por isso não se adivinha. Sem elas (ou
+        quando o sítio é só uma terra), abre vazio, e diz-se a quem carrega o
+        que escrever lá, em vez de prometer um percurso que a ligação não monta.
       */}
-      {planeador ? (
+      {transportes ? (
         <div>
           <a
-            href={planeador}
+            href={transportes.href}
             rel="noopener"
             data-stat-kind="directions_click"
             className="-ml-2 inline-flex min-h-11 items-center rounded px-2 font-medium text-ink underline underline-offset-4"
           >
             Ir de transportes públicos ↗
           </a>
-          <p className="text-sm">
-            Abre o planeador de transportes da região. O destino escreve-se lá
-            {destino ? <> — {destino}</> : null}
-            {municipalityName && municipalityName !== destino ? `, ${municipalityName}` : ''}.
-          </p>
+          {transportes.comDestino ? (
+            <p className="text-sm">
+              Abre o planeador de transportes da região já com o destino
+              {dia ? ' e o dia do evento' : ''}: falta escolher de onde parte.
+            </p>
+          ) : (
+            <p className="text-sm">
+              Abre o planeador de transportes da região. O destino escreve-se lá
+              {destino ? <> — {destino}</> : null}
+              {municipalityName && municipalityName !== destino ? `, ${municipalityName}` : ''}.
+            </p>
+          )}
         </div>
       ) : null}
     </div>

@@ -72,8 +72,15 @@ export const viewport: Viewport = {
  * masthead escreve; sem escolha guardada não toca em nada e vale a
  * preferência do sistema. Corre inline de propósito — um ficheiro externo
  * chegava tarde de mais.
+ *
+ * E marca a raiz com `data-js`, antes de tudo: é o que deixa o CSS dizer uma
+ * coisa a quem tem JavaScript e outra a quem não tem (`.ct-so-com-js` e
+ * `.ct-so-sem-js`, em `globals.css`). Sem JavaScript o mapa nunca chega, e a
+ * caixa onde ele havia de estar dizia «A carregar o mapa…» para sempre — uma
+ * promessa que ninguém ia cumprir. A marca vai fora do `try`, porque é a
+ * única coisa aqui que não pode falhar por falta de armazenamento.
  */
-const TEMA_ARRANQUE = `try{var t=localStorage.getItem('coreto-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`;
+const TEMA_ARRANQUE = `document.documentElement.setAttribute('data-js','');try{var t=localStorage.getItem('coreto-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

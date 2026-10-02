@@ -9,7 +9,7 @@ import {
 } from '@/src/lib/navegacao';
 import { AUTOR, FEED_COPYRIGHT, PRODUTO } from '@/src/lib/produto';
 import { listMunicipalities } from '@/src/lib/queries/events';
-import { descricaoInstitucional, type Regiao } from '@/src/lib/regiao';
+import { contracao, descricaoInstitucional, type Regiao } from '@/src/lib/regiao';
 
 /**
  * O chão da casa.
@@ -31,7 +31,7 @@ function LigacaoDoRodape({ item }: { item: Ligacao }) {
       {item.label}
     </a>
   ) : (
-    <Link href={item.href} className={classe}>
+    <Link prefetch={false} href={item.href} className={classe}>
       {item.label}
     </Link>
   );
@@ -72,7 +72,7 @@ export async function RodapeDoSitio({
   const declaracao = promotor?.declaracaoDeFinanciamento ?? null;
 
   return (
-    <footer className="mt-14 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:mt-16 sm:pb-0">
+    <footer className="ct-sem-impressao mt-14 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:mt-16 sm:pb-0">
       <ConcelhosDoRodape items={concelhos.map(({ id, name }) => ({ id, name }))} />
 
       <div className="ct-lambrequim ct-lambrequim-flip" aria-hidden="true" />
@@ -186,7 +186,9 @@ export async function RodapeDoSitio({
               </>
             ) : promotor ? (
               <p className="max-w-2xl">
-                Promovido pela{' '}
+                {/* «pela» numa Comunidade, «pelo» num Município (0169, C1-031).
+                    Uma expressão só, para a frase se ler inteira no HTML. */}
+                {`Promovido ${contracao('por', promotor.artigo)}`}{' '}
                 <a
                   href={promotor.url}
                   target="_blank"

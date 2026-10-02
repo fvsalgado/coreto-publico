@@ -13,13 +13,27 @@ import {
   type Favorito,
 } from '@/src/lib/favoritos';
 import { formatEventDates, formatShortDate, formatTime } from '@/src/lib/format';
+import { todayInLisbon } from '@coreto/core/dates';
 
 interface Props {
   /** O endereço público desta região, para os `.ics` e as ligações do ficheiro. */
   origem: string;
   nomeDoSitio: string;
-  /** Hoje em Lisboa, vindo do servidor: o cliente não decide que dia é. */
-  hoje: string;
+  /**
+   * Hoje em Lisboa, vindo do servidor: o cliente não decide que dia é.
+   *
+   * Com uma exceção, a página sem rede: essa fica guardada no aparelho dias a
+   * fio, e o «hoje» do dia em que se guardou marcava como por acontecer o que
+   * já passou. Sem `hoje`, a lista calcula-o em Lisboa no próprio aparelho —
+   * sem risco de divergir do servidor, porque o servidor desenha sempre a
+   * lista vazia (ver em baixo).
+   */
+  hoje?: string;
+  /**
+   * A lista está na página sem rede: o vazio não manda para a agenda, que sem
+   * rede não abre, e cada ficha diz que abre quando a rede voltar.
+   */
+  semRede?: boolean;
 }
 
 const ACAO =
@@ -38,9 +52,20 @@ const ACAO =
  * hora, é lá que está a verdade. Esconder a data seria deixar a lista passar
  * por atual.
  */
-export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
+export function ListaDeFavoritos({ origem, nomeDoSitio, hoje: hojeDoServidor, semRede }: Props) {
   const guardados = useSyncExternalStore(subscrever, favoritos, () => NENHUM);
   const [aExportar, setAExportar] = useState(false);
+
+  if (guardados.length === 0 && semRede) {
+    return (
+      <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+        <p className="text-muted">
+          Não há eventos guardados neste aparelho. O coração de cada evento guarda-o para se poder
+          ver aqui, mesmo sem rede.
+        </p>
+      </div>
+    );
+  }
 
   if (guardados.length === 0) {
     return (
@@ -59,6 +84,7 @@ export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
     );
   }
 
+  const hoje = hojeDoServidor ?? todayInLisbon();
   const ordenados = porOrdemDeData(guardados, hoje);
 
   /*
@@ -91,15 +117,21 @@ export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => void descarregar()}
-          disabled={aExportar}
-          className={ACAO}
-        >
-          <Icone nome="calendario" />
-          {aExportar ? 'A preparar…' : 'Adicionar todos ao calendário'}
-        </button>
+        {/* Sem rede não há calendário: o construtor do ficheiro vem por
+            `import()`, e a página sem rede só guarda o que ela própria usa.
+            Um botão que fica em «A preparar…» e não faz nada é pior do que
+            botão nenhum. */}
+        {semRede ? null : (
+          <button
+            type="button"
+            onClick={() => void descarregar()}
+            disabled={aExportar}
+            className={ACAO}
+          >
+            <Icone nome="calendario" />
+            {aExportar ? 'A preparar…' : 'Adicionar todos ao calendário'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -111,7 +143,7 @@ export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
         </button>
       </div>
 
-      {comData < ordenados.length ? (
+      {comData < ordenados.length && !semRede ? (
         <p className="mt-2 text-sm text-muted">
           {ordenados.length - comData === 1
             ? 'Um dos guardados não tem data e por isso não entra no ficheiro de calendário.'
@@ -121,14 +153,22 @@ export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
 
       <ul className="mt-6 grid gap-3">
         {ordenados.map((favorito) => (
-          <Ficha key={favorito.slug} favorito={favorito} hoje={hoje} />
+          <Ficha key={favorito.slug} favorito={favorito} hoje={hoje} semRede={semRede === true} />
         ))}
       </ul>
     </>
   );
 }
 
-function Ficha({ favorito, hoje }: { favorito: Favorito; hoje: string }) {
+function Ficha({
+  favorito,
+  hoje,
+  semRede,
+}: {
+  favorito: Favorito;
+  hoje: string;
+  semRede: boolean;
+}) {
   const hora = formatTime(favorito.start_time);
   const quando = favorito.date_start
     ? formatEventDates(favorito.date_start, favorito.date_end, hoje)
@@ -153,8 +193,10 @@ function Ficha({ favorito, hoje }: { favorito: Favorito; hoje: string }) {
         </h2>
         {favorito.location ? <p className="mt-1 text-sm text-muted">{favorito.location}</p> : null}
         <p className="mt-2 text-xs text-muted">
-          Guardado a {formatShortDate(favorito.guardadoEm.slice(0, 10))}. A página do evento é a que
-          manda.
+          Guardado a {formatShortDate(favorito.guardadoEm.slice(0, 10))}.{' '}
+          {semRede
+            ? 'A página do evento abre quando a rede voltar, e é a que manda.'
+            : 'A página do evento é a que manda.'}
         </p>
       </div>
 

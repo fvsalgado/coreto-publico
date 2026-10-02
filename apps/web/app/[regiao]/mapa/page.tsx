@@ -30,6 +30,7 @@ import {
 } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
+import { osConcelhos } from '@/src/lib/regiao';
 
 /*
  * Sem `revalidate` de página desde que o mapa lê filtros do endereço: uma
@@ -218,8 +219,8 @@ export default async function MapaPage({ params, searchParams }: Props) {
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">
             {descricao?.rotulo
-              ? `Os eventos ${descricao.rotulo}, nos ${concelhos.length} concelhos ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`
-              : `Todos os eventos por acontecer nos ${concelhos.length} concelhos ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`}
+              ? `Os eventos ${descricao.rotulo}, ${osConcelhos(concelhos.length, { preposicao: 'em', extenso: false })} ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`
+              : `Todos os eventos por acontecer ${osConcelhos(concelhos.length, { preposicao: 'em', extenso: false })} ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`}
           </caption>
           <thead>
             <tr className="border-b border-border text-left">

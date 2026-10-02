@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { direcoesPara, verNoGoogleMaps } from './direcoes';
+import { direcoesPara, irDeTransportes, verNoGoogleMaps } from './direcoes';
 
 describe('direcoesPara', () => {
   const [google, apple, waze] = direcoesPara(39.4615727, -8.1983196, 'Praça Barão da Batalha');
@@ -137,5 +137,68 @@ describe('verNoGoogleMaps e os nomes do catálogo', () => {
     expect(procura('Casa da Cultura de Alcanena (Casa Municipal da Cultura) e Páteo')).toBe(
       'Casa da Cultura de Alcanena e Páteo, Tomar',
     );
+  });
+});
+
+describe('irDeTransportes', () => {
+  const PLANEADOR = 'https://planeador.exemplo.pt/viagem/';
+
+  it('leva o destino em coordenadas e o nome do espaço, na forma do planeador', () => {
+    const { href, comDestino } = irDeTransportes({
+      planeador: PLANEADOR,
+      latitude: 39.4615727,
+      longitude: -8.1983196,
+      nome: 'Cine-Teatro São Pedro',
+    });
+    expect(comDestino).toBe(true);
+    const lido = new URL(href);
+    expect(lido.origin + lido.pathname).toBe(PLANEADOR);
+    expect(lido.searchParams.get('para')).toBe('39.46157,-8.19832');
+    expect(lido.searchParams.get('nome')).toBe('Cine-Teatro São Pedro');
+    expect(lido.searchParams.has('dia')).toBe(false);
+  });
+
+  it('o dia vai quando a ficha o dá, e a hora nunca', () => {
+    const { href } = irDeTransportes({
+      planeador: PLANEADOR,
+      latitude: 39.5,
+      longitude: -8.2,
+      nome: 'Largo',
+      dia: '2026-10-10',
+    });
+    const lido = new URL(href);
+    expect(lido.searchParams.get('dia')).toBe('2026-10-10');
+    expect(lido.searchParams.has('hora')).toBe(false);
+  });
+
+  it('sem coordenadas não inventa destino: abre o planeador como está', () => {
+    // Um nome de espaço como `para` aparecia lá como ponta desconhecida.
+    expect(
+      irDeTransportes({ planeador: PLANEADOR, latitude: null, longitude: null, nome: 'Teatro' }),
+    ).toEqual({ href: PLANEADOR, comDestino: false });
+  });
+
+  it('o nome perde o parêntesis de catálogo, e o que o planeador já trazia fica', () => {
+    const { href } = irDeTransportes({
+      planeador: 'https://planeador.exemplo.pt/viagem/?lingua=pt',
+      latitude: 39.6,
+      longitude: -8.4,
+      nome: 'Convento de Cristo (Castelo Templário e Convento de Cristo)',
+    });
+    const lido = new URL(href);
+    expect(lido.searchParams.get('nome')).toBe('Convento de Cristo');
+    expect(lido.searchParams.get('lingua')).toBe('pt');
+  });
+
+  it('um dia mal escrito não passa', () => {
+    const { href } = irDeTransportes({
+      planeador: PLANEADOR,
+      latitude: 39.6,
+      longitude: -8.4,
+      nome: null,
+      dia: 'amanhã',
+    });
+    expect(new URL(href).searchParams.has('dia')).toBe(false);
+    expect(new URL(href).searchParams.has('nome')).toBe(false);
   });
 });

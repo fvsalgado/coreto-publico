@@ -18,6 +18,7 @@ import {
 } from '@/src/components/MapaDeBase';
 import {
   LOCALE_DO_MAPA,
+  comAtribuicaoEmPortugues,
   ancoraDoCoreto,
   camadaAEsconder,
   contornosDosConcelhos,
@@ -88,7 +89,6 @@ export function MapaDosCoretosVivo({ coretos, concelhos, altura }: Props) {
       const folga = folgaDoEnquadramento(alvo.clientWidth, alvo.clientHeight);
       const mapa = new maplibre.Map({
         container: alvo,
-        style: escuro ? ESTILOS_DO_MAPA.escuro : ESTILOS_DO_MAPA.claro,
         ...(guardada
           ? { center: guardada.centro, zoom: guardada.zoom }
           : limites
@@ -101,6 +101,12 @@ export function MapaDosCoretosVivo({ coretos, concelhos, altura }: Props) {
         locale: { ...LOCALE_DO_MAPA, 'Map.Title': 'Mapa dos coretos' },
       });
       instancia = mapa;
+      // O estilo entra por `setStyle` e não pelo construtor, porque é o
+      // `setStyle` que aceita `transformStyle`: a atribuição dos mosaicos
+      // passa a português sem perder o crédito — ver `comAtribuicaoEmPortugues`.
+      mapa.setStyle(escuro ? ESTILOS_DO_MAPA.escuro : ESTILOS_DO_MAPA.claro, {
+        transformStyle: (_anterior, seguinte) => comAtribuicaoEmPortugues(seguinte),
+      });
 
       mapa.touchZoomRotate.disableRotation();
       mapa.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');

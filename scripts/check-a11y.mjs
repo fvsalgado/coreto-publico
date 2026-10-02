@@ -45,7 +45,7 @@ const BASE_MONTRA = process.env.BASE_URL_MONTRA?.trim() || null;
  * Não se desligam no painel e não são de região nenhuma: ou estão nesta lista,
  * ou não são auditadas por nada.
  */
-const ROTAS_DA_MONTRA = ['/', '/fontes', '/seguranca'];
+const ROTAS_DA_MONTRA = ['/', '/contacto', '/fontes', '/seguranca'];
 
 /**
  * Caminho para um Chromium já instalado.
@@ -97,6 +97,9 @@ const ROUTES = [
    * todas as páginas públicas», e esta é uma delas.
    */
   '/favoritos',
+  // A página que o service worker serve sem rede (C3-015). É pública e é a que
+  // alguém vê num mau momento; sem esta linha, nunca era auditada.
+  '/sem-rede',
   '/fontes',
   '/levar',
   // O estado não se desliga e não está no mapa do sítio (é `noindex`, por
@@ -189,6 +192,12 @@ async function rotasDeFicha() {
     const encontrado = xml.match(padrao);
     if (encontrado) {
       rotas.push(encontrado[1]);
+      // O cartaz da semana do mesmo concelho (C2-032, C4-022). Não está no
+      // mapa do sítio — é `noindex`, a folha da página do concelho —, e é
+      // uma página pública que a declaração promete auditada como as outras.
+      if (tipo === '/concelho/') {
+        rotas.push(encontrado[1].replace('/concelho/', '/cartaz-semanal/'));
+      }
     } else {
       console.warn(`· ficha de ${tipo} — saltada (o mapa do sítio não trouxe nenhuma)`);
       skipped += 1;
@@ -229,6 +238,31 @@ const VIEWPORTS = [
  * remete para a norma europeia, e é a 2.1 AA que ela hoje exige.
  */
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
+
+/*
+ * As regras que o axe tem por experimentais e que esta casa liga à mão.
+ *
+ * Uma só, e por causa de um achado: o 2.5.3 da WCAG (nível A) pede que o nome
+ * acessível de um controlo contenha o texto que se vê, para quem usa controlo
+ * por voz poder dizer o que vê — «tocar em Filtrar» — e acontecer alguma
+ * coisa. O axe tem a regra e não a corre por omissão, e uma etiqueta não a
+ * liga: está marcada `experimental`. Esteve três falhas à vista sem ninguém
+ * dar por elas (C3-003): o resumo dos filtros, o botão do tema na gaveta e a
+ * assinatura do promotor no toldo.
+ *
+ * Corre numa segunda passagem, só com ela, e não na mesma: juntar a regra às
+ * opções da primeira desliga a lista de etiquetas e traz as regras de boas
+ * práticas todas atrás — medido com o axe 4.13, que passou a reportar
+ * `landmark-unique` numa página que só tinha pedido WCAG.
+ */
+const REGRAS_LIGADAS_A_MAO = ['label-content-name-mismatch'];
+
+/** As duas passagens do axe numa página, com as violações juntas. */
+async function auditar(page) {
+  const etiquetas = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  const aMao = await new AxeBuilder({ page }).withRules(REGRAS_LIGADAS_A_MAO).analyze();
+  return { violations: [...etiquetas.violations, ...aMao.violations] };
+}
 
 let failures = 0;
 let skipped = 0;
@@ -282,7 +316,7 @@ for (const viewport of VIEWPORTS) {
       continue;
     }
 
-    const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+    const results = await auditar(page);
     if (results.violations.length === 0) {
       console.log(`✓ ${viewport.name} ${route}`);
       continue;
@@ -348,7 +382,7 @@ if (BASE_MONTRA === null) {
         continue;
       }
 
-      const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+      const results = await auditar(page);
       if (results.violations.length === 0) {
         console.log(`✓ montra ${viewport.name} ${route}`);
         continue;
@@ -482,7 +516,7 @@ for (const estado of ESTADOS) {
     continue;
   }
 
-  const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  const results = await auditar(page);
   if (results.violations.length === 0) {
     console.log(`✓ estado: ${estado.nome}`);
   } else {
@@ -494,6 +528,135 @@ for (const estado of ESTADOS) {
         console.error(`     ${node.target.join(' ')}`);
       }
     }
+  }
+  await context.close();
+}
+
+// ---- A gaveta do «+»: o foco vê-se lá dentro, e não sai enquanto ela está aberta ----
+
+/*
+ * Duas falhas que o axe não apanhava, e que estiveram no sítio ao mesmo tempo
+ * (C3-001 e C3-002, medidas a 1 de outubro de 2026).
+ *
+ * A primeira: a barra de baixo é um bloco escuro, com o anel de foco a branco,
+ * e a gaveta que ela abre é papel. Branco sobre branco — nas nove paragens da
+ * gaveta, o foco não se via. O axe não mede o anel de foco: mede contraste de
+ * texto. Aqui mede-se o que se vê, paragem a paragem: a cor do contorno contra
+ * a cor do que está por trás dele, a 3:1 no mínimo, que é o que o critério
+ * 1.4.11 pede a um indicador que não é texto.
+ *
+ * A segunda: com a gaveta aberta, o Tab saía para a página de trás, e o foco
+ * ficava a andar por baixo do painel. Aqui dá-se a volta inteira à gaveta, e
+ * mais duas, e cada paragem tem de estar lá dentro.
+ *
+ * Nos dois temas, porque a primeira falha só existia num deles.
+ */
+for (const tema of ['light', 'dark']) {
+  const context = await browser.newContext({
+    viewport: { width: 360, height: 720 },
+    colorScheme: tema,
+    reducedMotion: 'reduce',
+  });
+  const page = await context.newPage();
+  const nome = `gaveta do «+», tema ${tema === 'dark' ? 'escuro' : 'claro'}`;
+  try {
+    await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+    const gaveta = 'nav[aria-label="Principal, no fundo do ecrã"] details';
+    await page.click(`${gaveta} summary`);
+    await page.waitForFunction(
+      (seletor) => document.querySelector(seletor)?.open === true,
+      gaveta,
+      {
+        timeout: 5_000,
+      },
+    );
+    const paragens = await page.evaluate(
+      (seletor) =>
+        [...document.querySelectorAll(`${seletor} summary, ${seletor} a[href], ${seletor} button`)]
+          .length,
+      gaveta,
+    );
+
+    const problemas = [];
+    for (let i = 0; i < paragens + 2; i += 1) {
+      await page.keyboard.press('Tab');
+      // Mede-se o anel que se vê, e esse é o da imagem seguinte. Com o
+      // movimento reduzido — que é como este contexto abre —, a regra global
+      // do `globals.css` dá 0,01 ms de transição a todas as propriedades, e o
+      // contorno também passa de 0 a 3 px nesse tempo: lido no mesmo instante
+      // em que o foco chega, ainda tinha 0 px. A 2 de outubro reprovou assim
+      // a volta inteira à gaveta, nos dois temas, com o anel lá. Duas imagens
+      // bastam para a transição acabar.
+      await page.evaluate(
+        () => new Promise((pronto) => requestAnimationFrame(() => requestAnimationFrame(pronto))),
+      );
+      const medida = await page.evaluate((seletor) => {
+        const caixa = document.querySelector(seletor);
+        const foco = document.activeElement;
+        const texto = (foco?.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 24);
+        if (!caixa?.open) return { fechada: true, texto };
+        if (!foco || !caixa.contains(foco)) return { fora: true, texto };
+        // A cor por trás do anel: o primeiro fundo opaco a partir do pai — o
+        // anel desenha-se fora da caixa do elemento, sobre o que o rodeia.
+        let fundo = 'rgb(255, 255, 255)';
+        for (let no = foco.parentElement; no; no = no.parentElement) {
+          const cor = getComputedStyle(no).backgroundColor;
+          const alfa = cor.startsWith('rgba') ? Number(cor.split(',')[3].replace(')', '')) : 1;
+          if (alfa > 0.5) {
+            fundo = cor;
+            break;
+          }
+        }
+        const estilo = getComputedStyle(foco);
+        return {
+          texto,
+          contorno: estilo.outlineColor,
+          largura: Number.parseFloat(estilo.outlineWidth),
+          tipo: estilo.outlineStyle,
+          fundo,
+        };
+      }, gaveta);
+
+      if (medida.fechada) {
+        problemas.push(`paragem ${i + 1}: a gaveta fechou-se sozinha («${medida.texto}»)`);
+        break;
+      }
+      if (medida.fora) {
+        problemas.push(`paragem ${i + 1}: o foco saiu da gaveta aberta («${medida.texto}»)`);
+        continue;
+      }
+      const rgb = (cor) =>
+        cor
+          .match(/[\d.]+/g)
+          .slice(0, 3)
+          .map(Number);
+      const luz = ([r, g, b]) => {
+        const c = [r, g, b].map((v) => {
+          const s = v / 255;
+          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      };
+      const [a, b] = [luz(rgb(medida.contorno)), luz(rgb(medida.fundo))];
+      const razao = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      if (medida.tipo === 'none' || medida.largura < 2 || razao < 3) {
+        problemas.push(
+          `paragem ${i + 1} «${medida.texto}»: contorno ${medida.tipo} ${medida.largura}px ${medida.contorno} sobre ${medida.fundo} (${razao.toFixed(2)}:1)`,
+        );
+      }
+    }
+
+    if (problemas.length === 0) {
+      console.log(`✓ ${nome} — ${paragens} paragens, o anel vê-se em todas e o foco não sai`);
+    } else {
+      failures += problemas.length;
+      console.error(`✗ ${nome}`);
+      for (const problema of problemas.slice(0, 6)) console.error(`     ${problema}`);
+    }
+  } catch (error) {
+    console.error(`✗ ${nome} — não correu: ${error.message}`);
+    failures += 1;
   }
   await context.close();
 }
@@ -671,6 +834,188 @@ for (const estado of ESTADOS) {
       }
     } catch (error) {
       console.error(`✗ primeiro evento ${vp.nome} ${ROTA} — não correu: ${error.message}`);
+      failures += 1;
+    }
+    await context.close();
+  }
+}
+
+// ---- A letra a 200 %: nada sai da janela, nada se corta, e a barra cabe ----
+
+/*
+ * O critério 1.4.4 (redimensionar o texto até 200 % sem perder conteúdo nem
+ * funcionalidade), medido como quem o usa: o tamanho de letra do navegador a
+ * 32 px, o dobro da omissão — é o que a definição de letra do Chrome faz, e o
+ * que a auditoria de 1 de outubro fez (C3-011). O `rem` cresce, e a página tem
+ * de crescer com ele sem obrigar a andar para os lados.
+ *
+ * Três perguntas por rota, numa janela de 320 px — a mais estreita que a
+ * WCAG considera, a do 1.4.10. Esteve a 360, que era a janela da auditoria de
+ * 1 de outubro; a 2 de outubro passou a caber também a 320, e a declaração
+ * de acessibilidade passou a dizê-lo — e o que ela diz, isto verifica:
+ *
+ * - o documento não é mais largo do que a janela (nada empurra a página);
+ * - nenhum texto acaba para lá da janela dentro de uma caixa que o corta — um
+ *   cartão com `overflow: hidden` não faz a página deslizar, e por isso a
+ *   primeira pergunta não o apanha: o nome do espaço saía cortado pela margem
+ *   do cartão, em silêncio;
+ * - o último destino da barra de baixo acaba dentro da janela. Era o «Mais»,
+ *   e com ele a gaveta inteira, que ficava de fora.
+ *
+ * O que desliza dentro de si — as filas de pílulas, as prateleiras de
+ * cartazes, um bloco de código — é desenho e não falha, e não conta.
+ */
+{
+  const LETRA = 32;
+  const LARGURA = 320;
+  for (const ROTA of [...ROUTES, ...DATA_ROUTES]) {
+    const context = await browser.newContext({
+      viewport: { width: LARGURA, height: 720 },
+      reducedMotion: 'reduce',
+    });
+    const page = await context.newPage();
+    try {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Page.enable');
+      await cdp.send('Page.setFontSizes', {
+        fontSizes: { standard: LETRA, fixed: Math.round(LETRA * 0.8) },
+      });
+      const resposta = await page.goto(`${BASE_URL}${ROTA}`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      });
+      if (resposta?.status() === 404 && ROTAS_DE_SECCAO.includes(ROTA)) {
+        console.warn(`· letra a 200 % ${ROTA} — saltada (secção desligada no painel)`);
+        skipped += 1;
+        await context.close();
+        continue;
+      }
+      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+      const medida = await page.evaluate((janela) => {
+        const travadoPor = (elemento) => {
+          for (
+            let pai = elemento.parentElement;
+            pai && pai !== document.body;
+            pai = pai.parentElement
+          ) {
+            const estilo = getComputedStyle(pai);
+            if (estilo.position === 'fixed') return 'fixo';
+            if (/(auto|scroll)/.test(estilo.overflowX)) return 'desliza';
+            if (/(hidden|clip)/.test(estilo.overflowX)) {
+              return pai.getBoundingClientRect().right <= janela + 1 ? 'corta' : null;
+            }
+          }
+          return null;
+        };
+        const cortados = [];
+        for (const elemento of document.querySelectorAll('body *')) {
+          const caixa = elemento.getBoundingClientRect();
+          if (caixa.width === 0 || caixa.height === 0 || caixa.right <= janela + 1) continue;
+          if (!elemento.textContent?.trim()) continue;
+          if (getComputedStyle(elemento).visibility === 'hidden') continue;
+          if (travadoPor(elemento) !== 'corta') continue;
+          cortados.push(
+            `«${elemento.textContent.trim().replace(/\s+/g, ' ').slice(0, 40)}» acaba aos ${Math.round(caixa.right)}px`,
+          );
+        }
+        const barra = document.querySelector('[data-barra-inferior] ul');
+        const ultimo = barra?.lastElementChild?.getBoundingClientRect();
+        return {
+          largura: document.documentElement.scrollWidth,
+          cortados,
+          barra: ultimo ? Math.round(ultimo.right) : null,
+        };
+      }, LARGURA);
+      const falhas = [];
+      if (medida.largura > LARGURA + 1) falhas.push(`a página pede ${medida.largura}px`);
+      if (medida.barra !== null && medida.barra > LARGURA + 1) {
+        falhas.push(`a barra de baixo acaba aos ${medida.barra}px`);
+      }
+      if (medida.cortados.length > 0) {
+        falhas.push(
+          `${medida.cortados.length} texto(s) cortado(s), o primeiro ${medida.cortados[0]}`,
+        );
+      }
+      if (falhas.length > 0) {
+        failures += 1;
+        console.error(`✗ letra a 200 % ${ROTA} (${LARGURA}px) — ${falhas.join('; ')}`);
+      } else {
+        console.log(`✓ letra a 200 % ${ROTA} (${LARGURA}px) — cabe, sem nada cortado`);
+      }
+    } catch (error) {
+      console.error(`✗ letra a 200 % ${ROTA} — não correu: ${error.message}`);
+      failures += 1;
+    }
+    await context.close();
+  }
+}
+
+// ---- Em papel: a agenda e o cartaz da semana (C2-032, C4-022) ----
+
+/*
+ * Imprimir a semana de um concelho dava três a sete folhas de interface — o
+ * toldo, as pílulas, a caixa de pesquisa, os botões de cada cartão — e não
+ * havia folha para afixar. Duas perguntas, com o Chromium em modo de
+ * impressão:
+ *
+ * - **nada para mexer sai no papel**: nenhuma navegação, formulário, botão,
+ *   toldo ou barra de baixo à vista, na agenda e no cartaz;
+ * - **a semana de referência cabe numa folha**: o cartaz do primeiro concelho
+ *   do mapa do sítio, impresso em A4, sai numa folha só enquanto tiver até
+ *   vinte e cinco linhas (a conta é da própria folha, no `data-linhas`). Mais
+ *   do que isso continua noutra — não se corta para caber —, e aí diz-se
+ *   quantas são, sem falhar.
+ */
+{
+  const cartaz = DATA_ROUTES.find((rota) => rota.startsWith('/cartaz-semanal/'));
+  if (!cartaz) {
+    console.warn('· em papel: cartaz da semana — saltado (o mapa do sítio não trouxe concelhos)');
+    skipped += 1;
+  }
+  for (const ROTA of ['/agenda', ...(cartaz ? [cartaz] : [])]) {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    try {
+      await page.goto(`${BASE_URL}${ROTA}`, { waitUntil: 'networkidle', timeout: 30_000 });
+      await page.emulateMedia({ media: 'print' });
+      const medida = await page.evaluate(() => {
+        const aVista = [
+          ...document.querySelectorAll(
+            'nav, form, button, [data-barra-inferior], .ct-bloco-marca, .ct-lambrequim-marca',
+          ),
+        ].filter((elemento) => {
+          const caixa = elemento.getBoundingClientRect();
+          return (
+            caixa.width > 0 &&
+            caixa.height > 0 &&
+            getComputedStyle(elemento).visibility !== 'hidden'
+          );
+        });
+        const folha = document.querySelector('.ct-folha');
+        return {
+          aVista: aVista.map((elemento) => elemento.tagName.toLowerCase()),
+          linhas: folha ? Number(folha.getAttribute('data-linhas')) : null,
+        };
+      });
+      const pdf = await page.pdf({ format: 'A4' });
+      const folhas = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+      const falhas = [];
+      if (medida.aVista.length > 0) {
+        falhas.push(`${medida.aVista.length} controlo(s) no papel (${medida.aVista.slice(0, 3)})`);
+      }
+      if (ROTA === cartaz && medida.linhas === null) falhas.push('a folha não está lá');
+      if (ROTA === cartaz && medida.linhas !== null && medida.linhas <= 25 && folhas !== 1) {
+        falhas.push(`${medida.linhas} linhas em ${folhas} folhas, e cabiam numa`);
+      }
+      if (falhas.length > 0) {
+        failures += 1;
+        console.error(`✗ em papel ${ROTA} — ${falhas.join('; ')}`);
+      } else {
+        const linhas = medida.linhas === null ? '' : `, ${medida.linhas} linhas`;
+        console.log(`✓ em papel ${ROTA} — ${folhas} folha(s) A4${linhas}, nada para mexer`);
+      }
+    } catch (error) {
+      console.error(`✗ em papel ${ROTA} — não correu: ${error.message}`);
       failures += 1;
     }
     await context.close();

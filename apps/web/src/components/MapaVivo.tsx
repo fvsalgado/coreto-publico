@@ -17,6 +17,7 @@ import {
 } from '@/src/components/MapaDeBase';
 import {
   LOCALE_DO_MAPA,
+  comAtribuicaoEmPortugues,
   agruparNoEcra,
   camadaAEsconder,
   contornosDosConcelhos,
@@ -111,7 +112,6 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
       const folga = folgaDoEnquadramento(alvo.clientWidth, alvo.clientHeight);
       const mapa = new maplibre.Map({
         container: alvo,
-        style: escuro ? ESTILOS_DO_MAPA.escuro : ESTILOS_DO_MAPA.claro,
         ...(guardada
           ? { center: guardada.centro, zoom: guardada.zoom }
           : limites
@@ -130,6 +130,12 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
         locale: { ...LOCALE_DO_MAPA, 'Map.Title': 'Mapa dos eventos' },
       });
       instancia = mapa;
+      // O estilo entra por `setStyle` e não pelo construtor, porque é o
+      // `setStyle` que aceita `transformStyle`: a atribuição dos mosaicos
+      // passa a português sem perder o crédito — ver `comAtribuicaoEmPortugues`.
+      mapa.setStyle(escuro ? ESTILOS_DO_MAPA.escuro : ESTILOS_DO_MAPA.claro, {
+        transformStyle: (_anterior, seguinte) => comAtribuicaoEmPortugues(seguinte),
+      });
 
       mapa.touchZoomRotate.disableRotation();
       mapa.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
@@ -240,6 +246,15 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
         marcas.current.clear();
 
         for (const agrupada of agrupadas) {
+          // O que o MapLibre posiciona é um suporte, e não o botão: o botão é
+          // o círculo com o número, e a etiqueta do concelho fica-lhe ao lado,
+          // dentro do suporte. Estava dentro do botão, e o texto visível dele
+          // passava a ser «7Tomar» — o número e a etiqueta colados —, que nenhum
+          // nome acessível contém: a auditoria (WCAG 2.5.3) reprovava todas as
+          // marcas do `/mapa`. A etiqueta é do mapa, como o nome da sede que ela
+          // repõe, e já não recebia toques (`pointer-events-none`).
+          const suporte = document.createElement('div');
+          suporte.className = CLASSE_DO_SUPORTE;
           const elemento = document.createElement('button');
           elemento.type = 'button';
           elemento.className = CLASSE_DA_MARCA;
@@ -248,15 +263,17 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
           elemento.textContent = String(agrupada.eventos);
           // O concelho por baixo do número (C1-019): as marcas assentam onde o
           // mapa de base escreve o nome da sede, e tapavam-no. Escondida de
-          // quem ouve: o nome acessível já diz o sítio e o concelho, e
+          // quem ouve: o nome acessível do botão já diz o sítio e o concelho, e
           // dizê-lo duas vezes é ruído. O desenho está em `CLASSE_DO_ROTULO`.
           const rotulo = document.createElement('span');
           rotulo.className = CLASSE_DO_ROTULO;
           rotulo.textContent = rotuloDaMarca(agrupada);
           rotulo.setAttribute('aria-hidden', 'true');
-          elemento.append(rotulo);
+          suporte.append(elemento, rotulo);
           // O nome acessível diz o sítio e quantos eventos são: a marca desenha
           // só o número, e um botão que anuncia «7» não diz nada a quem ouve.
+          // E contém o que se vê — o número e o concelho da etiqueta —, para o
+          // comando de voz a encontrar (`nomeDaMarca`).
           elemento.setAttribute('aria-label', nomeDaMarca(agrupada));
           // O painel de baixo é o que este botão abre, e dizê-lo é o que
           // permite a quem usa leitor de ecrã saltar da marca para o que ela
@@ -269,7 +286,7 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
 
           marcas.current.set(
             agrupada.id,
-            new Marca({ element: elemento })
+            new Marca({ element: suporte })
               .setLngLat([agrupada.longitude, agrupada.latitude])
               .addTo(mapa),
           );
@@ -277,8 +294,10 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
       }
 
       // A pintura da escolhida, sempre — as marcas podem ter acabado de nascer.
+      // O botão é o primeiro filho do suporte.
       for (const [id, marca] of marcas.current) {
-        const elemento = marca.getElement();
+        const elemento = marca.getElement().firstElementChild;
+        if (!(elemento instanceof HTMLElement)) continue;
         elemento.setAttribute('aria-pressed', String(id === escolhida));
         elemento.dataset['escolhida'] = String(id === escolhida);
       }
@@ -317,11 +336,9 @@ const CLASSE_DA_MARCA = [
   // punha a tela do mapa por baixo do cursor — `elementFromPoint` devolvia o
   // `canvas` — e o `pointerdown` deixava de chegar ao botão. A marca ficava
   // impossível de carregar com o rato, e só com o rato: ao dedo e ao teclado
-  // funcionava. Foi a auditoria de acessibilidade que o apanhou.
-  //
-  // `z-10` no rato e no foco é outra coisa, e fica: a marca que está a ser
-  // usada vem à frente das vizinhas.
-  'border-2 shadow-sm transition-shadow hover:z-10 hover:shadow-lg focus-visible:z-10',
+  // funcionava. Foi a auditoria de acessibilidade que o apanhou. O `z-10` que
+  // traz à frente a marca em uso está no suporte (`CLASSE_DO_SUPORTE`).
+  'border-2 shadow-sm transition-shadow hover:shadow-lg',
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
   'data-[precisao=exacta]:border-accent data-[precisao=exacta]:bg-accent data-[precisao=exacta]:text-on-accent',
   'data-[precisao=concelho]:border-dashed data-[precisao=concelho]:border-accent data-[precisao=concelho]:bg-surface data-[precisao=concelho]:text-accent',
@@ -334,11 +351,22 @@ const CLASSE_DA_MARCA = [
 ].join(' ');
 
 /**
+ * O suporte que o MapLibre posiciona: o botão e a etiqueta lá dentro.
+ *
+ * Do tamanho do círculo, porque o MapLibre centra no ponto a caixa do elemento
+ * que recebe — a etiqueta, `absolute`, não lhe mexe no tamanho. O `z-10` no
+ * rato e no foco vive aqui e não no botão: cada marca do MapLibre é um
+ * contexto de empilhamento, e o botão lá dentro não passava à frente das
+ * vizinhas. A marca que está a ser usada vem à frente, com a etiqueta.
+ */
+const CLASSE_DO_SUPORTE = 'size-11 hover:z-10 focus-within:z-10';
+
+/**
  * A etiqueta do concelho, por baixo da marca: letra pequena e escura com um
  * halo do papel à volta (`.ct-rotulo-da-marca`, no `globals.css`), para se ler
  * por cima das ruas sem precisar de caixa.
  *
- * `absolute` a partir da marca, que o MapLibre já posiciona — fica fora da
+ * `absolute` a partir do suporte, que o MapLibre já posiciona — fica fora da
  * caixa de 44 px, e o círculo continua centrado no ponto. E sem eventos de
  * ponteiro: uma etiqueta é mais larga do que a marca, e por cima de uma
  * vizinha roubava-lhe o toque.

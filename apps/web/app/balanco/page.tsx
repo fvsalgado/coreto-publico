@@ -1,10 +1,16 @@
 import { todayInLisbon } from '@coreto/core/dates';
 import type { Metadata } from 'next';
 import { notFound, unauthorized } from 'next/navigation';
+import { BandstandMark } from '@/src/components/BandstandMark';
+import { BotaoDeImprimir } from '@/src/components/BotaoDeImprimir';
 import { listRegionLicenses, monthlyReport, listRegionsAdmin } from '@/src/lib/admin/queries';
-import { lerMes, mesAnterior, nomeDoMes } from '@/src/lib/admin/relatorio';
+import { lerMes, mesAnterior, mesDoDia, mesSeguinte, nomeDoMes } from '@/src/lib/admin/relatorio';
+import { porNome } from '@/src/lib/artigos';
 import { quemAbre } from '@/src/lib/balanco/guarda';
 import { numerosDoBalanco } from '@/src/lib/balanco/numeros';
+import { formatLongDate } from '@/src/lib/format';
+import { PRODUTO } from '@/src/lib/produto';
+import { doNomeDaRegiao } from '@/src/lib/regiao';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +76,8 @@ export default async function Balanco({ searchParams }: Props) {
     listRegionsAdmin(),
   ]);
 
-  const nome = regioes.find((r) => r.id === regiao)?.name ?? regiao;
+  const linha = regioes.find((r) => r.id === regiao);
+  const nome = linha?.name ?? regiao;
   // A licença em vigor: a que já começou e ainda não acabou. Sem prazo conta
   // como em vigor — é a montra e os pilotos abertos, que a 0112 deixa sem fim.
   const hoje = todayInLisbon();
@@ -81,35 +88,83 @@ export default async function Balanco({ searchParams }: Props) {
 
   const numeros = numerosDoBalanco(relatorio);
 
+  /*
+   * O mês anterior e o seguinte, como ligações (C4-028). A página pedia a
+   * quem decide que trocasse o `mes` no endereço, no formato AAAA-MM — que é
+   * pedir a um vereador que edite um URL. O seguinte só existe até ao mês que
+   * está a correr: um balanço de um mês que ainda não começou é uma página
+   * de zeros que se lê como uma agenda parada.
+   */
+  const hrefDoMes = (outro: string) =>
+    `/balanco?chave=${encodeURIComponent(params.chave ?? '')}&regiao=${encodeURIComponent(regiao)}&mes=${outro}`;
+  const anterior = mesAnterior(`${mes}-01`);
+  const seguinte = mesSeguinte(mes);
+  const haSeguinte = seguinte <= mesDoDia(hoje);
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <header>
-        <h1 className="text-2xl font-semibold">
+        {/*
+          De quem é isto, à cabeça (C4-028): a página não dizia o nome do
+          produto nem de quem promove a agenda, e lia-se como uma nota interna
+          — e é a página que a CIM leva à reunião de renovação.
+        */}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+          <BandstandMark className="size-5 text-ink" />
+          <span>
+            <span className="font-semibold text-ink">{PRODUTO.nome}</span> · balanço mensal da
+            agenda cultural {linha ? doNomeDaRegiao(linha.article, linha.name) : nome}
+          </span>
+        </p>
+        <h1 className="mt-3 text-2xl font-semibold">
           {nome} · {nomeDoMes(mes)}
         </h1>
-        <p className="mt-2 max-w-prose text-muted">
+        {linha ? (
+          <p className="mt-1 text-sm text-muted">
+            {`Promovida ${porNome(linha.cim_name, linha.cim_article ?? 'a')}.`}
+          </p>
+        ) : null}
+        <p className="mt-3 max-w-prose text-muted">
           Seis números sobre o mês, cada um com o que mede e o que não mede escrito ao lado. Todos
           contam o que a agenda conseguiu recolher — não o que aconteceu no território.
         </p>
         {licenca ? (
           <p className="mt-3 text-sm text-muted">
-            Período em vigor: {licenca.kind}, desde{' '}
-            <span className="tabular-nums">{licenca.starts_on}</span>
-            {licenca.ends_on ? (
-              <>
-                {' '}
-                até <span className="tabular-nums">{licenca.ends_on}</span>
-              </>
-            ) : (
-              ', sem prazo'
-            )}
-            .
+            {/* As datas por extenso e o nome da licença como foi registada:
+                «demo, desde 2026-10-01» lia-se como uma linha de base de
+                dados. */}
+            {`Licença em vigor: ${licenca.kind}, ${
+              licenca.ends_on
+                ? `de ${formatLongDate(licenca.starts_on)} a ${formatLongDate(licenca.ends_on)}`
+                : `desde ${formatLongDate(licenca.starts_on)}, sem prazo`
+            }.`}
           </p>
         ) : (
           <p className="mt-3 text-sm text-muted">
-            Não há período em vigor registado para esta região.
+            Não há licença em vigor registada para esta região.
           </p>
         )}
+
+        <nav
+          aria-label="Outros meses"
+          className="ct-sem-impressao mt-4 flex flex-wrap items-center gap-x-4 gap-y-2"
+        >
+          <a
+            href={hrefDoMes(anterior)}
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            ‹ {nomeDoMes(anterior)}
+          </a>
+          {haSeguinte ? (
+            <a
+              href={hrefDoMes(seguinte)}
+              className="inline-flex min-h-11 items-center underline underline-offset-4"
+            >
+              {nomeDoMes(seguinte)} ›
+            </a>
+          ) : null}
+          <BotaoDeImprimir>Imprimir ou guardar em PDF</BotaoDeImprimir>
+        </nav>
       </header>
 
       <section aria-labelledby="numeros" className="mt-8">
@@ -138,8 +193,8 @@ export default async function Balanco({ searchParams }: Props) {
       */}
       <footer className="mt-10 max-w-prose border-t border-border pt-4 text-sm text-muted">
         <p>
-          Os números vêm da base no instante em que esta página foi aberta. Para outro mês, troque o{' '}
-          <code>mes</code> no endereço — no formato <code>AAAA-MM</code>.
+          Os números vêm da base no instante em que esta página foi aberta, e os outros meses estão
+          nas ligações lá em cima.
         </p>
         <p className="mt-2">
           Este endereço é só de leitura e só desta região. Não dá acesso a mais nada, e não indexa.

@@ -338,6 +338,11 @@
     font-family: var(--font-sans);
     line-height: 1.6;
     text-wrap: pretty;
+    /* Uma palavra mais larga do que a linha parte no fim dela, em vez de sair
+       pela margem (C3-011): com a letra a 200 %, «Acessibilidade» no título da
+       declaração pedia 379 px numa janela de 360. Só parte a palavra que não
+       cabe sozinha numa linha — à letra de sempre, nenhuma. */
+    overflow-wrap: break-word;
   }
 
   h1,
@@ -348,6 +353,23 @@
     line-height: 1.15;
     letter-spacing: -0.01em;
     text-wrap: balance;
+  }
+
+  /*
+   * As palavras que não têm onde partir — um email, um endereço, um
+   * identificador — partem onde for preciso (C3-011).
+   *
+   * Com a letra a 200 % (o tamanho de letra do navegador a 32 px), um email
+   * inteiro é mais largo do que um telemóvel, e empurrava a página para o
+   * lado: medido a 2 de outubro, a /informacoes pedia 470 px numa janela de
+   * 360, e a /indicadores 550, por causa de um `eventos_publicados_no_mes`. O
+   * resto do texto parte nos espaços, como sempre; só estas palavras, que não
+   * os têm, partem a meio. Num bloco `pre` não mudam nada — lá não se parte
+   * linha nenhuma, e o bloco desliza dentro de si.
+   */
+  a[href^='mailto:'],
+  code {
+    overflow-wrap: anywhere;
   }
 
   ::selection {
@@ -759,6 +781,14 @@
     background-color: var(--color-brand);
   }
 
+  /* A do cartaz da semana: a negro, e a sair no papel mesmo com os fundos
+     desligados na impressão — é o remate da folha, e não um enfeite do ecrã. */
+  .ct-lambrequim-folha {
+    background-color: #000000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   .ct-lambrequim-flip {
     transform: scaleY(-1);
   }
@@ -790,6 +820,26 @@
     .ct-cruz {
       transition: none;
     }
+  }
+
+  /* -------- Com e sem JavaScript ---------------------------------------- */
+
+  /*
+   * O que só faz sentido dizer a um lado.
+   *
+   * O script de arranque do layout de raiz marca a raiz com `data-js` antes da
+   * primeira pintura; sem JavaScript a marca nunca aparece. A caixa do mapa é
+   * o caso que pediu isto: com JavaScript diz «A carregar o mapa…», que é
+   * verdade durante uns segundos; sem ele dizia o mesmo para sempre. Agora diz
+   * a cada um o que é verdade para ele — e a quem não tem mapa, onde está o
+   * mesmo sem ele.
+   */
+  :root:not([data-js]) .ct-so-com-js {
+    display: none;
+  }
+
+  :root[data-js] .ct-so-sem-js {
+    display: none;
   }
 
   /* -------- Octógono ---------------------------------------------------- */
@@ -1093,4 +1143,99 @@
     color: inherit;
     text-decoration: none;
   }
+
+  /*
+   * A cor de cada região (0167) também sai a preto: a paleta dela vive num
+   * âmbito próprio, que ganhava ao `:root` de cima. Com `!important`, porque
+   * a folha da paleta chega ao `<head>` depois desta.
+   */
+  [data-paleta] {
+    --color-accent: #000000 !important;
+    --color-highlight: #000000 !important;
+    --color-accent-soft: #ffffff !important;
+    --color-on-accent: #ffffff !important;
+  }
+
+  /*
+   * As listas em papel (C2-032, C4-022).
+   *
+   * Imprimir a semana de um concelho dava três a sete folhas de interface: o
+   * toldo a toda a largura, as filas de pílulas, a caixa de pesquisa, os
+   * botões de cada cartão, os cartazes em caixas vazias e uma folha inteira
+   * de rodapé. O que é para mexer não se imprime — a navegação, os
+   * formulários e os botões das páginas da agenda (o `data-impressao` do
+   * `main` da região; o painel tem as regras dele) —, e o resto que só serve
+   * no ecrã leva `.ct-sem-impressao`. O cartão fica uma linha de texto —
+   * dia, hora, título, sítio, preço — e não se parte entre duas folhas.
+   */
+  [data-impressao] nav,
+  [data-impressao] form,
+  [data-impressao] button {
+    display: none !important;
+  }
+
+  /* A folha tem margens próprias; o ar de cima do ecrã era papel em branco. */
+  [data-impressao] {
+    padding-block: 0;
+  }
+
+  [data-cartao-de-evento] {
+    border-width: 0 0 1px;
+    border-radius: 0;
+    padding: 0 0 0.5rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  [data-impressao] h2,
+  [data-impressao] h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Um cartão — de evento, de espaço, de coreto — não se parte entre folhas. */
+  [data-impressao] article,
+  [data-impressao] li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* As prateleiras que deslizam ficam uma lista: em papel não há para onde. */
+  .ct-rail {
+    display: block;
+    overflow: visible;
+  }
+
+  .ct-rail > * {
+    width: auto;
+    margin-bottom: 0.5rem;
+  }
+
+  .ct-shelf-wrap::after {
+    display: none;
+  }
+
+  /*
+   * O cartaz da semana (`FolhaDaSemana`): na impressão é só a folha, na
+   * página com nome `cartaz` — A4 ao alto, com as margens que uma impressora
+   * de escritório consegue. A linha de identidade que as outras páginas
+   * levam em papel aqui sobra: a folha tem a sua.
+   */
+  /*
+   * A página com nome vai no `body` e não na folha: posta na folha, o
+   * Chromium fechava uma página antes dela — a do resto do documento, que
+   * na impressão não tem nada — e a folha começava na segunda.
+   */
+  body:has(.ct-folha) {
+    page: cartaz;
+  }
+
+  body:has(.ct-folha) .ct-linha-de-impressao {
+    display: none !important;
+  }
+}
+
+@page cartaz {
+  size: A4 portrait;
+  margin: 12mm;
 }

@@ -3,6 +3,7 @@ import {
   escolherRegiao,
   lerMes,
   mesAnterior,
+  mesSeguinte,
   nomeDoFicheiro,
   nomeDoMes,
   paraCsv,
@@ -515,5 +516,17 @@ describe('o bloco «compromissos» do CSV', () => {
     });
     expect(csv).toContain('compromissos;quota_do_maior;');
     expect(csv).not.toMatch(/compromissos;quota_do_maior;0/);
+  });
+});
+
+describe('mesSeguinte', () => {
+  it('anda um mês, e vira o ano em dezembro', () => {
+    expect(mesSeguinte('2026-09')).toBe('2026-10');
+    expect(mesSeguinte('2026-12')).toBe('2027-01');
+    expect(mesSeguinte(mesAnterior('2026-10-02'))).toBe('2026-10');
+  });
+
+  it('recusa o que não é um mês', () => {
+    expect(() => mesSeguinte('2026-13')).toThrow();
   });
 });

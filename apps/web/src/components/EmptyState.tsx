@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { desdeQuandoPorLer, type FonteComSaude, type LeituraDoConcelho } from '@/src/lib/estado';
 import { joinPt } from '@/src/lib/format';
+import { emNome } from '@/src/lib/regiao';
 import { BandstandMark } from './BandstandMark';
 
 interface Props {
@@ -41,10 +42,13 @@ export function vazioDoConcelho(
   nome: string,
   leitura: LeituraDoConcelho,
   formatarData: (iso: string) => string,
+  /** O artigo do concelho (0165): «no Entroncamento», e não «em Entroncamento». */
+  artigo: string | null = null,
 ): { title: string; description: string } {
+  const emConcelho = emNome(nome, artigo);
   if (leitura.tipo === 'em-dia') {
     return {
-      title: `Não há nada marcado em ${nome}.`,
+      title: `Não há nada marcado ${emConcelho}.`,
       description:
         'Lemos todos os dias as agendas deste concelho, e de momento não trazem nada. ' +
         'Quem organiza — câmara, coletividade, associação ou junta — pode enviar o que se ' +
@@ -54,7 +58,7 @@ export function vazioDoConcelho(
 
   if (leitura.tipo === 'por-ler') {
     return {
-      title: `Não temos nada marcado em ${nome} — mas pode haver.`,
+      title: `Não temos nada marcado ${emConcelho} — mas pode haver.`,
       description:
         `${quaisAgendasPorLer(leitura.fontes, formatarData)} O que lá se publicar não chega ` +
         'aqui enquanto isto durar — por isso não dizemos que não há nada. Se souber de algum ' +
@@ -64,7 +68,7 @@ export function vazioDoConcelho(
 
   if (leitura.tipo === 'sem-vigilancia') {
     return {
-      title: `Não temos nada publicado em ${nome}.`,
+      title: `Não temos nada publicado ${emConcelho}.`,
       description:
         'Não lemos automaticamente nenhuma agenda deste concelho — o que aparece aqui chega por ' +
         'quem o envia. Não quer dizer que não haja programação: quer dizer que ainda não temos ' +
@@ -73,7 +77,7 @@ export function vazioDoConcelho(
   }
 
   return {
-    title: `Não temos nada publicado em ${nome}.`,
+    title: `Não temos nada publicado ${emConcelho}.`,
     description:
       'E não conseguimos confirmar, neste momento, o estado das agendas deste concelho — por ' +
       'isso não dizemos que não há nada. Dizemos que não sabemos.',

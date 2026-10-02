@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { coverDay, formatDatasDoCartao, formatEventDates, formatRelativeDay } from './format';
+import {
+  coverDay,
+  formatDatasDoCartao,
+  formatEventDates,
+  formatIntervaloPorExtenso,
+  formatRelativeDay,
+} from './format';
 
 const HOJE = '2026-08-28';
 
@@ -173,5 +179,27 @@ describe('formatDatasDoCartao', () => {
         hoje,
       ),
     ).toBe('até 22 out');
+  });
+});
+
+describe('formatIntervaloPorExtenso', () => {
+  it('diz o mês e o ano uma vez quando são os mesmos', () => {
+    expect(formatIntervaloPorExtenso('2026-10-02', '2026-10-08')).toBe('2 a 8 de outubro de 2026');
+  });
+
+  it('dá o nome aos dois meses quando a semana muda de mês', () => {
+    expect(formatIntervaloPorExtenso('2026-09-28', '2026-10-04')).toBe(
+      '28 de setembro a 4 de outubro de 2026',
+    );
+  });
+
+  it('e aos dois anos quando muda de ano', () => {
+    expect(formatIntervaloPorExtenso('2026-12-29', '2027-01-04')).toBe(
+      '29 de dezembro de 2026 a 4 de janeiro de 2027',
+    );
+  });
+
+  it('um dia só é esse dia', () => {
+    expect(formatIntervaloPorExtenso('2026-10-02', '2026-10-02')).toBe('2 de outubro de 2026');
   });
 });

@@ -33,6 +33,13 @@ interface Props {
  *
  * Num ecrã largo há colunas para a fotografia respirar, e aí volta a ficar
  * por cima: é a mesma informação, arrumada para o espaço que existe.
+ *
+ * E também de pé quando a letra cresce (C3-011): a lista que o recebe é um
+ * contentor, e abaixo de 17 rem de lista o cartão empilha — à letra de sempre
+ * são 272 px, que nenhum telemóvel deixa de ter; a 200 % são 544, e todos
+ * passam a empilhar. Deitado, com a letra a 200 %, sobravam 116 px ao lado da
+ * miniatura, e «Biblioteca» já não cabia: o nome do espaço saía cortado pela
+ * margem do cartão.
  */
 export function VenueCard({ venue, count, porConfirmar = false }: Props) {
   const tipo = venue.is_association ? 'Coletividade' : formatVenueKind(venue.kind);
@@ -41,7 +48,7 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
   // está por confirmar — a dúvida diz-se com o mesmo sinal em toda a casa.
   return (
     <li
-      className={`ct-lift relative flex overflow-hidden rounded-lg border bg-surface sm:flex-col ${
+      className={`ct-lift relative flex overflow-hidden rounded-lg border bg-surface @max-[17rem]:flex-col sm:flex-col ${
         porConfirmar ? 'border-dashed border-border' : 'border-border'
       }`}
     >

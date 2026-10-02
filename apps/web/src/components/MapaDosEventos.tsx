@@ -20,6 +20,9 @@ import {
   type Marca,
 } from '@/src/lib/mapa';
 
+/** Onde está o mesmo sem o mapa: na pergunta da rede lenta e na caixa sem JavaScript. */
+const ALTERNATIVA = 'A tabela por baixo tem o mesmo, concelho a concelho.';
+
 /**
  * O MapLibre não renderiza no servidor — toca em `window` logo no arranque — e
  * são trezentos quilobytes que só esta página precisa. Carregado à parte, o
@@ -28,7 +31,7 @@ import {
  */
 const MapaVivo = dynamic(() => import('@/src/components/MapaVivo').then((m) => m.MapaVivo), {
   ssr: false,
-  loading: () => <EsperaDoMapa />,
+  loading: () => <EsperaDoMapa alternativa={ALTERNATIVA} />,
 });
 
 interface Props {
@@ -140,17 +143,14 @@ export function MapaDosEventos({
       {/* A instrução por cima do mapa, numa linha (C2-026): estava por baixo
           dele, onde só se lia depois de se ter tocado sem resultado. Na
           secretária vive no painel ao lado, que é onde o resultado aparece. */}
-      <p className="mb-2 text-sm text-muted lg:hidden">
+      <p className="ct-so-com-js mb-2 text-sm text-muted lg:hidden">
         Toque numa marca para ver o que ali acontece.
       </p>
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-4">
         <div className="min-w-0">
           {montar === false ? (
-            <PerguntaDoMapa
-              alternativa="A tabela por baixo tem o mesmo, concelho a concelho."
-              onPedir={pedir}
-            />
+            <PerguntaDoMapa alternativa={ALTERNATIVA} onPedir={pedir} />
           ) : montar ? (
             <MapaVivo
               lugares={lugares}
@@ -160,7 +160,7 @@ export function MapaDosEventos({
               onEscolher={escolher}
             />
           ) : (
-            <EsperaDoMapa />
+            <EsperaDoMapa alternativa={ALTERNATIVA} />
           )}
 
           {/*

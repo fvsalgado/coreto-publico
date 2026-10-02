@@ -149,6 +149,13 @@ export interface EventDetail extends EventCard {
 export interface Municipality {
   id: string;
   name: string;
+  /**
+   * O artigo do nome, quando o tem (0165): «o» Entroncamento, «o» Sardoal. Nulo
+   * para os que não levam artigo, que são quase todos. É o que faz a caixa
+   * embebida no sítio de uma câmara dizer «Agenda do Entroncamento» e não «de
+   * Entroncamento» — ver `deNome` e `emNome` em `lib/regiao.ts`.
+   */
+  article: string | null;
   district: string;
   latitude: number | null;
   longitude: number | null;

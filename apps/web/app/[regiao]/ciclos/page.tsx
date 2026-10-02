@@ -114,12 +114,12 @@ export default async function CiclosPage({ params }: Props) {
             o melhor argumento para a próxima.
           </p>
 
-          <ul className="mt-5 grid gap-3 sm:grid-cols-2">
+          <ul className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {comPrograma.map((item) => (
               <li key={item.id}>
                 <article className="ct-lift relative h-full rounded-lg border border-border bg-surface p-4">
                   <p className="ct-eyebrow">{formatSeriesKind(item.kind)}</p>
-                  <h3 className="font-display mt-1.5 text-xl leading-snug font-semibold">
+                  <h3 className="font-display mt-1.5 text-xl leading-snug font-semibold [overflow-wrap:anywhere]">
                     <Link
                       href={`/ciclo/${item.id}`}
                       className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"

@@ -20,6 +20,13 @@ const ROTULO: Record<Tema, string> = {
   dark: 'escuro',
 };
 
+/** O que o próximo toque faz, dito pelo tema para onde se vai. */
+const ACAO: Record<Tema, string> = {
+  system: 'Voltar ao do sistema',
+  light: 'Mudar para claro',
+  dark: 'Mudar para escuro',
+};
+
 /**
  * A fonte de verdade é o próprio `data-theme` da raiz — o que o CSS lê é o
  * que o botão mostra, por construção. `useSyncExternalStore` é a forma
@@ -128,21 +135,30 @@ export function ThemeToggle({ variante = 'toldo' }: { variante?: 'toldo' | 'gave
   };
 
   if (variante === 'gaveta') {
+    /*
+     * Sem `aria-label`: o nome é o que se lê no botão (C3-003).
+     *
+     * Via-se «Tema · Agora: o do sistema. Toque para mudar.» e ouvia-se
+     * «Mudar o tema (agora: o do sistema)» — quem usa controlo por voz diz o
+     * que vê, e o botão não respondia ao que se via (WCAG 2.5.3). O texto à
+     * vista passa a ser o nome inteiro, e diz o que o toque faz em vez de
+     * mandar tocar: «Mudar para claro» serve o dedo, o rato e o teclado.
+     */
     return (
       <button
         type="button"
         onClick={mudar}
-        aria-label={`Mudar o tema (agora: ${ROTULO[tema]})`}
         className="flex min-h-14 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left"
       >
         <span className="ct-octagon grid size-9 shrink-0 place-items-center bg-accent-soft text-accent">
           <IconeDoTema tema={tema} />
         </span>
         <span className="min-w-0">
-          <span className="block font-medium">Tema</span>
-          <span className="block text-xs text-muted" aria-live="polite">
-            Agora: {ROTULO[tema]}. Toque para mudar.
+          <span className="block font-medium" aria-live="polite">
+            Tema: {ROTULO[tema]}
           </span>
+          <span className="sr-only">. </span>
+          <span className="block text-xs text-muted">{ACAO[SEGUINTE[tema]]}</span>
         </span>
       </button>
     );

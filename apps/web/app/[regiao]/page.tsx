@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { preload } from 'react-dom';
 import {
+  MINIMO_DE_DESTAQUES,
   addDays,
   comporDestaques,
   janelaDaSemana,
@@ -28,8 +30,9 @@ import { ATALHOS, DEFAULTS, buildHref } from '@/src/lib/agenda';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { paraOVisor } from '@/src/lib/visor';
 import { seccoesDesligadas } from '@/src/lib/queries/seccoes';
-import { comInicialMaiuscula, urlDoSitio } from '@/src/lib/regiao';
+import { concelhosUmPalco, urlDoSitio } from '@/src/lib/regiao';
 
 export const revalidate = 3600;
 
@@ -241,9 +244,19 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
     listFeedSessions,
   );
 
-  // «Onze concelhos, um palco» — a contagem por extenso vem da região; num
-  // build sem base não há contagem e a frase degrada sem números.
-  const temContagem = regiao.concelhosDeclarados > 0;
+  /*
+   * O primeiro cartaz da vitrine pede-se cedo (C3-013).
+   *
+   * É a maior pintura do primeiro ecrã da entrada — o fundo desfocado do
+   * primeiro destaque —, e é uma imagem de fundo, que o navegador só descobre
+   * quando o CSS dela chega: medido a 1 de outubro, 381 ms de atraso só para a
+   * começar a pedir. A medida é a que a capa pinta por trás, a miniatura quando
+   * a há. Só quando a vitrine se desenha, que abaixo do mínimo não se desenha.
+   */
+  const primeiroCartaz = destaques[0]?.image_miniatura ?? destaques[0]?.image_url ?? null;
+  if (destaques.length >= MINIMO_DE_DESTAQUES && primeiroCartaz?.startsWith('https://')) {
+    preload(primeiroCartaz, { as: 'image', fetchPriority: 'high' });
+  }
 
   // As duas peneiras pela ordem que faz sentido: primeiro o que a base tem
   // para dar, depois o que o painel deixa mostrar.
@@ -265,9 +278,10 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
           de o dizer com vagar. */}
       <header className="ct-enter pt-2 sm:pt-4">
         <p className="ct-eyebrow">
-          {temContagem
-            ? `${comInicialMaiuscula(regiao.concelhosPorExtenso)} concelhos, um palco`
-            : 'Uma região, um palco'}
+          {/* «Onze concelhos, um palco», «Um concelho, um palco» — a contagem
+              por extenso vem da região e concorda com ela (C1-031); num build
+              sem base não há contagem, e a frase degrada sem números. */}
+          {concelhosUmPalco(regiao) ?? 'Uma região, um palco'}
         </p>
         <h1 className="ct-display-sm mt-2">{`A agenda cultural ${regiao.doNome}`}</h1>
       </header>
@@ -324,7 +338,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
       <CaixaDePesquisa className="ct-enter mt-6 max-w-xl" />
 
       <Destaques
-        events={destaques}
+        events={destaques.map(paraOVisor)}
         today={today}
         municipalityNames={municipalityNames}
         venueNames={venueNames}

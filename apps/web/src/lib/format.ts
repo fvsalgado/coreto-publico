@@ -78,6 +78,21 @@ export function formatShortDate(iso: string): string {
   return `${p.day} ${MONTHS_SHORT[p.month - 1]}`;
 }
 
+/**
+ * «2 a 8 de outubro de 2026», «28 de setembro a 4 de outubro de 2026» —
+ * um intervalo por extenso, para o cabeçalho de uma folha (o cartaz da
+ * semana). O mês e o ano dizem-se uma vez quando são os mesmos dos dois lados.
+ */
+export function formatIntervaloPorExtenso(de: string, ate: string): string {
+  const a = parts(de);
+  const b = parts(ate);
+  if (!a || !b) return `${de} a ${ate}`;
+  if (de === ate) return formatLongDate(de);
+  if (a.year !== b.year) return `${formatLongDate(de)} a ${formatLongDate(ate)}`;
+  if (a.month !== b.month) return `${a.day} de ${MONTHS[a.month - 1]} a ${formatLongDate(ate)}`;
+  return `${a.day} a ${formatLongDate(ate)}`;
+}
+
 /** «sábado, 10 de maio» */
 export function formatWeekdayDate(iso: string): string {
   const p = parts(iso);

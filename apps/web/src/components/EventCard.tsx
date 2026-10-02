@@ -130,14 +130,33 @@ export function EventCard({
      * partir da secretária, os cartões vão aos pares e a linha alinha pelo
      * mais alto.
      */
+    /*
+     * E a fila empilha quando a letra cresce (C3-011).
+     *
+     * Com a letra do navegador a 200 % — o que faz quem sobe o tamanho do
+     * texto nas definições do telemóvel, e é sobretudo quem tem mais de
+     * sessenta e cinco anos —, a capa crescia com ela e deixava ao título cem
+     * píxeis: cada cartão saía do ecrã e obrigava a andar para o lado para o
+     * ler (medido a 1 de outubro: a agenda pedia 553 px numa janela de 390).
+     *
+     * O cartão é um contentor, e a pergunta é feita em `rem`, que acompanha o
+     * tamanho da letra: abaixo de 17 rem de cartão, a capa sobe para cima do
+     * texto. À letra de sempre isso são 272 px, e nenhum telemóvel chega lá;
+     * a 200 % são 544, e todos chegam. O título parte palavras compridas em
+     * vez de as deixar sair pela margem.
+     */
     <article
       data-cartao-de-evento=""
-      className="ct-lift relative flex h-full flex-col rounded-lg border border-border bg-surface p-3 sm:p-4"
+      className="ct-lift relative @container flex h-full flex-col rounded-lg border border-border bg-surface p-3 sm:p-4"
     >
-      <div className="flex gap-4">
-        <Capa event={event} today={today} className="w-21 shrink-0 self-start sm:w-27" />
+      <div className="flex gap-4 @max-[17rem]:flex-col @max-[17rem]:gap-3">
+        <Capa
+          event={event}
+          today={today}
+          className="ct-sem-impressao w-21 shrink-0 self-start sm:w-27"
+        />
 
-        <div className="min-w-0 flex-1 py-0.5 pr-9">
+        <div className="min-w-0 flex-1 py-0.5 pr-9 print:pr-0">
           <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted">
             <time dateTime={quando} className="font-medium text-highlight">
               {formatDatasDoCartao(event, today, inicio)}
@@ -150,9 +169,20 @@ export function EventCard({
             ) : null}
           </p>
 
-          <Titulo className="font-display mt-1 text-lg leading-snug font-semibold sm:text-xl">
+          <Titulo className="font-display mt-1 text-lg leading-snug font-semibold [overflow-wrap:anywhere] sm:text-xl">
+            {/*
+              Sem pré-carregamento (C3-013). O Next pede a página de cada
+              ligação que entra no ecrã, e numa lista isso são dezenas de
+              pedidos `?_rsc=` a competir com os cartazes numa rede lenta —
+              vinte e quatro ao abrir a entrada, medido a 1 de outubro, e mais
+              de cinquenta até ao fim dela —, para fichas que quase ninguém
+              abre. O pré-carregamento fica nos cinco destinos da barra e na
+              navegação do toldo, que são os que se tocam a seguir; o cartão,
+              as pílulas e o rodapé pedem a página quando alguém lhes toca.
+            */}
             <Link
               href={`/evento/${event.slug}`}
+              prefetch={false}
               className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
             >
               {event.title}
@@ -186,7 +216,7 @@ export function EventCard({
         </div>
       </div>
 
-      <div className="absolute top-1 right-1 z-10 sm:top-2 sm:right-2">
+      <div className="ct-sem-impressao absolute top-1 right-1 z-10 sm:top-2 sm:right-2">
         <BotaoFavorito
           variante="icone"
           evento={{

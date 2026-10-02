@@ -7,6 +7,7 @@ import { ACESSIBILIDADE, FEITO, LIMITACOES } from '@/src/components/informacoes/
 import { formatLongDate } from '@/src/lib/format';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
+import { porNome } from '@/src/lib/regiao';
 import { ELABORACAO_ACESSIBILIDADE, REVISAO_ACESSIBILIDADE } from '@/src/lib/revisao';
 
 export const metadata: Metadata = {
@@ -77,7 +78,7 @@ export default async function AcessibilidadePage({
       <PorExtenso titulo="A declaração de acessibilidade por extenso">
         <p>
           {promotor
-            ? `O Coreto, promovido pela ${promotor.nome}, compromete-se a `
+            ? `O Coreto, promovido ${porNome(promotor.nome, promotor.artigo)}, compromete-se a `
             : 'O Coreto compromete-se a '}
           disponibilizar este sítio em conformidade com o Decreto-Lei n.º 83/2018, de 19 de outubro,
           que transpõe a Diretiva (UE) 2016/2102.{' '}
@@ -157,8 +158,8 @@ export default async function AcessibilidadePage({
           navegação por teclado, dos contrastes e da estrutura de cabeçalhos, página a página, e uma
           auditoria automática que corre em cada alteração, a 360 e a 1280 pixéis de largura, sobre
           uma página de cada tipo que o sítio tem — as páginas fixas, uma ficha de evento, uma ficha
-          de espaço, um concelho e um ciclo, e ainda a gaveta de navegação e o painel do mapa, que
-          só existem depois de alguém lhes tocar. Será revista sempre que houver alterações
+          de espaço, um concelho e um ciclo, e ainda o menu «Mais» do telemóvel e o painel do mapa,
+          que só existem depois de alguém lhes tocar. Será revista sempre que houver alterações
           relevantes e, no mínimo, uma vez por ano.
         </p>
       </PorExtenso>

@@ -22,6 +22,8 @@
  * concelho é «algures neste concelho», e assim está escrito.
  */
 
+import type { StyleSpecification } from 'maplibre-gl';
+
 /** O que o mapa precisa de saber de um evento. */
 export interface EventoNoMapa {
   id: string;
@@ -326,6 +328,12 @@ export interface Marca {
  * porque Tomar é o concelho do primeiro lugar da lista é afirmar de três
  * sítios uma coisa que não se verificou. Contam-se os concelhos: um, diz-se
  * qual; dois, dizem-se os dois; mais, diz-se quantos são.
+ *
+ * **E diz o que se vê.** A marca mostra o número e, por baixo, o concelho
+ * (`rotuloDaMarca`); quem usa a voz para comandar o ecrã diz o que lê —
+ * «carregar em Tomar» —, e o comando só encontra a marca se o nome a contiver
+ * (WCAG 2.5.3). Por isso o sítio com morada leva também o concelho, quando o
+ * nome dele não o traz já: «Cine-Teatro Paraíso, Tomar — 3 eventos».
  */
 export function nomeDaMarca(marca: Marca): string {
   const eventos = marca.eventos === 1 ? '1 evento' : `${marca.eventos} eventos`;
@@ -335,8 +343,10 @@ export function nomeDaMarca(marca: Marca): string {
     const onde = concelhosPorExtenso(marca.lugares.map((lugar) => lugar.concelhoNome));
     return `${marca.lugares.length} sítios em ${onde} — ${eventos}`;
   }
-  const onde =
-    primeiro.precisao === 'exacta' ? primeiro.nome : `Algures em ${primeiro.concelhoNome}`;
+  if (primeiro.precisao !== 'exacta') return `Algures em ${primeiro.concelhoNome} — ${eventos}`;
+  const onde = primeiro.nome.includes(primeiro.concelhoNome)
+    ? primeiro.nome
+    : `${primeiro.nome}, ${primeiro.concelhoNome}`;
   return `${onde} — ${eventos}`;
 }
 
@@ -468,6 +478,46 @@ export const LOCALE_DO_MAPA: Readonly<Record<string, string>> = {
   'CooperativeGesturesHandler.MacHelpText': 'Use ⌘ e a roda do rato para aproximar o mapa',
   'CooperativeGesturesHandler.MobileHelpText': 'Use dois dedos para mover o mapa',
 };
+
+/**
+ * A atribuição do mapa de base, em português.
+ *
+ * O texto vinha do fornecedor dos mosaicos, dentro do TileJSON, e em inglês:
+ * «OpenFreeMap © OpenMapTiles Data from OpenStreetMap» — a única frase em
+ * inglês de uma página toda em português, e a que o leitor de ecrã lia com a
+ * voz portuguesa. A licença do OpenStreetMap (ODbL) pede o crédito e a
+ * ligação para a página de direitos, e o OpenMapTiles e o OpenFreeMap pedem o
+ * nome deles: tudo isso fica, com as mesmas ligações. Muda a língua, que
+ * nenhuma das três impõe.
+ */
+export const ATRIBUICAO_DO_MAPA_DE_BASE =
+  '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> · ' +
+  '<a href="https://www.openmaptiles.org/" target="_blank">© OpenMapTiles</a> · ' +
+  'Dados © <a href="https://www.openstreetmap.org/copyright" target="_blank">contribuidores do OpenStreetMap</a>';
+
+/**
+ * O estilo do mapa de base, com a atribuição dos mosaicos posta em português.
+ *
+ * Passa-se ao `setStyle` do MapLibre como `transformStyle`. É escrita na fonte
+ * do estilo, e não no controlo de atribuição, por uma razão do próprio
+ * MapLibre: quando uma fonte declara `attribution` e aponta para um TileJSON,
+ * ganha a da fonte («explicit source options take precedence over TileJSON»,
+ * em `load_tilejson.ts`). Um texto à parte no controlo juntava-se ao inglês em
+ * vez de o substituir. Só nas fontes vetoriais do OpenFreeMap: as outras não
+ * são dele, e o crédito delas não é este.
+ */
+export function comAtribuicaoEmPortugues(estilo: StyleSpecification): StyleSpecification {
+  const fontes: StyleSpecification['sources'] = {};
+  for (const [id, fonte] of Object.entries(estilo.sources)) {
+    const doOpenFreeMap =
+      fonte.type === 'vector' &&
+      [fonte.url ?? '', ...(fonte.tiles ?? [])].some((endereco) =>
+        endereco.startsWith('https://tiles.openfreemap.org/'),
+      );
+    fontes[id] = doOpenFreeMap ? { ...fonte, attribution: ATRIBUICAO_DO_MAPA_DE_BASE } : fonte;
+  }
+  return { ...estilo, sources: fontes };
+}
 
 /**
  * As camadas de etiquetas do mapa de base que se escondem: os países e os

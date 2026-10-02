@@ -15,6 +15,9 @@
  * 3. **A identidade de máquina é a certa** — canónicos, sitemap, robots,
  *    manifesto, llms.txt, feed, API e widget anunciam a origem do seu
  *    domínio, não a do vizinho.
+ * 4. **Um município sozinho escreve-se no singular e no masculino** — o
+ *    Mirante (`supabase/ci/9001_…`) tem um concelho e é promovido «pelo»
+ *    Município, e nenhuma página diz «um concelhos» nem «da Município».
  *
  * É a versão executável da promessa comercial: a segunda CIM nasce com um
  * INSERT, e o CI faz esse INSERT todas as corridas.
@@ -24,6 +27,7 @@
  * é preciso.
  */
 import http from 'node:http';
+import { GLOSSARIO_INTERNO, palavraInteira } from './glossario-interno.mjs';
 
 const BASE = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:3000');
 
@@ -32,6 +36,8 @@ const HOST_MT = 'coreto.mediotejo.pt';
 const HOST_PROVA = 'coreto.travessia.example';
 const HOST_DESCONHECIDO = 'agenda.exemplo-qualquer.pt';
 const HOST_MONTRA = 'demo.coreto.org';
+/** Um município sozinho, promovido pela câmara (`supabase/ci/9001_…`, C1-031). */
+const HOST_MUNICIPIO = 'coreto.mirante.example';
 
 /**
  * O que nunca pode aparecer numa página da Travessia. Nomes, domínio e
@@ -128,10 +134,18 @@ function semFugas(corpo, host, caminho) {
 
 {
   const inicio = await pagina(HOST_MT, '/');
-  // A paleta vermelha é da montra e de mais ninguém: uma região veste o
-  // turquesa da casa, e o invólucro que muda a cor nunca pode aparecer aqui.
+  // A paleta vermelha é da página do produto e de mais ninguém. O Médio Tejo
+  // declara o turquesa que publica (0167), que é o `@theme` da casa: nem o
+  // invólucro do produto nem o de uma cor de região aparecem aqui.
   afirmar(!inicio.includes('data-paleta="montra"'), `${HOST_MT}/ não veste a paleta da montra`);
+  afirmar(
+    !inicio.includes('data-paleta="regiao"') && inicio.includes('content="#40c0c4"'),
+    `${HOST_MT}/ veste o turquesa que declarou, sem folha de paleta`,
+  );
   afirmar(inicio.includes('A agenda cultural do Médio Tejo'), `${HOST_MT}/ apresenta o Médio Tejo`);
+  // Os cartazes desenhados pela casa são da demonstração e de mais ninguém:
+  // numa agenda a sério o cartaz é de quem organiza (0168).
+  await pagina(HOST_MT, '/cartaz-ilustrado/qualquer-evento', 404);
   afirmar(!inicio.includes('Travessia'), `${HOST_MT}/ sem uma letra da Travessia`);
 
   const llms = await pagina(HOST_MT, '/llms.txt');
@@ -148,6 +162,15 @@ function semFugas(corpo, host, caminho) {
   afirmar(!sitemap.includes('pontezela'), `${HOST_MT}/sitemap.xml sem concelhos da Travessia`);
 
   await pagina(HOST_MT, '/concelho/tomar');
+  // O cartaz A4 da semana (C2-032, C4-022): a folha e o QR para a agenda do
+  // concelho, no domínio da região — e o de um concelho de outra é 404.
+  const folha = await pagina(HOST_MT, '/cartaz-semanal/tomar');
+  afirmar(
+    folha.includes('Esta semana em Tomar') &&
+      folha.includes('aria-label="Código QR para coreto.mediotejo.pt/concelho/tomar"'),
+    `${HOST_MT}/cartaz-semanal/tomar é a folha de Tomar, com o QR para a agenda dela`,
+  );
+  await pagina(HOST_MT, '/cartaz-semanal/pontezela', 404);
   // A pesquisa da agenda, com acento e tudo: sem acentos e pelo radical (0116).
   await pagina(HOST_MT, '/agenda?q=concertos%20de%20ver%C3%A3o');
 
@@ -220,6 +243,18 @@ function semFugas(corpo, host, caminho) {
     'um Host desconhecido vê a página do produto',
   );
   afirmar(produto.includes('versão 2.1'), `${HOST_DESCONHECIDO}/ anuncia a versão do produto`);
+  // O primeiro gesto é ver, e o segundo é falar (C4-003, C4-002): a
+  // demonstração no primeiro ecrã, e um caminho de compra sem preço inventado.
+  afirmar(
+    produto.includes('Ver a demonstração') && produto.includes('Pedir proposta'),
+    `${HOST_DESCONHECIDO}/ convida a ver a demonstração e a pedir proposta`,
+  );
+  const contacto = await pagina(HOST_DESCONHECIDO, '/contacto');
+  afirmar(
+    contacto.includes('Falar connosco') && /mailto:[^"]+\?subject=/.test(contacto),
+    `${HOST_DESCONHECIDO}/contacto escreve o endereço e abre o correio com assunto`,
+  );
+  semFugas(contacto, HOST_DESCONHECIDO, '/contacto');
   afirmar(produto.includes('Fábio Salgado'), `${HOST_DESCONHECIDO}/ diz quem faz`);
   // E veste o vermelho da montra, com a barra do sistema a condizer.
   afirmar(
@@ -274,6 +309,15 @@ function semFugas(corpo, host, caminho) {
 {
   const inicio = await pagina(HOST_PROVA, '/');
   afirmar(!inicio.includes('data-paleta="montra"'), `${HOST_PROVA}/ não veste a paleta da montra`);
+  // Uma região que nasce sem dizer a cor nasce com o vermelho do produto, e
+  // não com o turquesa do Médio Tejo (C4-006, 0167): a cor é dela, numa folha
+  // própria, e a barra do sistema acompanha-a.
+  afirmar(
+    inicio.includes('data-paleta="regiao"') &&
+      inicio.includes('--color-brand:#c2281c') &&
+      inicio.includes('content="#c2281c"'),
+    `${HOST_PROVA}/ nasce com o vermelho do produto, e não com a cor de outra CIM`,
+  );
   afirmar(
     inicio.includes('A agenda cultural da Travessia do Zêzere'),
     `${HOST_PROVA}/ apresenta a Travessia — com o artigo dela`,
@@ -308,6 +352,13 @@ function semFugas(corpo, host, caminho) {
   // O isolamento a sério: um endereço do Médio Tejo aberto no domínio da
   // Travessia é um 404, não um empréstimo de conteúdo.
   await pagina(HOST_PROVA, '/concelho/tomar', 404);
+
+  const folha = await pagina(HOST_PROVA, '/cartaz-semanal/pontezela');
+  afirmar(
+    folha.includes('Esta semana em Pontezela'),
+    `${HOST_PROVA}/cartaz-semanal/pontezela é a folha de Pontezela`,
+  );
+  semFugas(folha, HOST_PROVA, '/cartaz-semanal/pontezela');
 
   const sitemap = await pagina(HOST_PROVA, '/sitemap.xml');
   afirmar(
@@ -379,6 +430,92 @@ function semFugas(corpo, host, caminho) {
   semFugas(ciclo, HOST_PROVA, '/ciclo/encontros-da-travessia');
 }
 
+// ---- O Mirante: um município sozinho, no singular e no masculino ----
+
+{
+  /*
+   * O produto licencia-se a uma câmara sozinha, e as duas regiões de cima
+   * não o provavam: onze concelhos e dois, ambas de uma Comunidade (C1-031).
+   * Com um concelho, as frases que contavam diziam «Um concelhos, um palco» e
+   * «os um concelhos», e o rodapé tinha o «da» escrito à mão: «a agenda dos
+   * um concelhos da Município…». O Mirante tem um concelho e um promotor no
+   * masculino (0169), e é aqui que essas frases voltariam a aparecer.
+   */
+  // As frases partidas, e só elas: «dá-nos um email» é português, «nos um
+  // concelhos» não é.
+  const PARTIDAS =
+    /\bum concelhos\b|\b(?:os|dos|nos|aos) um concelho|\b(?:da|pela|na|à) Município\b/i;
+  const semFrasesPartidas = (corpo, caminho) => {
+    const partida = corpo.match(PARTIDAS);
+    afirmar(
+      partida === null,
+      `${HOST_MUNICIPIO}${caminho} concorda com um concelho e com «o Município»` +
+        (partida ? ` (leu-se «${partida[0]}»)` : ''),
+    );
+  };
+
+  const inicio = await pagina(HOST_MUNICIPIO, '/');
+  afirmar(
+    inicio.includes('Um concelho, um palco') && inicio.includes('A agenda cultural do Mirante'),
+    `${HOST_MUNICIPIO}/ conta um concelho no singular, com o artigo do Mirante`,
+  );
+  afirmar(
+    inicio.includes('A agenda cultural do concelho do Município do Mirante.') &&
+      inicio.includes('Promovido pelo'),
+    `${HOST_MUNICIPIO}/ diz no rodapé «do concelho do Município» e «Promovido pelo»`,
+  );
+  semFrasesPartidas(inicio, '/');
+  semFugas(inicio, HOST_MUNICIPIO, '/');
+  afirmar(!inicio.includes('Travessia'), `${HOST_MUNICIPIO}/ sem uma letra da Travessia`);
+
+  const informacoes = await pagina(HOST_MUNICIPIO, '/informacoes');
+  afirmar(
+    informacoes.includes('É a agenda cultural do concelho do Município do Mirante'),
+    `${HOST_MUNICIPIO}/informacoes apresenta-se com o artigo do promotor`,
+  );
+  semFrasesPartidas(informacoes, '/informacoes');
+
+  const concelho = await pagina(HOST_MUNICIPIO, '/concelho/mirante');
+  afirmar(
+    concelho.includes('no Município do Mirante.'),
+    `${HOST_MUNICIPIO}/concelho/mirante diz «no Município», e não «na»`,
+  );
+  semFrasesPartidas(concelho, '/concelho/mirante');
+
+  const acessibilidade = await pagina(HOST_MUNICIPIO, '/acessibilidade');
+  afirmar(
+    acessibilidade.includes('promovido pelo Município do Mirante'),
+    `${HOST_MUNICIPIO}/acessibilidade diz «promovido pelo Município»`,
+  );
+
+  const manifesto = await pagina(HOST_MUNICIPIO, '/manifest.webmanifest');
+  afirmar(
+    manifesto.includes('O concelho e o que está marcado nele.'),
+    `${HOST_MUNICIPIO}/manifest.webmanifest descreve o mapa no singular`,
+  );
+
+  const llms = await pagina(HOST_MUNICIPIO, '/llms.txt');
+  afirmar(
+    llms.includes('A agenda cultural do concelho do Município do Mirante') &&
+      llms.includes('Promovido pelo Município do Mirante'),
+    `${HOST_MUNICIPIO}/llms.txt concorda com um concelho e com «o Município»`,
+  );
+
+  for (const caminho of [
+    '/agenda',
+    '/espacos',
+    '/mapa',
+    '/submeter',
+    '/levar',
+    '/fontes',
+    '/feed.xml',
+  ]) {
+    const corpo = await pagina(HOST_MUNICIPIO, caminho);
+    semFrasesPartidas(corpo, caminho);
+    semFugas(corpo, HOST_MUNICIPIO, caminho);
+  }
+}
+
 // ---- A montra (0110) e os alias (0111): a terceira região e os 308 ----
 
 {
@@ -413,12 +550,34 @@ function semFugas(corpo, host, caminho) {
   const montra = await pagina(HOST_MONTRA, '/');
   afirmar(montra.includes('Vale do Coreto'), `${HOST_MONTRA}/ apresenta a montra`);
   afirmar(!montra.includes('versão 2.1'), `${HOST_MONTRA}/ é a demonstração, não a ficha técnica`);
-  // A montra veste vermelho, para não se confundir com a agenda de uma região:
-  // o invólucro da paleta e a cor da barra do sistema têm de lá estar.
-  afirmar(montra.includes('data-paleta="montra"'), `${HOST_MONTRA}/ veste a paleta da montra`);
+  // A demonstração veste a cor do seu promotor (0168), e não a do produto: é
+  // a prova de que a cor muda e o produto fica. A folha da paleta e a barra do
+  // sistema têm de lá estar.
+  afirmar(montra.includes('data-paleta="regiao"'), `${HOST_MONTRA}/ veste a sua paleta`);
   afirmar(
-    montra.includes('content="#c2281c"'),
-    `${HOST_MONTRA}/ pinta a barra do sistema de vermelho`,
+    montra.includes('--color-brand:#1f5c4a') && montra.includes('content="#1f5c4a"'),
+    `${HOST_MONTRA}/ veste o verde do seu promotor, e a barra do sistema também`,
+  );
+  // E diz que é demonstração (C4-008), com o promotor inventado, e mostra os
+  // cartazes desenhados para ela (C1-025): servidos pelo próprio sítio.
+  afirmar(
+    montra.includes('Demonstração do Coreto: território, promotor e eventos inventados.') &&
+      montra.includes('<aside aria-label="Demonstração"'),
+    `${HOST_MONTRA}/ diz que é uma demonstração, num marco com nome`,
+  );
+  // E manda conhecer o produto à origem dele, e não ao `SITE_URL` do
+  // deployment — que pode ser o domínio de uma região.
+  afirmar(
+    /<aside aria-label="Demonstração"[^]*?href="https:\/\/coreto\.org"/.test(montra),
+    `${HOST_MONTRA}/ aponta «Conhecer o produto» ao coreto.org`,
+  );
+  afirmar(
+    montra.includes('Comunidade Intermunicipal do Vale do Coreto'),
+    `${HOST_MONTRA}/ é promovida pelo promotor inventado, e não pela equipa do produto`,
+  );
+  afirmar(
+    montra.includes('/cartaz-ilustrado/'),
+    `${HOST_MONTRA}/ mostra os cartazes desenhados para a demonstração`,
   );
   semFugas(montra, HOST_MONTRA, '/');
 
@@ -431,8 +590,8 @@ function semFugas(corpo, host, caminho) {
     `${HOST_MONTRA}/agenda mostra o programa inventado da montra`,
   );
   afirmar(
-    agendaDaMontra.includes('data-paleta="montra"'),
-    `${HOST_MONTRA}/agenda veste a paleta da montra`,
+    agendaDaMontra.includes('data-paleta="regiao"'),
+    `${HOST_MONTRA}/agenda veste a sua paleta`,
   );
   semFugas(agendaDaMontra, HOST_MONTRA, '/agenda');
   const ciclosDaMontra = await pagina(HOST_MONTRA, '/ciclos');
@@ -462,6 +621,90 @@ function semFugas(corpo, host, caminho) {
     '/agenda?categoria=musica',
     'https://coreto.travessia.example/agenda?categoria=musica',
   );
+}
+
+// ---- O glossário interno não chega ao texto servido (C1-005, C2-042, C4-009) ----
+
+/**
+ * O texto que uma pessoa chega a ler numa página — ou a ouvir, ou a ver por
+ * baixo de uma ligação partilhada: o corpo sem guiões nem estilos, o título,
+ * as descrições de partilha e os atributos que um leitor de ecrã diz.
+ */
+function textoServido(html) {
+  const atributos = [
+    ...html.matchAll(/<title>([^<]*)<\/title>/g),
+    ...html.matchAll(/<meta\s[^>]*(?:name|property)="[^"]*description"[^>]*content="([^"]*)"/g),
+    ...html.matchAll(/\s(?:aria-label|alt|title)="([^"]*)"/g),
+  ].map((achado) => achado[1]);
+  const corpo = html
+    .replace(/<script[\s\S]*?<\/script>/g, ' ')
+    .replace(/<style[\s\S]*?<\/style>/g, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return [...atributos, corpo]
+    .join(' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(
+      /&(?:quot|amp|lt|gt|nbsp|apos);/g,
+      (e) =>
+        ({ '&quot;': '"', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&nbsp;': ' ', '&apos;': "'" })[
+          e
+        ],
+    )
+    .replace(/\s+/g, ' ');
+}
+
+{
+  /*
+   * «Montra» é como a casa chama, por dentro, à demonstração e à página do
+   * produto, e chegou ao público por três caminhos: um componente (a entrada
+   * dizia «Todos na mesma montra»), uma migração (o lema da demonstração, que é
+   * a descrição de partilha dela) e a declaração de acessibilidade («a gaveta
+   * de navegação»). O `check:afirmacoes` vê o primeiro e não vê o segundo,
+   * porque lê o código e não a base. Aqui lê-se o que o sítio serve, com a base
+   * que as migrações constroem — os três caminhos de uma vez.
+   *
+   * Só as páginas cujo texto é da casa: as que mostram o que quem organiza
+   * escreveu (a ficha, o espaço, os coretos) ficam de fora, porque «uma
+   * história guardada numa gaveta» é português, e «rematada a lambrequim» é a
+   * arquitetura de um coreto. A lista é a do `scripts/glossario-interno.mjs`.
+   */
+  const DA_CASA = [
+    '/',
+    '/agenda',
+    '/informacoes',
+    '/acessibilidade',
+    '/privacidade',
+    '/fontes',
+    '/estado',
+    '/levar',
+    '/submeter',
+    '/favoritos',
+    '/sem-rede',
+    '/esta-pagina-nao-existe',
+  ];
+  const alvos = [
+    ...[HOST_MT, HOST_PROVA, HOST_MONTRA].map((host) => ({ host, caminhos: DA_CASA })),
+    { host: HOST_DESCONHECIDO, caminhos: ['/', '/fontes', '/seguranca'] },
+  ];
+  for (const { host, caminhos } of alvos) {
+    const achados = [];
+    for (const caminho of caminhos) {
+      const { corpo } = await pedir(caminho, host);
+      const texto = textoServido(corpo);
+      for (const termo of GLOSSARIO_INTERNO) {
+        const achado = texto.match(palavraInteira(termo));
+        if (!achado) continue;
+        const i = achado.index ?? 0;
+        achados.push(`${caminho} «${texto.slice(Math.max(0, i - 40), i + 40).trim()}»`);
+      }
+    }
+    afirmar(
+      achados.length === 0,
+      `${host}: nenhum termo do glossário interno no texto servido de ${caminhos.length} páginas` +
+        (achados.length > 0 ? ` (encontrei: ${achados.join(' · ')})` : ''),
+    );
+  }
 }
 
 if (falhas > 0) {

@@ -189,7 +189,7 @@ Se alguém alterar esta configuração — ativando cookies, gravação de sess�
 criação de perfis —, a análise acima deixa de valer e passa a ser exigível
 consentimento prévio.
 
-### 2.6 O que fica no equipamento de quem visita: duas chaves, e mais nada
+### 2.6 O que fica no equipamento de quem visita: duas chaves, e a página sem rede de quem a pediu
 
 Este sítio grava **duas** chaves no `localStorage` do navegador, as duas só
 depois de a pessoa carregar num botão, e nenhuma delas é lida do lado do
@@ -231,10 +231,24 @@ A mesma ressalva cobre a lista de guardados, pela mesma razão e com mais
 força: guardar um evento **é** o serviço pedido, e é pedido com um clique
 inequívoco num coração que diz o que faz.
 
+**A página sem rede (desde 2 de outubro de 2026).** Quem guardar um evento,
+ou instalar a agenda como aplicação, fica também com um _service worker_ e uma
+cache do navegador com **uma** página — a «Está sem rede» — e os ficheiros de
+desenho de que ela precisa. É o que lhe deixa ver os guardados onde não há
+rede, que é para onde eles são (C3-015). Não leva dados de ninguém: a página é
+igual para toda a gente, e os guardados continuam na chave de cima, onde
+sempre estiveram. Nenhuma página da agenda é guardada — uma agenda servida de
+uma cópia passaria por atual. Quem só visita não fica com nada; «Esquecer
+tudo» tira o _service worker_ e apaga a cache, e limpar os dados do sítio
+também. A ressalva do artigo 5.º é a mesma, pela mesma razão: só existe para
+quem pediu o serviço que ela serve. O código e as razões estão em
+`apps/web/app/[regiao]/sw.js/route.ts` e `apps/web/src/components/RegistoSemRede.tsx`.
+
 **Isto muda se** qualquer uma das chaves passar a ser lida pelo servidor,
 enviada para fora do navegador ou associada a outro dado — nesse momento
 deixa de ser armazenamento necessário e passa a ser identificação, e esta
-secção deixa de descrever a realidade.
+secção deixa de descrever a realidade. O mesmo se a cache passar a guardar
+páginas que dependam de quem as pede.
 
 ### 2.7 Registos técnicos do alojamento
 

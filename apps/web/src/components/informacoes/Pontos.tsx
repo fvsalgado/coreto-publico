@@ -123,14 +123,22 @@ export function Pontos({ pontos }: { pontos: readonly Ponto[] }) {
   return (
     <ul className="mt-4 grid gap-3 sm:grid-cols-2">
       {pontos.map(({ Icone, titulo, texto }) => (
+        /*
+         * O texto desce para baixo do sinal quando não cabe ao lado dele
+         * (C3-011): `flex-wrap`, e um texto que pede pelo menos 12 rem. À
+         * letra de sempre sobram mais do que isso ao lado do sinal em qualquer
+         * telemóvel; com a letra a 200 % não sobram, e o texto passa para a
+         * linha de baixo com a largura toda — em vez de empurrar a página para
+         * o lado, como empurrava nas três páginas que usam estes pontos.
+         */
         <li
           key={titulo}
-          className="flex gap-3 rounded-lg border border-border bg-surface px-4 py-3.5"
+          className="flex flex-wrap gap-3 rounded-lg border border-border bg-surface px-4 py-3.5"
         >
           <span className="ct-octagon mt-0.5 grid size-9 shrink-0 place-items-center bg-accent-soft text-accent">
             <Icone className="size-5" />
           </span>
-          <span>
+          <span className="min-w-0 flex-1 basis-48">
             <strong className="block font-medium">{titulo}</strong>
             <span className="mt-0.5 block text-sm text-muted">{texto}</span>
           </span>

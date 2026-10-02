@@ -1,5 +1,6 @@
 import { todayInLisbon } from '@coreto/core/dates';
 import { notFound } from 'next/navigation';
+import { BotaoDeCopiar } from '@/src/components/BotaoDeCopiar';
 import { InterruptoresDeSeccoes } from '@/src/components/InterruptoresDeSeccoes';
 import { PageHeader } from '@/src/components/PageHeader';
 import {
@@ -9,15 +10,22 @@ import {
   registarLicenca,
   revogarSegredosDeBalanco,
 } from '@/src/lib/admin/actions';
+import { passosDeArranque } from '@/src/lib/admin/arranque';
 import { estadoDaLicenca } from '@/src/lib/admin/fields';
+import { porNome } from '@/src/lib/artigos';
 import {
   listRegionGates,
   listRegionLicenses,
   listRegionsAdmin,
   listSegredosDeBalanco,
   listSiteSections,
+  listSourceHealth,
 } from '@/src/lib/admin/queries';
 import { hasServiceRole } from '@/src/lib/env';
+import { formatLongDate } from '@/src/lib/format';
+import { COR_POR_OMISSAO, contraste, paletaDaMarca } from '@/src/lib/paleta';
+import { listCoretos, listMunicipalities } from '@/src/lib/queries/events';
+import { doNomeDaRegiao } from '@/src/lib/regiao';
 import { REGIAO_PRINCIPAL } from '@/src/lib/regiao-host';
 
 export const dynamic = 'force-dynamic';
@@ -61,6 +69,40 @@ function Campo({
         className={FIELD}
       />
       {ajuda ? <p className="mt-1 text-sm text-muted">{ajuda}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * A cor como vai ficar: o cabeçalho com o nome por cima, e o acento sobre o
+ * papel, com o contraste de cada par escrito ao lado — para quem escolhe a cor
+ * ver o que escolheu antes de guardar outra vez.
+ */
+function AmostraDaCor({ cor }: { cor: string }) {
+  const paleta = paletaDaMarca(cor);
+  if (!paleta) {
+    return (
+      <p className="text-sm text-muted">
+        Esta cor não aguenta texto por cima — nem o branco nem o grafite passam 4,5:1.
+      </p>
+    );
+  }
+  const { claro } = paleta;
+  const arredondar = (valor: number) => valor.toFixed(1).replace('.', ',');
+  return (
+    <div className="max-w-md overflow-hidden rounded border border-border text-sm">
+      <p
+        className="px-3 py-2 font-semibold"
+        style={{ backgroundColor: claro.brand, color: claro['on-brand'] }}
+      >
+        O cabeçalho · {arredondar(contraste(claro.brand, claro['on-brand']))}:1
+      </p>
+      <p className="bg-surface px-3 py-2">
+        <span style={{ color: claro.accent }} className="font-semibold underline">
+          Uma ligação
+        </span>{' '}
+        · {arredondar(contraste(claro.accent, '#ffffff'))}:1 sobre o branco
+      </p>
     </div>
   );
 }
@@ -119,13 +161,17 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
     );
   }
 
-  const [regioes, seccoes, todasAsLicencas, segredos, barreiras] = await Promise.all([
-    listRegionsAdmin(),
-    listSiteSections(id),
-    listRegionLicenses(),
-    listSegredosDeBalanco(),
-    listRegionGates(),
-  ]);
+  const [regioes, seccoes, todasAsLicencas, segredos, barreiras, fontes, concelhos, coretos] =
+    await Promise.all([
+      listRegionsAdmin(),
+      listSiteSections(id),
+      listRegionLicenses(),
+      listSegredosDeBalanco(),
+      listRegionGates(),
+      listSourceHealth(),
+      listMunicipalities(id),
+      listCoretos(id),
+    ]);
   const regiao = regioes.find((linha) => linha.id === id);
   if (!regiao) notFound();
 
@@ -133,9 +179,49 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
   const licencas = todasAsLicencas.filter((linha) => linha.region_id === id);
   const licenca = estadoDaLicenca(licencas, todayInLisbon());
   // No máximo um por região: a 0151 revoga o anterior ao criar o seguinte.
-  const segredoDaRegiao = segredos.find((linha) => linha.region_id === id);
+  // A mais recente, se houver duas — a nova fecha a anterior só no pedido
+  // seguinte, e o prazo que se escreve no email é o da que se acabou de criar.
+  const segredoDaRegiao = segredos
+    .filter((linha) => linha.region_id === id)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const enderecoDoBalanco = segredo
+    ? `https://${regiao.domain}/balanco?chave=${encodeURIComponent(segredo)}&regiao=${encodeURIComponent(regiao.id)}`
+    : '';
+  const textoDoEmail = segredo
+    ? `Segue o endereço do balanço mensal da agenda cultural ${doNomeDaRegiao(regiao.article, regiao.name)}:\n\n` +
+      `${enderecoDoBalanco}\n\n` +
+      'Abre sem palavra-passe e só em leitura: seis números sobre cada mês, com o que cada um mede ' +
+      'escrito ao lado, e ligações para os meses anteriores' +
+      (segredoDaRegiao?.expires_on
+        ? `. Vale até ${formatLongDate(segredoDaRegiao.expires_on)}`
+        : '') +
+      '. Quem tiver o endereço vê o balanço: convém não o reencaminhar para fora da equipa.'
+    : '';
   // Se há senha de barreira guardada — e desde quando. O hash nunca chega cá.
   const barreira = barreiras.find((linha) => linha.region_id === id);
+
+  // A lista de arranque (C4-031): os concelhos e os coretos vêm das leituras
+  // públicas, que guardam uma hora — chegam para dizer o que falta, e o que
+  // se acabou de mudar mostra-se na página de cada coisa.
+  const idsDosConcelhos = new Set(concelhos.map((concelho) => concelho.id));
+  const ligadas = fontes.filter(
+    (fonte) =>
+      fonte.is_enabled && fonte.municipality_id && idsDosConcelhos.has(fonte.municipality_id),
+  );
+  const passos = passosDeArranque({
+    cor: regiao.brand_color ?? null,
+    corPorOmissao: COR_POR_OMISSAO,
+    temLogotipo: Boolean(regiao.logo_on_graphite_path && regiao.logo_on_brand_path),
+    concelhos: concelhos.length,
+    concelhosComFonteLigada: new Set(ligadas.map((fonte) => fonte.municipality_id)).size,
+    fontesLigadas: ligadas.length,
+    coretos: coretos.length,
+    seccaoDosCoretosLigada: !seccoes.some((linha) => linha.id === 'coretos' && !linha.is_enabled),
+    licenca: { ...licenca, existe: licencas.length > 0 },
+    barreiraLigada: regiao.gate_enabled,
+    temResponsavelProprio: regiao.data_controller_name !== null,
+    dominio: regiao.domain,
+  });
 
   return (
     <>
@@ -149,6 +235,38 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           {aviso}
         </p>
       ) : null}
+
+      <section aria-labelledby="arranque" className="mb-8 max-w-3xl">
+        <h2 id="arranque" className="text-lg font-semibold">
+          Lista de arranque
+        </h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          O que está feito e o que falta para a agenda abrir ao público — a folha para mostrar à CIM
+          no primeiro dia.
+        </p>
+        <ul className="mt-3 divide-y divide-border rounded border border-border">
+          {passos.map((passo) => (
+            <li
+              key={passo.chave}
+              className="grid gap-1 px-3 py-2.5 text-sm sm:grid-cols-[9rem_7rem_1fr]"
+            >
+              <span className="font-medium">{passo.rotulo}</span>
+              <span
+                className={
+                  passo.estado === 'por-fazer' ? 'font-semibold text-highlight' : 'text-muted'
+                }
+              >
+                {passo.estado === 'feito'
+                  ? 'Feito'
+                  : passo.estado === 'por-fazer'
+                    ? 'Por fazer'
+                    : 'Para saber'}
+              </span>
+              <span>{passo.texto}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section aria-labelledby="fixos" className="mb-8">
         <h2 id="fixos" className="text-lg font-semibold">
@@ -236,6 +354,17 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           <legend className="text-lg font-semibold">Promotor e contacto</legend>
           <div className="mt-3 space-y-4">
             <Campo nome="cim_name" rotulo="Nome do promotor" valor={regiao.cim_name} obrigatorio />
+            {/* Só com a coluna na base (0169): sem ela, o campo não vem, e a
+                ação não o manda — o resto do formulário grava como antes. */}
+            {'cim_article' in regiao && regiao.cim_article ? (
+              <Campo
+                nome="cim_article"
+                rotulo="Artigo do promotor"
+                valor={regiao.cim_article}
+                obrigatorio
+                ajuda={`«a» numa Comunidade Intermunicipal, «o» num Município — é o que escreve «promovido ${porNome(regiao.cim_name, regiao.cim_article)}» no rodapé.`}
+              />
+            ) : null}
             <Campo
               nome="cim_url"
               rotulo="Endereço do promotor"
@@ -436,8 +565,35 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
                 rotulo="Planeador de transportes públicos"
                 valor={regiao.transit_planner_url ?? null}
                 tipo="url"
-                ajuda="O endereço do planeador de viagens da região, por exemplo o da Paragem.pt dela, completo e com https://. Em branco, as fichas não oferecem a ligação."
+                ajuda="O endereço da página de viagens do planeador da região, completo e com https:// — na Paragem.pt, o domínio da região seguido de /viagem/. As fichas acrescentam-lhe o destino (coordenadas e nome do espaço) e, num evento de um dia só, o dia. Em branco, as fichas não oferecem a ligação."
               />
+            </div>
+          </fieldset>
+        ) : null}
+
+        {/*
+          A cor da região (0167, C4-006). Todas vestiam o turquesa do Médio
+          Tejo, e uma CIM nova nascia com a cor de outra. A cor que aqui se
+          escreve pinta o cabeçalho; o resto da paleta sai dela, com o contraste
+          verificado nos dois temas (`lib/paleta.ts`). A base recusa uma cor
+          onde nem o branco nem o grafite se leiam, e diz porquê.
+
+          Como o planeador, só se desenha com a coluna na base: com a 0167 por
+          aplicar, o campo enviado fazia a `update_region` recusar a edição
+          inteira.
+        */}
+        {'brand_color' in regiao && regiao.brand_color ? (
+          <fieldset>
+            <legend className="text-lg font-semibold">Cor</legend>
+            <div className="mt-3 space-y-4">
+              <Campo
+                nome="brand_color"
+                rotulo="Cor da marca"
+                valor={regiao.brand_color}
+                obrigatorio
+                ajuda="A cor do cabeçalho, como #rrggbb — por exemplo #1f5c4a. O texto por cima dela é o branco ou o grafite, o que se ler melhor, e tem de passar 4,5:1; as ligações e os botões usam a mesma cor, escurecida (ou clareada, no tema escuro) até se lerem. Uma região nova nasce com o vermelho do produto."
+              />
+              <AmostraDaCor cor={regiao.brand_color} />
             </div>
           </fieldset>
         ) : null}
@@ -634,8 +790,30 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
               Copie-o agora. Não volta a aparecer: a base guarda só uma impressão dele, e nem esta
               página o consegue reconstruir. Se o perder, crie outro — o novo fecha este.
             </p>
-            <p className="mt-2 break-all font-mono text-xs">
-              /balanco?chave={segredo}&amp;regiao={regiao.id}
+            {/*
+              O endereço inteiro, no domínio da região (C4-028). Mostrava-se
+              `/balanco?chave=…` sem domínio, e quem o recebia tinha de
+              adivinhar onde o colar. Com o texto do email pronto ao lado: é
+              para uma pessoa que não esteve nesta página.
+            */}
+            <p className="mt-2 font-mono text-xs break-all select-all">{enderecoDoBalanco}</p>
+            <p className="mt-2">
+              <BotaoDeCopiar
+                texto={enderecoDoBalanco}
+                etiqueta="Copiar o endereço"
+                anuncio="Endereço copiado"
+              />
+            </p>
+            <p className="mt-4 font-medium">Um texto para o email</p>
+            <p className="mt-1 rounded border border-border px-3 py-2 whitespace-pre-line select-all">
+              {textoDoEmail}
+            </p>
+            <p className="mt-2">
+              <BotaoDeCopiar
+                texto={textoDoEmail}
+                etiqueta="Copiar o texto"
+                anuncio="Texto copiado"
+              />
             </p>
           </div>
         ) : null}

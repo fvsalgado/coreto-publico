@@ -686,6 +686,7 @@ export const CAMPOS_DA_REGIAO = {
   about_intro: 'anulavel',
   about_story: 'anulavel',
   cim_name: 'obrigatorio',
+  cim_article: 'obrigatorio',
   cim_url: 'obrigatorio',
   contact_email: 'obrigatorio',
   funding_statement: 'anulavel',
@@ -707,5 +708,6 @@ export const CAMPOS_DA_REGIAO = {
   data_controller_dpo: 'anulavel',
   data_controller_dpo_contact: 'anulavel',
   transit_planner_url: 'anulavel',
+  brand_color: 'obrigatorio',
   sort_order: 'inteiro',
 } as const;

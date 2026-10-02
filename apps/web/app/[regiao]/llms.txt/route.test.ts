@@ -63,6 +63,7 @@ const TRAVESSIA: Regiao = {
   tagline: null,
   promotor: {
     nome: 'Comunidade Intermunicipal da Travessia do Zêzere',
+    artigo: 'a',
     url: 'https://travessia.example',
     declaracaoDeFinanciamento: null,
     cofinanciamento: null,
@@ -78,6 +79,7 @@ const CONCELHOS: Municipality[] = [
   {
     id: 'serta',
     name: 'Sertã',
+    article: 'a',
     district: 'Castelo Branco',
     latitude: null,
     longitude: null,
@@ -87,6 +89,7 @@ const CONCELHOS: Municipality[] = [
   {
     id: 'ferreira-do-zezere',
     name: 'Ferreira do Zêzere',
+    article: null,
     district: 'Santarém',
     latitude: null,
     longitude: null,

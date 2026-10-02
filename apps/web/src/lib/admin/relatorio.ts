@@ -287,6 +287,24 @@ export function mesAnterior(hoje: string): string {
   return mes === 1 ? `${ano - 1}-12` : `${ano}-${String(mes - 1).padStart(2, '0')}`;
 }
 
+/**
+ * O mês seguinte a um mês (`AAAA-MM`), em `AAAA-MM` — para andar de mês em mês
+ * no balanço sem pedir a quem decide que edite o endereço (C4-028).
+ */
+export function mesSeguinte(mes: string): string {
+  const ano = Number(mes.slice(0, 4));
+  const m = Number(mes.slice(5, 7));
+  if (!Number.isInteger(ano) || !Number.isInteger(m) || m < 1 || m > 12) {
+    throw new Error(`mesSeguinte: «${mes}» não é um mês AAAA-MM`);
+  }
+  return m === 12 ? `${ano + 1}-01` : `${ano}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** O mês de um dia (`AAAA-MM-DD`): o primeiro mês que o balanço não deixa passar. */
+export function mesDoDia(dia: string): string {
+  return dia.slice(0, 7);
+}
+
 /** «agosto de 2026», para o título de um relatório que se entrega em papel. */
 export function nomeDoMes(mes: string): string {
   const nome = MESES[Number(mes.slice(5, 7)) - 1];

@@ -12,6 +12,8 @@ import {
   nomeDaMarca,
   rotuloDaMarca,
   LOCALE_DO_MAPA,
+  ATRIBUICAO_DO_MAPA_DE_BASE,
+  comAtribuicaoEmPortugues,
   camadaAEsconder,
   ancoraDoCoreto,
   juntarCoretosNoEcra,
@@ -401,9 +403,15 @@ function marca(lugares: ReturnType<typeof lugar>[], eventos: number) {
 }
 
 describe('nomeDaMarca', () => {
-  it('um sítio com morada diz o nome do sítio', () => {
+  it('um sítio com morada diz o nome do sítio e o concelho que a marca mostra', () => {
     expect(nomeDaMarca(marca([lugar('Cine-Teatro Paraíso', 'Tomar', 'exacta')], 3))).toBe(
-      'Cine-Teatro Paraíso — 3 eventos',
+      'Cine-Teatro Paraíso, Tomar — 3 eventos',
+    );
+  });
+
+  it('não repete o concelho quando o nome do sítio já o traz', () => {
+    expect(nomeDaMarca(marca([lugar('Aquapolis Abrantes', 'Abrantes', 'exacta')], 2))).toBe(
+      'Aquapolis Abrantes — 2 eventos',
     );
   });
 
@@ -446,6 +454,33 @@ describe('nomeDaMarca', () => {
       6,
     );
     expect(nomeDaMarca(junta)).toBe('3 sítios em 3 concelhos — 6 eventos');
+  });
+
+  it('contém o que a marca mostra: o número e a etiqueta de baixo (WCAG 2.5.3)', () => {
+    // Quem comanda o ecrã pela voz diz o que lê, e o comando só encontra a
+    // marca se o nome a contiver. A auditoria (`label-content-name-mismatch`)
+    // reprovou as marcas do `/mapa` a 2 de outubro, e este é o lado do nome.
+    const marcas = [
+      marca([lugar('Cine-Teatro Paraíso', 'Tomar', 'exacta')], 7),
+      marca([lugar('Mação', 'Mação', 'concelho')], 1),
+      marca([lugar('Paraíso', 'Tomar', 'exacta'), lugar('Levada', 'Tomar', 'exacta')], 9),
+      marca(
+        [lugar('Aquapolis', 'Abrantes', 'exacta'), lugar('Cine-Teatro', 'Constância', 'exacta')],
+        8,
+      ),
+      marca(
+        [
+          lugar('a', 'Tomar', 'exacta'),
+          lugar('b', 'Ourém', 'exacta'),
+          lugar('c', 'Mação', 'exacta'),
+        ],
+        10,
+      ),
+    ];
+    for (const m of marcas) {
+      expect(nomeDaMarca(m)).toContain(String(m.eventos));
+      expect(nomeDaMarca(m)).toContain(rotuloDaMarca(m));
+    }
   });
 });
 
@@ -513,6 +548,44 @@ describe('LOCALE_DO_MAPA', () => {
   it('não deixa os botões de aproximar e afastar em inglês', () => {
     expect(LOCALE_DO_MAPA['NavigationControl.ZoomIn']).toBe('Aproximar');
     expect(LOCALE_DO_MAPA['NavigationControl.ZoomOut']).toBe('Afastar');
+  });
+});
+
+describe('comAtribuicaoEmPortugues', () => {
+  // A forma dos estilos do OpenFreeMap: uma fonte vetorial por TileJSON e o
+  // relevo do Natural Earth em mosaicos de imagem.
+  const estilo = {
+    version: 8 as const,
+    layers: [],
+    sources: {
+      openmaptiles: { type: 'vector' as const, url: 'https://tiles.openfreemap.org/planet' },
+      ne2_shaded: {
+        type: 'raster' as const,
+        tiles: ['https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png'],
+      },
+      concelhos: {
+        type: 'geojson' as const,
+        data: { type: 'FeatureCollection' as const, features: [] },
+      },
+    },
+  };
+
+  it('põe a atribuição dos mosaicos em português, sem perder nenhum dos três créditos', () => {
+    const traduzido = comAtribuicaoEmPortugues(estilo);
+    const fonte = traduzido.sources['openmaptiles'];
+    expect(fonte && 'attribution' in fonte ? fonte.attribution : null).toBe(
+      ATRIBUICAO_DO_MAPA_DE_BASE,
+    );
+    expect(ATRIBUICAO_DO_MAPA_DE_BASE).not.toMatch(/Data from/);
+    for (const credito of ['OpenFreeMap', '© OpenMapTiles', 'openstreetmap.org/copyright']) {
+      expect(ATRIBUICAO_DO_MAPA_DE_BASE).toContain(credito);
+    }
+  });
+
+  it('não escreve o crédito do OpenFreeMap em fontes que não são vetoriais dele', () => {
+    const traduzido = comAtribuicaoEmPortugues(estilo);
+    expect(traduzido.sources['ne2_shaded']).toEqual(estilo.sources.ne2_shaded);
+    expect(traduzido.sources['concelhos']).toEqual(estilo.sources.concelhos);
   });
 });
 

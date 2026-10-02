@@ -11,7 +11,10 @@ export function PorExtenso({ titulo, children }: { titulo: string; children: Rea
     <details className="mt-5 rounded-lg border border-border bg-surface">
       <summary className="ct-sem-marca flex min-h-11 cursor-pointer items-center gap-2 px-4 py-3 font-medium">
         <span aria-hidden="true" className="ct-octagon size-2 shrink-0 bg-highlight" />
-        {titulo}
+        {/* Num `span` que pode encolher, pela mesma razão da ligação «Ler … por
+            extenso»: solto no flex, o título não descia abaixo da palavra mais
+            longa e saía da janela com a letra a 200 % (C3-011). */}
+        <span className="min-w-0">{titulo}</span>
       </summary>
       {/*
        * Sem `text-sm`: isto é o corpo de um documento, não uma nota.
