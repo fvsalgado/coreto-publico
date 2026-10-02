@@ -16,7 +16,7 @@ index 0000000..be08a11
 +
 +Reconstrói-se com scripts/espelho/sincronizar.sh, e nunca à mão.
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 25d96cb..54b7c06 100644
+index 919a883..da4c47d 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
 @@ -242,16 +242,12 @@ jobs:
@@ -39,7 +39,7 @@ index 25d96cb..54b7c06 100644
        # O irmão do anterior, e aqui pela mesma razão: confronta cada afirmação
        # pública com o ficheiro, o campo ou a rota que a sustenta, e falha
        # nomeando ficheiro e linha. A família que precisa de um pedido a
-@@ -809,14 +805,6 @@ jobs:
+@@ -830,14 +826,6 @@ jobs:
  
        # As listas do Selo de Usabilidade e Acessibilidade, na parte que uma
        # máquina consegue provar (docs/SELO.md §1). Correu à mão desde 15 de
@@ -55,13 +55,13 @@ index 25d96cb..54b7c06 100644
        # verificam-se as promessas que são função da compilação e não do humor do
        # executor — o peso por rota, zero pedidos a terceiros, zero cookies, e o
 diff --git a/.gitignore b/.gitignore
-index a42c0c1..432b35a 100644
+index 98c5dd2..62207cf 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -83,3 +83,6 @@ apps/web/public/maplibre/
- # anexou a um processo seria a errada. Gera-se com `pnpm dossie`, e o CI
- # publica-o como artefacto descarregável em cada alteração.
- estado/
+@@ -90,3 +90,6 @@ apps/web/public/maplibre/
+ # só ela usa nunca chegavam ao CSS, e os números do estado saíam do tamanho do
+ # texto à volta.
+ /estado/
 +
 +# As permissões locais do Claude Code são de quem trabalha aqui, não do projeto.
 +.claude/settings.local.json
@@ -88,7 +88,7 @@ index 9231e9e..3fe2d70 100644
  
  A declaração legível por máquina está em [`REUSE.toml`](REUSE.toml).
 diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
-index dbb6612..a800cd5 100644
+index fe760d1..938efaf 100644
 --- a/CONTRIBUTING.md
 +++ b/CONTRIBUTING.md
 @@ -1,5 +1,12 @@
@@ -113,7 +113,7 @@ index dbb6612..a800cd5 100644
  tratamento, as palavras proibidas e os dois glossários. O glossário interno é o
  que mais importa aqui: «montra», «gaveta», «toldo» e «lambrequim» são nomes
  desta casa e já escorregaram para páginas públicas, uma delas um documento
-@@ -203,4 +210,4 @@ Se alguma destas três te incomodar, abre um issue antes de escrever código —
+@@ -204,4 +211,4 @@ Se alguma destas três te incomodar, abre um issue antes de escrever código —
  melhor discutir isso do que descobri-lo depois de teres trabalho feito.
  
  A redação definitiva desta cláusula está por confirmar com advogado; a pergunta
@@ -242,7 +242,7 @@ index 6a6bd66..7ae11c1 100644
  precedence = "override"
  SPDX-FileCopyrightText = "os respetivos sítios de origem — ver docs/TERCEIROS.md"
 diff --git a/docs/TERCEIROS.md b/docs/TERCEIROS.md
-index 5a5f301..95b7276 100644
+index 98c5c3d..609d2d3 100644
 --- a/docs/TERCEIROS.md
 +++ b/docs/TERCEIROS.md
 @@ -9,41 +9,32 @@ bater certo.
@@ -339,7 +339,7 @@ index 5a5f301..95b7276 100644
  Quatro ficheiros não têm o cabeçalho de proveniência que a pasta exige.
  
 diff --git a/package.json b/package.json
-index 3435756..7e8a67b 100644
+index 4fc30f7..510d74f 100644
 --- a/package.json
 +++ b/package.json
 @@ -20,12 +20,8 @@

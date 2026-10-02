@@ -853,20 +853,30 @@ presente('apps/web/app/[regiao]/llms.txt/route.ts', /há menos de 90 dias/, {
    * setembro o desmentia: a 320 px a entrada pedia 561. A regra de agora é a
    * mesma ao contrário: a frase fica enquanto as medições a guardarem.
    */
-  const seloMede320 = /4\.2 · o layout é adaptável sem varrimento horizontal \(320px\)/.test(
-    ler('scripts/check-selo.mjs'),
-  );
-  const a11yMede320 = /const LARGURA = 320;/.test(ler('scripts/check-a11y.mjs'));
-  afirmar({
-    afirmacao: '«O que está feito» só afirma o reflow com as medições que o guardam',
-    porque:
-      'a frase esteve desmentida pela medição de 7 de setembro (561 px a 320); voltou a 2 de outubro, medida, e uma declaração lida por quem fiscaliza não pode afirmar o que nada verifica',
-    onde: origem('apps/web/src/components/informacoes/acessibilidade.ts', /export const FEITO/),
-    ok: !temReflow || (seloMede320 && a11yMede320),
-    esperava:
-      'o check:selo a medir os 320 px (Conteúdo 4.2) e o check:a11y a medir os 320 px com a letra a 200 %',
-    encontrei: `check:selo ${seloMede320 ? 'mede' : 'não mede'} · check:a11y ${a11yMede320 ? 'mede' : 'não mede'}`,
-  });
+  // O `check:selo` não vai para o espelho público (`scripts/espelho/apagar.txt`):
+  // lê documentos que vivem no dossiê privado. No espelho, esta afirmação não
+  // se mede; no dossiê, corre sempre.
+  if (noDossiePrivado('scripts/check-selo.mjs')) {
+    saltar(
+      '«O que está feito» só afirma o reflow com as medições que o guardam',
+      'o check:selo vive no dossiê privado',
+    );
+  } else {
+    const seloMede320 = /4\.2 · o layout é adaptável sem varrimento horizontal \(320px\)/.test(
+      ler('scripts/check-selo.mjs'),
+    );
+    const a11yMede320 = /const LARGURA = 320;/.test(ler('scripts/check-a11y.mjs'));
+    afirmar({
+      afirmacao: '«O que está feito» só afirma o reflow com as medições que o guardam',
+      porque:
+        'a frase esteve desmentida pela medição de 7 de setembro (561 px a 320); voltou a 2 de outubro, medida, e uma declaração lida por quem fiscaliza não pode afirmar o que nada verifica',
+      onde: origem('apps/web/src/components/informacoes/acessibilidade.ts', /export const FEITO/),
+      ok: !temReflow || (seloMede320 && a11yMede320),
+      esperava:
+        'o check:selo a medir os 320 px (Conteúdo 4.2) e o check:a11y a medir os 320 px com a letra a 200 %',
+      encontrei: `check:selo ${seloMede320 ? 'mede' : 'não mede'} · check:a11y ${a11yMede320 ? 'mede' : 'não mede'}`,
+    });
+  }
   presente('apps/web/src/components/informacoes/acessibilidade.ts', /1\.4\.10/, {
     afirmacao: 'a declaração nomeia o critério 1.4.10',
     porque: 'um critério sem nome não serve a quem fiscaliza nem a quem tem de o manter cumprido',

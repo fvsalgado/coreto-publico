@@ -81,8 +81,14 @@ passo 'A retirar o que não é público, de toda a história'
 echo "   $(git -C "$CLONE" rev-list --count HEAD) commits depois do filtro"
 
 passo 'A aplicar o que muda por ser público'
-git -C "$CLONE" apply -3 --whitespace=nowarn "${RECEITA}/apresentavel.patch" \
-  || morrer 'o apresentavel.patch já não aplica — regenera-o (ver o README desta pasta)'
+if ! git -C "$CLONE" apply -3 --whitespace=nowarn "${RECEITA}/apresentavel.patch"; then
+  # O clone fica, com os conflitos marcados: é nele que o patch se regenera
+  # (README desta pasta, «Quando o patch deixar de aplicar»). Sem isto, a
+  # armadilha do EXIT apagava-o, e o manual mandava trabalhar num clone que já
+  # não existia.
+  trap - EXIT
+  morrer "o apresentavel.patch já não aplica — regenera-o no clone que fica em ${CLONE} (ver o README desta pasta)"
+fi
 (cd "$CLONE" && xargs git rm --quiet < "${RECEITA}/apagar.txt")
 
 # A marca. É o que faz os guiões de verificação dizerem «não se mediu» em vez
