@@ -90,3 +90,6 @@ apps/web/public/maplibre/
 # só ela usa nunca chegavam ao CSS, e os números do estado saíam do tamanho do
 # texto à volta.
 /estado/
+
+# As permissões locais do Claude Code são de quem trabalha aqui, não do projeto.
+.claude/settings.local.json

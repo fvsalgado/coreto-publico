@@ -9,41 +9,32 @@ bater certo.
 
 ---
 
-## O que está errado hoje, e é para tratar com as mãos
+## O que estava errado, e como se resolveu
 
-Isto não se resolve com um ficheiro. Está aqui em primeiro lugar de propósito.
+Este documento abria, desde o primeiro dia, com uma secção intitulada «o que
+está errado hoje, e é para tratar com as mãos». Fechou a 21 de setembro de
+2026, no dia em que o repositório passou a público — porque o que lá estava
+não podia ser publicado.
 
-### `instantaneos/cm-torresnovas-2026-08-29/`
+**`instantaneos/cm-torresnovas-2026-08-29/` saiu.** Eram três páginas
+completas do sítio da Câmara Municipal de Torres Novas, 309 215 bytes de HTML
+com o `© 2026 Município de Torres Novas` no rodapé, mais um `plano.json` com
+22 descrições de eventos copiadas à letra. Saiu da árvore **e da história**:
+a reescrita de 21/09/2026 passou os 107 commits e não deixou cópia nenhuma.
 
-Três páginas **completas** do sítio da Câmara Municipal de Torres Novas —
-`agenda.html` (107 439 B), `agenda-start-10.html` (107 806 B),
-`agenda-start-20.html` (94 970 B), ao todo 309 215 bytes de HTML — gravadas do
-browser porque a agenda da câmara responde 503 a quem a recolhe
-automaticamente. Sem cabeçalho de proveniência dentro dos ficheiros, e com o
-aviso no rodapé:
+**Os dois _fixtures_ que eram páginas inteiras foram reduzidos.** O
+`jf-minde-agenda.html` e o `jf-minde-evento.html` tinham ~61 KB cada, com o
+JavaScript, o CSS e o rodapé de reserva de direitos do sítio lá dentro. Passam
+a 5 KB e 1 KB — os blocos de evento e as duas ligações por que o adaptador
+confirma que a página é a agenda, que é o que a regra da pasta sempre disse.
+Os 29 testes do adaptador continuam a passar; foram eles que provaram que o
+recorte ficou fiel.
 
-```html
-<span class="sp-copyright">© 2026 Município de Torres Novas</span>
-```
-
-**E, pior, o que saiu daqui para o público.** O `plano.json` da mesma pasta tem
-**22 descrições de eventos copiadas literalmente** da câmara, e a migração 0061
-escreveu-as para a base de dados **servida ao público**. Não é material de
-calibração guardado num canto: é texto alheio republicado pelo produto.
-
-**O que resolve:** retirar, substituir por texto próprio, ou autorização da
-câmara — de preferência através da CIM. As três coisas servem; não fazer
-nenhuma, não.
-
-**A 15 de setembro de 2026 o titular declarou ter essa autorização.** A
-declaração está registada, com data, em
-[`AUTORIZACOES.md`](AUTORIZACOES.md) — e é só isso que está: a forma do
-documento, quem o assinou, em que data e o que cobre continuam por registar, e
-o registo diz quais são as quatro linhas que faltam. Uma autorização que
-ninguém consegue mostrar não deixa de existir por isso; deixa é de servir de
-prova, que é para o que este documento existe.
-
----
+**O que fica por decidir não é isto.** As descrições de Torres Novas que a
+migração 0061 escreveu para a base servida ao público continuam lá, ao abrigo
+da autorização que o titular declarou a 15 de setembro de 2026. Essa
+declaração, e a pergunta ao advogado sobre o que ela cobre, vivem no dossiê
+privado.
 
 ## Marcas de terceiros
 
@@ -59,18 +50,17 @@ Não são nossas e não vão na licença do resto do repositório.
 
 ## HTML capturado de sítios de terceiros
 
-`packages/ingest/src/__fixtures__/` — 32 ficheiros, 306 833 bytes, dos quais
-**29 capturados** de sítios de câmaras, juntas e teatros. Servem para calibrar
+`packages/ingest/src/__fixtures__/` — 33 ficheiros, 190 720 bytes, dos quais
+**30 capturados** de sítios de câmaras, juntas e teatros. Servem para calibrar
 adaptadores contra páginas verdadeiras em vez de HTML imaginado.
 
 Três são **nossos** e não de terceiros: `agenda-inventada.ics`,
 `tribe-events.json` e `events-calendar.html`.
 
-Dois **não são recortes, são páginas inteiras**: `jf-minde-agenda.html` e
-`jf-minde-evento.html`, ~61 KB cada, com ~9 KB de JavaScript e ~15 KB de CSS
-próprios do sítio e o rodapé de reserva de direitos lá dentro. O README da
-pasta prometia blocos de evento; estes dois desmentem-no, e o README passou a
-dizê-lo.
+**Já não há excepções.** O `jf-minde-agenda.html` e o `jf-minde-evento.html`
+eram páginas inteiras, ~61 KB cada; a 21 de setembro de 2026 foram reduzidos
+aos blocos de evento, como o README da pasta sempre prometeu. Todos os
+ficheiros capturados são agora recortes.
 
 Quatro ficheiros não têm o cabeçalho de proveniência que a pasta exige.
 

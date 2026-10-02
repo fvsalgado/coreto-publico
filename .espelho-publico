@@ -1,0 +1,11 @@
+Este repositório é o espelho público do Coreto.
+
+O desenvolvimento faz-se num repositório privado, que é o que serve o sítio e
+o que tem os segredos. Aqui está o código todo; de fora ficou o que não é
+código — o dossiê comercial, os manuais de operação, o levantamento das fontes
+de uma região, e as automações que precisam de segredos para correr.
+
+Os guiões de verificação leem este ficheiro: onde ele existe, as afirmações que
+precisam do que vive no privado dizem «não se mediu» em vez de reprovarem.
+
+Reconstrói-se com scripts/espelho/sincronizar.sh, e nunca à mão.
