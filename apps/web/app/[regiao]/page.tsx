@@ -1,6 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { comporDestaques, janelaDaSemana, todayInLisbon, type EventFilter } from '@coreto/core';
+import {
+  addDays,
+  comporDestaques,
+  janelaDaSemana,
+  todayInLisbon,
+  type EventFilter,
+} from '@coreto/core';
 import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
 import { Destaques } from '@/src/components/Destaques';
 import { EmptyState } from '@/src/components/EmptyState';
@@ -17,6 +23,7 @@ import {
   withCardTimes,
 } from '@/src/lib/queries/events';
 import { listFeedSessions } from '@/src/lib/feeds/data';
+import { dosPrimeirosDias } from '@/src/lib/agrupar';
 import { ATALHOS, DEFAULTS, buildHref } from '@/src/lib/agenda';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
@@ -41,6 +48,13 @@ export async function generateMetadata({
 
 /** Quantos eventos cabem na montra antes de valer mais a pena ir à agenda. */
 const WEEK_LIMIT = 40;
+
+/**
+ * Quantos dias a lista da entrada mostra: hoje e os dois seguintes (C2-018).
+ * A semana inteira continua a ser lida — é dela que saem os destaques —, e
+ * está a um toque, no atalho dos sete dias.
+ */
+const DIAS_NA_ENTRADA = 3;
 
 /** Um atalho da entrada, e o que é preciso saber antes de o oferecer. */
 interface AtalhoDaEntrada extends Ancora {
@@ -75,9 +89,16 @@ const SHORTCUTS: readonly AtalhoDaEntrada[] = [
    * onde se guarda o estado do catálogo.
    */
   { href: '/agenda?accessible=1', label: 'Acessível', recorte: { accessible: true } },
-  // O único destes que se desliga no painel. Os outros três são recortes da
-  // agenda, e a agenda não se desliga.
-  { href: '/coretos', label: 'Coretos', seccao: 'coretos' },
+  /*
+   * Os Coretos estiveram aqui, e saíram (C2-024).
+   *
+   * Eram a sétima pílula da fila, ao lado de «Hoje», «Entrada livre» e
+   * «Acessível» — onde parecem um recorte de eventos, e não são: levam ao
+   * levantamento, e numa semana sem um único evento num coreto, a promessa de
+   * programação era a que a fila fazia e a página não cumpria. Os Coretos
+   * continuam no cabeçalho, na gaveta do «+» e no rodapé, que é onde estão as
+   * páginas; esta fila é de recortes da agenda.
+   */
 ];
 
 /**
@@ -182,10 +203,17 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
   // A hora de cada cartão da semana. A entrada chamava `listEvents` e mais
   // nada, e `listEvents` nunca lê `event_sessions`; as regras estão em
   // `withCardTimes`. E de que eventos o acesso é o do espaço (C2-011).
-  const [events, acessoDoEspaco] = await Promise.all([
+  const [daSemana, acessoDoEspaco] = await Promise.all([
     withCardTimes(week.events, today, listFeedSessions),
     eventosComAcessoDoEspaco(week.events),
   ]);
+  // A lista curta: os primeiros dias, cortados pelo dia em que cada evento
+  // entra na lista — que já leva em conta as sessões que `withCardTimes` leu.
+  const ultimoDia = addDays(today, DIAS_NA_ENTRADA - 1);
+  const events = dosPrimeirosDias(daSemana, today, ultimoDia);
+  // O atalho dos sete dias, com o mesmo endereço do da fila de cima — é para
+  // lá que a lista curta manda quem quer a semana toda.
+  const semanaToda = buildHref({ ...DEFAULTS, ...janelaDaSemana(today) }, 1);
 
   /*
    * A montra: o que foi escolhido primeiro, o resto tirado à sorte da semana.
@@ -274,6 +302,7 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
         <FilaDePilulas
           nome="Concelhos"
           rotulo="Onde"
+          maximo={8}
           pilulas={concelhosComEventos.map((concelho) => ({
             chave: concelho.id,
             rotulo: concelho.name,
@@ -303,31 +332,50 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
 
       <section aria-labelledby="esta-semana" className="ct-reveal mt-12">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          {/* A janela tem um nome só, o do atalho que leva a ela (C2-040):
-              eram quatro — «Esta semana», «Em cartaz esta semana», «A semana
-              dia a dia», «os próximos sete dias». Os destaques, por cima,
-              chamam-se pelo que são, uma escolha; esta é a lista inteira. */}
+          {/* A janela tem um nome só, e diz o que mostra (C2-040): hoje e os
+              dois dias seguintes (C2-018). A semana inteira tem o nome do
+              atalho que leva a ela — «Próximos 7 dias» —, e é para lá que a
+              ligação manda. Os destaques, por cima, chamam-se pelo que são,
+              uma escolha. */}
           <h2 id="esta-semana" className="ct-heading">
-            Os próximos 7 dias
+            Os próximos {DIAS_NA_ENTRADA} dias
           </h2>
           <Link
-            href="/agenda"
+            href={semanaToda}
             className="inline-flex min-h-11 items-center text-sm underline underline-offset-4"
           >
-            Ver a agenda completa
+            Ver os próximos 7 dias
           </Link>
         </div>
 
         <div className="mt-5">
           {events.length > 0 ? (
-            <EventList
-              events={events}
-              today={today}
-              municipalityNames={municipalityNames}
-              venueNames={venueNames}
-              acessoDoEspaco={acessoDoEspaco}
-              dayHeadingLevel={3}
-              idPrefix="semana"
+            <>
+              <EventList
+                events={events}
+                today={today}
+                municipalityNames={municipalityNames}
+                venueNames={venueNames}
+                acessoDoEspaco={acessoDoEspaco}
+                dayHeadingLevel={3}
+                idPrefix="semana"
+              />
+              {/* O fim da lista curta diz quanto fica por ver, e leva lá. */}
+              {week.total > events.length ? (
+                <p className="mt-6">
+                  <Link
+                    href={semanaToda}
+                    className="inline-flex min-h-11 items-center rounded bg-accent px-5 text-sm font-medium text-on-accent"
+                  >
+                    {`Ver os próximos 7 dias — ${week.total} eventos`}
+                  </Link>
+                </p>
+              ) : null}
+            </>
+          ) : week.total > 0 ? (
+            <EmptyState
+              title={`Não há nada marcado para os próximos ${DIAS_NA_ENTRADA} dias.`}
+              action={{ href: semanaToda, label: 'Ver os próximos 7 dias' }}
             />
           ) : (
             <EmptyState

@@ -493,7 +493,7 @@ export const INDICADORES: readonly BlocoDeIndicadores[] = [
       {
         campo: 'visitas_por_concelho.pagina_oficial',
         conta:
-          'Cliques na ligação para a página de quem organiza. É a prova de retorno que a agenda dá a quem lhe dá programação: «a agenda mandou 340 pessoas ao vosso portal em setembro».',
+          'Cliques na ligação para a página de quem organiza. É a prova de retorno que a agenda dá a quem lhe dá programação: «a agenda mandou 340 pessoas ao seu portal em setembro».',
         naoConta:
           'Vazio, e não zero, num mês cujas duas fotografias não o tinham as duas — ver `visitas.cliques_desde`. Um total da região só aparece se todos os concelhos o tiverem medido.',
       },

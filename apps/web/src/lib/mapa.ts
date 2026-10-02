@@ -332,14 +332,8 @@ export function nomeDaMarca(marca: Marca): string {
   const primeiro = marca.lugares[0]!;
 
   if (marca.lugares.length > 1) {
-    const concelhos = [...new Set(marca.lugares.map((lugar) => lugar.concelhoNome))];
-    const onde =
-      concelhos.length === 1
-        ? `em ${concelhos[0]}`
-        : concelhos.length === 2
-          ? `em ${concelhos[0]} e ${concelhos[1]}`
-          : `em ${concelhos.length} concelhos`;
-    return `${marca.lugares.length} sítios ${onde} — ${eventos}`;
+    const onde = concelhosPorExtenso(marca.lugares.map((lugar) => lugar.concelhoNome));
+    return `${marca.lugares.length} sítios em ${onde} — ${eventos}`;
   }
   const onde =
     primeiro.precisao === 'exacta' ? primeiro.nome : `Algures em ${primeiro.concelhoNome}`;
@@ -404,4 +398,201 @@ export function agruparNoEcra(
   }
 
   return marcas;
+}
+
+/**
+ * O que a marca escreve por baixo do número: de que concelho é.
+ *
+ * As marcas assentam no centro de cada concelho, que é onde o mapa de base
+ * escreve o nome da sede — e tapavam-no: lia-se «rém», «camento», e não se
+ * conseguia dizer, olhando, qual número era de que concelho (C1-019). A marca
+ * passa a dizê-lo ela própria. Um concelho, o nome; dois, os dois; mais do
+ * que isso, quantos são — o nome inteiro de três concelhos não cabe por baixo
+ * de um círculo de quarenta e quatro píxeis, e o nome acessível da marca e o
+ * painel dizem-nos todos.
+ */
+export function rotuloDaMarca(marca: Marca): string {
+  return concelhosPorExtenso(marca.lugares.map((lugar) => lugar.concelhoNome));
+}
+
+/**
+ * Os concelhos de uma marca, ditos por extenso: um, o nome; dois, os dois; mais
+ * do que isso, quantos são.
+ *
+ * Os três nomes que uma marca tem — o que se lê por baixo dela, o que o leitor
+ * de ecrã anuncia, e o da marca de coretos — dizem os concelhos da mesma
+ * maneira, e a regra vive aqui para não haver três opiniões sobre a terceira
+ * vila. As repetidas contam uma vez: quatro sítios em Tomar são «Tomar».
+ */
+function concelhosPorExtenso(nomes: readonly string[]): string {
+  const concelhos = [...new Set(nomes)];
+  if (concelhos.length === 1) return concelhos[0] as string;
+  if (concelhos.length === 2) return `${concelhos[0]} e ${concelhos[1]}`;
+  return `${concelhos.length} concelhos`;
+}
+
+/**
+ * Os controlos do MapLibre em português.
+ *
+ * Sem isto o leitor de ecrã lia «Map, região», «Zoom in, botão» e «Toggle
+ * attribution» com a voz portuguesa, numa página toda em português (C2-027,
+ * C3-017). As chaves são as do `default_locale` da versão 6 — todas, e não só
+ * as dos três controlos que este mapa usa: uma que ficasse por traduzir
+ * aparecia em inglês no dia em que alguém acrescentasse um controlo, e o
+ * `mapa.test.ts` confere que nenhuma falta.
+ */
+export const LOCALE_DO_MAPA: Readonly<Record<string, string>> = {
+  'AttributionControl.ToggleAttribution': 'Mostrar ou esconder a atribuição do mapa',
+  'AttributionControl.MapFeedback': 'Sugerir uma correção ao mapa',
+  'FullscreenControl.Enter': 'Ver em ecrã inteiro',
+  'FullscreenControl.Exit': 'Sair do ecrã inteiro',
+  'GeolocateControl.FindMyLocation': 'Mostrar onde estou',
+  'GeolocateControl.LocationNotAvailable': 'Localização indisponível',
+  'LogoControl.Title': 'Logótipo do MapLibre',
+  'Map.Title': 'Mapa',
+  'Marker.Title': 'Marca no mapa',
+  'NavigationControl.ResetBearing': 'Arrastar para rodar o mapa, carregar para repor o norte',
+  'NavigationControl.ZoomIn': 'Aproximar',
+  'NavigationControl.ZoomOut': 'Afastar',
+  'Popup.Close': 'Fechar',
+  'ScaleControl.Feet': 'pés',
+  'ScaleControl.Meters': 'm',
+  'ScaleControl.Kilometers': 'km',
+  'ScaleControl.Miles': 'mi',
+  'ScaleControl.NauticalMiles': 'mn',
+  'GlobeControl.Enable': 'Ver como globo',
+  'GlobeControl.Disable': 'Ver como plano',
+  'TerrainControl.Enable': 'Mostrar o relevo',
+  'TerrainControl.Disable': 'Esconder o relevo',
+  'CooperativeGesturesHandler.WindowsHelpText': 'Use Ctrl e a roda do rato para aproximar o mapa',
+  'CooperativeGesturesHandler.MacHelpText': 'Use ⌘ e a roda do rato para aproximar o mapa',
+  'CooperativeGesturesHandler.MobileHelpText': 'Use dois dedos para mover o mapa',
+};
+
+/**
+ * As camadas de etiquetas do mapa de base que se escondem: os países e os
+ * distritos.
+ *
+ * Num mapa da região, a palavra maior era «Portugal», em negrito, no meio do
+ * território — o texto mais forte do mapa, e o único que não diz nada a
+ * ninguém que já esteja a olhar para a região (C1-019). Pelo identificador da
+ * camada, que é o que os dois estilos do OpenFreeMap têm em comum
+ * (`label_country_1`, `place_country_major`, `label_state`, `place_state`).
+ */
+export function camadaAEsconder(camada: { id: string; type: string }): boolean {
+  return camada.type === 'symbol' && /(country|state)/.test(camada.id);
+}
+
+// ---------------------------------------------------------------------------
+// Coretos: o mesmo mapa de base, com o levantamento por cima
+// ---------------------------------------------------------------------------
+
+/** O que o mapa dos coretos precisa de saber de um coreto. Só entram os que têm coordenadas. */
+export interface CoretoNoMapa {
+  id: string;
+  nome: string;
+  concelhoNome: string;
+  latitude: number;
+  longitude: number;
+  confirmado: boolean;
+}
+
+/** Uma marca do mapa dos coretos: um coreto, ou vários que a esta distância coincidem. */
+export interface MarcaDeCoretos {
+  id: string;
+  /** Onde a marca se desenha: o ponto do primeiro coreto da junção. */
+  latitude: number;
+  longitude: number;
+  coretos: CoretoNoMapa[];
+}
+
+/**
+ * A âncora do cartão de cada coreto, na lista por baixo do mapa.
+ *
+ * É para lá que a marca leva (C2-025): o cartão tem o nome, a freguesia, o ano,
+ * a fotografia e, quando há, a programação — tudo o que um balão por cima do
+ * mapa repetiria, e com a vantagem de ser uma ligação que se ouve, se guarda e
+ * se partilha. A mesma função escreve o `id` do cartão e o `href` da marca, e
+ * por isso os dois não se desencontram.
+ */
+export function ancoraDoCoreto(id: string): string {
+  return `coreto-${id}`;
+}
+
+/**
+ * Junta os coretos que, no ecrã, ficariam uns por cima dos outros — pela mesma
+ * razão e com a mesma conta de `agruparNoEcra`: abaixo de quarenta e quatro
+ * píxeis uma marca tapa a vizinha, e a de baixo deixa de se poder tocar.
+ *
+ * A âncora de cada junção é um coreto confirmado sempre que o haja, e entre
+ * iguais vai a ordem do nome: a marca fica num sítio onde há mesmo um coreto,
+ * e a mesma vista desenha-se sempre da mesma maneira.
+ */
+export function juntarCoretosNoEcra(
+  coretos: readonly CoretoNoMapa[],
+  paraOEcra: (coreto: CoretoNoMapa) => { x: number; y: number },
+  raio: number = ALVO_EM_PIXEIS,
+): MarcaDeCoretos[] {
+  const marcas: MarcaDeCoretos[] = [];
+  const ancoras: { x: number; y: number }[] = [];
+
+  const ordenados = [...coretos].sort(
+    (a, b) => Number(b.confirmado) - Number(a.confirmado) || a.nome.localeCompare(b.nome, 'pt'),
+  );
+
+  for (const coreto of ordenados) {
+    const ponto = paraOEcra(coreto);
+    const perto = ancoras.findIndex(
+      (ancora) => Math.hypot(ancora.x - ponto.x, ancora.y - ponto.y) <= raio,
+    );
+    if (perto >= 0) {
+      marcas[perto]!.coretos.push(coreto);
+      continue;
+    }
+    marcas.push({
+      id: coreto.id,
+      latitude: coreto.latitude,
+      longitude: coreto.longitude,
+      coretos: [coreto],
+    });
+    ancoras.push(ponto);
+  }
+
+  return marcas;
+}
+
+/**
+ * O que a marca de coretos diz a quem a ouve.
+ *
+ * Um coreto é uma ligação para o seu cartão, e diz-se pelo nome e pelo
+ * concelho — e pela dúvida, quando a há: no mapa como na lista, um coreto por
+ * confirmar não se apresenta como os outros. Vários são um botão que aproxima
+ * o mapa, e o nome diz quantos, onde, e o que o botão faz.
+ */
+export function nomeDaMarcaDeCoretos(marca: MarcaDeCoretos): string {
+  if (marca.coretos.length === 1) {
+    const coreto = marca.coretos[0]!;
+    return `${coreto.nome}, ${coreto.concelhoNome}${coreto.confirmado ? '' : ' — por confirmar'}`;
+  }
+  const onde = concelhosPorExtenso(marca.coretos.map((coreto) => coreto.concelhoNome));
+  return `${marca.coretos.length} coretos em ${onde} — aproximar o mapa`;
+}
+
+/**
+ * A caixa que envolve uns quantos coretos, `[[oeste, sul], [este, norte]]`.
+ *
+ * Serve ao botão que aproxima uma junção — o mapa enquadra-se nos coretos que
+ * ela tinha, e eles separam-se — e ao enquadramento inicial de uma região sem
+ * contornos nem centros de concelho, onde não há outra coisa por que medir.
+ */
+export function limitesDosCoretos(
+  coretos: readonly CoretoNoMapa[],
+): [[number, number], [number, number]] | null {
+  if (coretos.length === 0) return null;
+  const latitudes = coretos.map((coreto) => coreto.latitude);
+  const longitudes = coretos.map((coreto) => coreto.longitude);
+  return [
+    [Math.min(...longitudes), Math.min(...latitudes)],
+    [Math.max(...longitudes), Math.max(...latitudes)],
+  ];
 }

@@ -355,6 +355,26 @@ describe('as leituras que degradam', () => {
     await expect(countEventsByVenue('medio-tejo')).resolves.toEqual({ 'teatro-virginia': 1 });
   });
 
+  it('countEventsByVenueOuNada: a falha é `null`, e não um zero que a página diria em voz alta', async () => {
+    const { countEventsByVenueOuNada } = await import('./events');
+
+    let vez = 0;
+    estado.cliente = clienteFalso({
+      events: () => {
+        vez += 1;
+        if (vez === 1) return { data: null, error: { message: 'timeout' } };
+        return { data: [{ venue_id: 'coreto-alvega' }], error: null };
+      },
+      municipalities: () => ({ data: [], error: null }),
+    });
+
+    // «Sem eventos marcados» num coreto é uma afirmação: sem contagem, não se faz.
+    await expect(countEventsByVenueOuNada('medio-tejo')).resolves.toBeNull();
+    expect(cache.escritas).toHaveLength(0);
+
+    await expect(countEventsByVenueOuNada('medio-tejo')).resolves.toEqual({ 'coreto-alvega': 1 });
+  });
+
   it('listFeedTimestamps: sem carimbos, o feed sai na mesma — e sem os guardar em falta', async () => {
     const { listFeedTimestamps } = await import('../feeds/data');
 

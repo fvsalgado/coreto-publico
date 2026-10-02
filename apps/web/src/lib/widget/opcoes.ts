@@ -217,7 +217,7 @@ export const CATALOGO: readonly DefinicaoOpcao[] = [
     valores: 'auto, light, dark',
     omissao: 'auto',
     descricao:
-      'Com auto, a caixa segue a preferência de quem visita. Fixem light ou dark se o vosso sítio tiver um fundo só.',
+      'Com auto, a caixa segue a preferência de quem visita. Fixe light ou dark se o seu sítio tiver um fundo só.',
   },
   {
     atributo: 'data-letra',
@@ -225,21 +225,21 @@ export const CATALOGO: readonly DefinicaoOpcao[] = [
     valores: 'Open Sans, Georgia, serif, …',
     omissao: 'a letra do Coreto',
     descricao:
-      'O tipo de letra do vosso sítio, para a caixa deixar de se distinguir do resto da página. Escrevam a pilha como a têm no CSS. (Herdar não dá: um iframe tem documento próprio e o CSS não atravessa a fronteira.)',
+      'O tipo de letra do seu sítio, para a caixa deixar de se distinguir do resto da página. Escreva a pilha como a tem no CSS. (Herdar não dá: um iframe tem documento próprio e o CSS não atravessa a fronteira.)',
   },
   {
     atributo: 'data-cabecalho',
     parametro: 'header',
     valores: 'sim, nao',
     omissao: 'sim',
-    descricao: 'Desliguem se a vossa página já tiver um título por cima da caixa.',
+    descricao: 'Desligue se a sua página já tiver um título por cima da caixa.',
   },
   {
     atributo: 'data-moldura',
     parametro: 'frame',
     valores: 'sim, nao',
     omissao: 'sim',
-    descricao: 'A linha à volta da caixa. Desliguem para a fundir com o vosso fundo.',
+    descricao: 'A linha à volta da caixa. Desligue para a fundir com o seu fundo.',
   },
   {
     atributo: 'data-titulo',

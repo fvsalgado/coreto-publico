@@ -4,6 +4,7 @@ import { AnalyticsProvider } from '@/src/components/AnalyticsProvider';
 import { BandstandMark } from '@/src/components/BandstandMark';
 import { BarraInferior } from '@/src/components/BarraInferior';
 import { LupaDoToldo } from '@/src/components/LupaDoToldo';
+import { MaisDoToldo } from '@/src/components/MaisDoToldo';
 import { NavegacaoDoToldo } from '@/src/components/NavegacaoDoToldo';
 import { RodapeDoSitio } from '@/src/components/RodapeDoSitio';
 import { SiteStructuredData } from '@/src/components/StructuredData';
@@ -246,6 +247,7 @@ export default async function RegiaoLayout({ children, params }: Props) {
           <nav aria-label="Principal" className="hidden flex-1 sm:block">
             <ul className="flex items-center justify-end gap-x-1 text-sm">
               <NavegacaoDoToldo destinos={nav} regiao={regiao.id} />
+              <MaisDoToldo desligadas={desligadas} email={regiao.email} regiao={regiao.id} />
               <li className="ml-1.5">
                 <LupaDoToldo />
               </li>

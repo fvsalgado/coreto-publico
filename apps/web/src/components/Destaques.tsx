@@ -166,8 +166,10 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
         {/* Diz que é uma escolha da programação, e não outra programação. Quem
             vê percebe-o pelo desenho; quem ouve não tinha como saber — e ouvia
             os mesmos títulos duas vezes sem perceber porquê. */}
+        {/* «Dos próximos dias», e não «dos próximos 7»: a lista de baixo passou
+            a ser de três dias (C2-018), e a semana está a um toque dela. */}
         <p className="text-sm text-muted">
-          Uma escolha da programação, para ver de perto. A lista dos próximos 7 dias vem a seguir.
+          Uma escolha da programação, para ver de perto. A lista dos próximos dias vem a seguir.
         </p>
       </div>
 
@@ -228,6 +230,11 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
                     a cento e quarenta píxeis não se lê, e por isso fica
                     escrito. Quem ouve ouve-o sempre: a capa é decorativa, e é
                     o título que dá nome à ligação.
+
+                    Na vitrine da secretária, entrelinha de 1,5 e não de 1,25:
+                    é um parágrafo, e o Selo pede 1,5 ao texto que se lê
+                    (2.4) — medido com dados a 2 de outubro, num título de
+                    duas linhas.
                   */}
                   {/* `relative` na ligação não é enfeite: o `sr-only` é
                       `position: absolute`, e sem um ascendente posicionado
@@ -240,7 +247,7 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
                   ) : (
                     <p
                       className={`mt-2 line-clamp-2 text-sm font-medium group-hover:underline ${
-                        grande ? 'lg:font-display lg:mt-3 lg:text-2xl lg:leading-tight' : ''
+                        grande ? 'lg:font-display lg:mt-3 lg:text-2xl lg:leading-normal' : ''
                       }`}
                     >
                       {evento.title}

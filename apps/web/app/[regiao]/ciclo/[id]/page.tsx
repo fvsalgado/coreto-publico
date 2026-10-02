@@ -126,8 +126,15 @@ function CartaoDoCiclo({
               {...(past ? { target: '_blank', rel: 'noreferrer' } : {})}
             >
               {event.title}
+              {/* A seta à vista, e não só a frase para quem ouve (C2-023): este
+                  título sai do Coreto para a página de quem organizou, noutro
+                  separador, e quem vê tem o mesmo direito de saber antes de
+                  carregar. */}
               {past ? (
-                <span className="sr-only"> (abre a página oficial noutro separador)</span>
+                <>
+                  <span aria-hidden="true">&nbsp;↗</span>
+                  <span className="sr-only"> (abre a página oficial noutro separador)</span>
+                </>
               ) : null}
             </Link>
           ) : (
@@ -210,12 +217,24 @@ export default async function CicloPage({ params }: Props) {
         {partes.length > 0 ? (
           <p className="mt-3 text-sm text-muted">{`${partes.join(', ')}.`}</p>
         ) : null}
+        {cycle.website_url ? (
+          <p className="mt-2 text-sm">
+            <a
+              href={cycle.website_url}
+              rel="noopener nofollow"
+              className="-mx-1 inline-flex min-h-11 items-center px-1 font-medium text-accent underline underline-offset-4"
+            >
+              Sítio oficial
+              <span aria-hidden="true">&nbsp;↗</span>
+            </a>
+          </p>
+        ) : null}
       </PageHeader>
 
       {edicoes.length === 0 ? (
         <EmptyState
-          title="Ainda não há programação recolhida deste ciclo"
-          description="O ciclo existe e está no levantamento; o que falta é uma fonte de onde ler o programa. Quem o organiza pode enviar-nos as datas por email."
+          title="Ainda não há datas deste ciclo"
+          description="Sabemos que existe e onde acontece; as datas ainda não chegaram aqui. Quem o organiza pode enviar-nos as datas por email, e entram na agenda como qualquer outro evento."
           action={{ href: '/submeter', label: 'Como enviar um evento' }}
         />
       ) : (

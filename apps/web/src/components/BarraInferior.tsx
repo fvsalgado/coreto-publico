@@ -338,8 +338,14 @@ export function BarraInferior({
              * assentar em cima dela. Um `fixed` aqui dentro dependia de o
              * navegador não aplicar contenção ao conteúdo do `<details>`, e
              * isso muda de navegador para navegador.
+             *
+             * E o anel de foco volta a ser o da casa cá dentro: a barra é um
+             * bloco escuro, com o anel a branco — e a gaveta é papel. Branco
+             * sobre branco, quem percorria a gaveta com o teclado não via onde
+             * estava (medido a 2 de outubro de 2026: 3px de #fff sobre a
+             * superfície clara).
              */}
-            <ul className="absolute inset-x-2 bottom-full mb-2 max-h-[70dvh] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 text-ink shadow-2xl">
+            <ul className="absolute inset-x-2 bottom-full mb-2 max-h-[70dvh] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 text-ink shadow-2xl [&_:focus-visible]:outline-focus">
               {gavetaVisivel.map((atalho) => {
                 const Icone = ICONES_MAIS[atalho.icone];
                 // Os prefixos contam. `/ciclos` é a lista e `/ciclo/caminhos`

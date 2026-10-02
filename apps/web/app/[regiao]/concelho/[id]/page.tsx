@@ -1,19 +1,26 @@
 import type { Metadata } from 'next';
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon } from '@coreto/core';
-import { BandstandMark } from '@/src/components/BandstandMark';
 import { EmptyState, avisoDeFontesPorLer, vazioDoConcelho } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
+import { FilaDePilulas } from '@/src/components/FilaDePilulas';
+import { FotografiaDeCartao } from '@/src/components/FotografiaDeCartao';
+import { NotaDiscreta } from '@/src/components/NotaDiscreta';
+import { BotaoDeSubscrever, ReceberNoCalendario } from '@/src/components/ReceberNoCalendario';
 import { listFeedSessions } from '@/src/lib/feeds/data';
 import { PageHeader } from '@/src/components/PageHeader';
 import { MunicipalityStructuredData } from '@/src/components/StructuredData';
 import { VenueCard } from '@/src/components/VenueCard';
+import { ATALHOS, DEFAULTS, atalhosDeData } from '@/src/lib/agenda';
 import { espacosPorConfirmar } from '@/src/lib/coreto';
+import { ordenarEspacos } from '@/src/lib/espaco';
 import { avaliarRecolha, leituraDoConcelho } from '@/src/lib/estado';
 import { formatLongDate } from '@/src/lib/format';
 import { enderecos } from '@/src/lib/enderecos';
 import { SITE_URL } from '@/src/lib/env';
+import { enderecosDoCalendario } from '@/src/lib/subscrever';
 import {
   countEventsByVenue,
   eventosComAcessoDoEspaco,
@@ -49,6 +56,47 @@ const EVENT_LIMIT = 24;
 async function findMunicipality(regiaoId: string, id: string): Promise<Municipality | null> {
   const municipalities = await listMunicipalities(regiaoId);
   return municipalities.find((municipality) => municipality.id === id) ?? null;
+}
+
+/**
+ * Os três recortes de tempo do concelho — «Hoje», «Este fim de semana»,
+ * «Próximos 7 dias» —, já filtrados por ele, e só os que levam a alguma coisa.
+ *
+ * A página do concelho não tinha um único endereço para a agenda filtrada
+ * (C2-019): quem a abria para saber o que há no sábado lia a lista corrida até
+ * dezembro, ou ia à agenda e voltava a escolher o concelho. Os endereços saem
+ * do `atalhosDeData` da própria agenda, para serem o canónico dela byte a byte
+ * — e não uma cadeia escrita à mão aqui que um dia diverge.
+ *
+ * Contam-se antes de se oferecerem, como os da entrada: numa terça-feira sem
+ * nada marcado, «Hoje» levava a uma lista vazia, que é a promessa que a casa
+ * já tirou da rua. Uma linha por recorte (`limit: 1`), em cache como as
+ * outras leituras da página.
+ */
+async function atalhosDoConcelho(regiaoId: string, concelhoId: string, hoje: string) {
+  const filtro = { ...DEFAULTS, municipality: concelhoId };
+  const atalhos = atalhosDeData(filtro, hoje);
+  const totais = await Promise.all(
+    ATALHOS.map(async (atalho) => {
+      const { total } = await listEvents(regiaoId, {
+        ...filtro,
+        ...atalho.janela(hoje),
+        page: 1,
+        limit: 1,
+      });
+      return total;
+    }),
+  );
+  return atalhos
+    .map((atalho, indice) => ({ ...atalho, quantos: totais[indice] ?? 0 }))
+    .filter((atalho) => atalho.quantos > 0);
+}
+
+/** Uma parte da linha dos números: o numeral e o que ele conta. */
+interface Contagem {
+  chave: string;
+  numero: number;
+  texto: string;
 }
 
 export async function generateStaticParams({
@@ -93,12 +141,13 @@ export default async function MunicipalityPage({ params }: Props) {
 
   const origem = urlDoSitio(regiao, SITE_URL);
   const today = todayInLisbon();
-  const [result, venues, coretos, venueCounts, sources] = await Promise.all([
+  const [result, venues, coretos, venueCounts, sources, atalhos] = await Promise.all([
     listEvents(regiao.id, { municipality: municipality.id, page: 1, limit: EVENT_LIMIT }),
     listVenues(regiao.id, municipality.id),
     listCoretos(regiao.id),
     countEventsByVenue(regiao.id),
     fontesDoConcelhoOuNada(regiao.id),
+    atalhosDoConcelho(regiao.id, municipality.id, today),
   ]);
   // De que eventos o acesso a cadeiras de rodas é o do espaço (C2-011).
   // E a hora de cada cartão, pela mesma leitura da agenda e da entrada: o
@@ -116,16 +165,10 @@ export default async function MunicipalityPage({ params }: Props) {
   // o selo da dúvida no Jardim Municipal de Torres Novas, que existe.
   const porConfirmar = espacosPorConfirmar(coretos, venues);
 
-  // As coletividades primeiro: são elas que sustentam metade da programação
-  // desta região e as que costumam ficar em último em toda a parte.
-  const orderedVenues = venues
-    .slice()
-    .sort(
-      (a, b) =>
-        Number(b.is_association) - Number(a.is_association) ||
-        (venueCounts[b.id] ?? 0) - (venueCounts[a.id] ?? 0) ||
-        a.name.localeCompare(b.name, 'pt'),
-    );
+  // A mesma ordem da lista dos espaços: os que têm alguma coisa marcada
+  // primeiro, e as coletividades à frente em cada grupo — as razões, e a de não
+  // ordenar pela contagem, estão em `ordenarEspacos`.
+  const orderedVenues = ordenarEspacos(venues, venueCounts);
 
   /*
    * As fontes deste concelho — e `null` quando não se conseguiu saber.
@@ -158,6 +201,51 @@ export default async function MunicipalityPage({ params }: Props) {
     seccaoLigada(regiao.id, 'fontes'),
   ]);
 
+  /*
+   * A linha dos números, contados e não escritos: «13 eventos marcados · 22
+   * espaços · 5 coretos». Era um título e uma frase, e quem chegava não sabia
+   * se o concelho tinha três coisas ou trezentas antes de rolar a página
+   * inteira (C1-021). Um zero não se escreve — o vazio de cada secção já se
+   * explica lá em baixo, e «0 coretos» à cabeça da página de um concelho
+   * pequeno era a frase que a casa existe para não dizer.
+   *
+   * Os coretos por confirmar contam-se à parte. Somados aos confirmados,
+   * a linha afirmava sete coretos onde se sabe de cinco.
+   */
+  const coretosConfirmados = localCoretos.filter((coreto) => coreto.is_confirmed).length;
+  const coretosPorConfirmar = localCoretos.length - coretosConfirmados;
+  const contagens: Contagem[] = [];
+  if (result.total > 0) {
+    contagens.push({
+      chave: 'eventos',
+      numero: result.total,
+      texto: result.total === 1 ? 'evento marcado' : 'eventos marcados',
+    });
+  }
+  if (venues.length > 0) {
+    contagens.push({
+      chave: 'espacos',
+      numero: venues.length,
+      texto: venues.length === 1 ? 'espaço' : 'espaços',
+    });
+  }
+  if (haCoretos && coretosConfirmados > 0) {
+    const plural = coretosConfirmados === 1 ? 'coreto' : 'coretos';
+    contagens.push({
+      chave: 'coretos',
+      numero: coretosConfirmados,
+      texto: coretosPorConfirmar > 0 ? `${plural}, e ${coretosPorConfirmar} por confirmar` : plural,
+    });
+  } else if (haCoretos && coretosPorConfirmar > 0) {
+    contagens.push({
+      chave: 'coretos',
+      numero: coretosPorConfirmar,
+      texto: coretosPorConfirmar === 1 ? 'coreto por confirmar' : 'coretos por confirmar',
+    });
+  }
+
+  const calendario = enderecosDoCalendario(origem, `/agenda/${municipality.id}.ics`);
+
   return (
     <>
       <MunicipalityStructuredData
@@ -169,16 +257,68 @@ export default async function MunicipalityPage({ params }: Props) {
 
       {/* A sobrancelha dizia «Concelho», e a migalha diz «Coreto › Mapa ›» —
           que é a mesma coisa, com o caminho de volta a mais. Ficam as
-          migalhas. */}
+          migalhas.
+
+          O cabeçalho é o da página que uma câmara mostra e liga do seu sítio
+          (C1-021): o nome à escala de cartaz, o que lá há contado, a pergunta
+          do fim de semana já respondida (C2-019) e a agenda do concelho para
+          levar no calendário — subscrita, e não descarregada (C2-033). */}
       <PageHeader
         migalhas={migalhasDoConcelho(municipality)}
         title={municipality.name}
+        grande
         lead={
           regiao.promotor
             ? `Concelho do distrito de ${municipality.district}, na ${regiao.promotor.nome}.`
             : `Concelho do distrito de ${municipality.district}.`
         }
-      />
+      >
+        {contagens.length > 0 ? (
+          <p className="mt-4 text-muted">
+            {contagens.map((contagem, indice) => (
+              <Fragment key={contagem.chave}>
+                {indice > 0 ? (
+                  <>
+                    <span aria-hidden="true"> · </span>
+                    <span className="sr-only">, </span>
+                  </>
+                ) : null}
+                <span className="ct-numeral text-[1.375rem] leading-none text-ink">
+                  {contagem.numero}
+                </span>{' '}
+                {contagem.texto}
+              </Fragment>
+            ))}
+          </p>
+        ) : null}
+
+        <FilaDePilulas
+          nome="Atalhos de data"
+          rotulo="Quando"
+          destaque
+          className="mt-4"
+          pilulas={atalhos.map((atalho) => ({
+            chave: atalho.id,
+            rotulo: atalho.rotulo,
+            href: atalho.href,
+            activa: false,
+            quantos: atalho.quantos,
+          }))}
+        />
+
+        {/* Também num concelho sem nada marcado: uma subscrição é do que vier,
+            e é a forma de saber quando passar a haver sem ter de voltar aqui
+            a ver. */}
+        <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <BotaoDeSubscrever nome={municipality.name} enderecos={calendario} />
+          <a
+            href="#levar"
+            className="inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+          >
+            Outras formas de a receber
+          </a>
+        </p>
+      </PageHeader>
 
       <section aria-labelledby="proximos" className="mt-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -204,7 +344,17 @@ export default async function MunicipalityPage({ params }: Props) {
           `avisoDeFontesPorLer`.
         */}
         {result.events.length > 0 && avisoDasFontes ? (
-          <p className="mt-3 max-w-2xl text-sm text-highlight">{avisoDasFontes}</p>
+          <NotaDiscreta className="mt-3">
+            {avisoDasFontes}
+            {haFontes ? (
+              <>
+                {' '}
+                <Link href="/fontes" className="text-ink underline underline-offset-4">
+                  Saber mais
+                </Link>
+              </>
+            ) : null}
+          </NotaDiscreta>
         ) : null}
 
         <div className="mt-4">
@@ -225,6 +375,59 @@ export default async function MunicipalityPage({ params }: Props) {
             />
           )}
         </div>
+      </section>
+
+      {/*
+        Levar esta agenda, logo a seguir à lista — e não no fim da página,
+        depois dos espaços e dos coretos, onde estava (C1-021). É o argumento
+        da página para uma câmara, e quem o procura não o encontrava.
+
+        O calendário vem primeiro e é uma subscrição (C2-033): era uma ligação
+        chamada «Calendário iCal», que no telemóvel descarregava uma cópia do
+        dia que nunca mais se atualizava.
+      */}
+      <section aria-labelledby="levar" className="mt-12 scroll-mt-6">
+        <h2 id="levar" className="ct-heading">
+          Levar esta agenda
+        </h2>
+        <p className="mt-2 max-w-2xl text-muted">
+          A programação de {municipality.name} sai daqui em formato aberto — para o calendário do
+          telemóvel, para o sítio da câmara ou para um leitor de notícias.
+        </p>
+
+        <h3 className="mt-5 font-semibold">No calendário</h3>
+        <div className="mt-2">
+          <ReceberNoCalendario
+            nome={municipality.name}
+            enderecos={calendario}
+            caminho={`/agenda/${municipality.id}.ics`}
+          />
+        </div>
+
+        <h3 className="mt-6 font-semibold">Noutros sítios</h3>
+        <ul className="mt-2 space-y-2">
+          <li>
+            {/* Sem o `?municipality=`, que ninguém lia. O construtor não olha
+                para a barra de endereços — `ConstrutorDeWidget` não tem
+                `useSearchParams` — e o parâmetro andava aqui há muito a
+                prometer uma pré-selecção que nunca aconteceu. Mandar para a
+                âncora do construtor é o que se pode cumprir. */}
+            <Link
+              href="/levar#construtor"
+              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
+            >
+              A caixa para colar no sítio da câmara
+            </Link>
+          </li>
+          <li>
+            <a
+              href={`/feed/${municipality.id}.xml`}
+              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
+            >
+              O feed RSS de {municipality.name}, para um leitor de notícias
+            </a>
+          </li>
+        </ul>
       </section>
 
       <section aria-labelledby="espacos" className="mt-12">
@@ -282,20 +485,15 @@ export default async function MunicipalityPage({ params }: Props) {
                     coreto.is_confirmed ? 'border-border' : 'border-dashed border-border'
                   }`}
                 >
-                  <div className="ct-grain relative aspect-square w-24 shrink-0 self-stretch overflow-hidden border-r border-border bg-accent-soft sm:aspect-[5/3] sm:w-full sm:border-r-0 sm:border-b">
-                    {coreto.photo_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={coreto.photo_url}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <BandstandMark className="absolute inset-0 m-auto size-10 text-ink opacity-[0.12] sm:size-14" />
-                    )}
-                  </div>
+                  {/* A mesma moldura dos espaços: a fotografia em fundo, servida
+                      sem cookies de terceiros, e a capa por baixo quando falha
+                      — era um `<img>`, e falhava com o ícone partido (C1-016). */}
+                  <FotografiaDeCartao
+                    url={coreto.photo_url}
+                    kind="bandstand"
+                    isAssociation={false}
+                    semRotulo
+                  />
                   <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">
                     <p className="font-medium leading-snug">{coreto.name}</p>
                     <p className="mt-0.5 text-sm text-muted">
@@ -388,48 +586,6 @@ export default async function MunicipalityPage({ params }: Props) {
             ) : null}
           </p>
         )}
-      </section>
-
-      <section aria-labelledby="levar" className="mt-12">
-        <h2 id="levar" className="ct-heading">
-          Levar esta agenda
-        </h2>
-        <p className="mt-2 max-w-2xl text-muted">
-          A programação de {municipality.name} sai daqui em formato aberto — para o sítio da câmara,
-          para o calendário do telemóvel ou para um leitor de notícias.
-        </p>
-
-        <ul className="mt-4 space-y-2">
-          <li>
-            <a
-              href={`/feed/${municipality.id}.xml`}
-              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
-            >
-              Feed RSS de {municipality.name}
-            </a>
-          </li>
-          <li>
-            <a
-              href={`/agenda/${municipality.id}.ics`}
-              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
-            >
-              Calendário iCal de {municipality.name}
-            </a>
-          </li>
-          <li>
-            {/* Sem o `?municipality=`, que ninguém lia. O construtor não olha
-                para a barra de endereços — `ConstrutorDeWidget` não tem
-                `useSearchParams` — e o parâmetro andava aqui há muito a
-                prometer uma pré-selecção que nunca aconteceu. Mandar para a
-                âncora do construtor é o que se pode cumprir. */}
-            <Link
-              href="/levar#construtor"
-              className="inline-flex min-h-11 items-center underline underline-offset-4 sm:min-h-0"
-            >
-              Widget para embeber num sítio
-            </Link>
-          </li>
-        </ul>
       </section>
     </>
   );

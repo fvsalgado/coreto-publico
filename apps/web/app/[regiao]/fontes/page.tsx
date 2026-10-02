@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { FALHAS_ATE_PAUSA, HORAS_EM_PAUSA, USER_AGENT } from '@coreto/core';
 import { PageHeader } from '@/src/components/PageHeader';
 import { avaliarRecolha, fraseDaFonte } from '@/src/lib/estado';
@@ -350,13 +351,17 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           {haCiclos && ciclosComPagina.length > 0 ? (
             <p className="mt-4 max-w-2xl text-sm text-muted">
               O que já saiu daqui lê-se por inteiro, edição a edição —{' '}
+              {/* Um fragmento, e não um `<span>` à volta de cada nome: a ligação
+                  é uma palavra da frase, e é como frase que o check:selo a tem
+                  de ler — dentro de um `<span>` sem texto ao lado, um ciclo só
+                  passava por botão de dezasseis píxeis (5.2). */}
               {ciclosComPagina.map((ciclo, indice) => (
-                <span key={ciclo.id}>
+                <Fragment key={ciclo.id}>
                   {indice > 0 ? (indice === ciclosComPagina.length - 1 ? ' e ' : ', ') : null}
                   <Link href={`/ciclo/${ciclo.id}`} className="underline underline-offset-4">
                     {ciclo.name}
                   </Link>
-                </span>
+                </Fragment>
               ))}
               . Uma edição que já aconteceu não desaparece: fica, porque é o melhor argumento para a
               próxima.{' '}
@@ -461,7 +466,7 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           </p>
           <p>
             Uma recolha que traga muito menos do que o costume não escreve nada: é o sinal de que o
-            site mudou de forma, e nesse caso é preferível manter o que se tinha ontem a esvaziar a
+            sítio mudou de forma, e nesse caso é preferível manter o que se tinha ontem a esvaziar a
             página. Uma fonte que <strong className="font-semibold text-fg">não responda</strong>{' '}
             {FALHAS_ATE_PAUSA} dias seguidos fica em pausa {HORAS_EM_PAUSA} horas e volta a ser
             tentada sozinha depois disso — o erro fica guardado, para quem for ver saber o que
@@ -637,8 +642,8 @@ export default async function SourcesPage({ params }: { params: Promise<{ regiao
           Levar estes dados daqui
         </h2>
         <p className="mt-2 max-w-2xl text-muted">
-          Os feeds, o calendário, a API e a caixa para colar no vosso sítio passaram a viver todos
-          na mesma página, porque são a mesma pergunta:{' '}
+          Os feeds, o calendário, a API e a caixa para colar no seu sítio passaram a viver todos na
+          mesma página, porque são a mesma pergunta:{' '}
           <Link href="/levar" className="font-medium underline underline-offset-4">
             Levar a agenda
           </Link>

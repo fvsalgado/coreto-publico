@@ -218,6 +218,22 @@ export function comEmailDaRegiao<T extends Atalho | Ancora>(
 }
 
 /**
+ * O «Mais» do cabeçalho largo: a gaveta, menos o que o cabeçalho já mostra.
+ *
+ * Na secretária não havia «Mais»: o cabeçalho tinha quatro destinos e o
+ * «Enviar evento», e os Guardados, os ciclos e o «Levar a agenda» viviam só no
+ * rodapé — depois de dez mil píxeis de entrada, no ecrã onde um técnico de
+ * comunicação de uma câmara procuraria precisamente o «Levar a agenda»
+ * (C2-038). Deriva-se da gaveta para as duas listas não divergirem; tiram-se
+ * os destinos do cabeçalho e o envio, que lá estão à vista, para não haver a
+ * mesma página duas vezes na mesma barra.
+ */
+const NO_CABECALHO = new Set([...DESTINOS.map((destino) => destino.href), '/submeter']);
+export const MAIS_DO_TOLDO: readonly Atalho[] = MAIS.filter(
+  (atalho) => !NO_CABECALHO.has(atalho.href),
+);
+
+/**
  * As duas colunas de ligações do rodapé, derivadas da gaveta.
  *
  * O rodapé é a gaveta do ecrã largo: a barra de baixo é `sm:hidden` e ali não

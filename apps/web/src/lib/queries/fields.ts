@@ -2,7 +2,7 @@
  * Disciplina de colunas.
  *
  * Nenhuma listagem faz `select('*')`. Um cartão de evento precisa das colunas
- * que estão em `CARD_EVENT_FIELDS` aqui em baixo — vinte e uma; a tabela tem
+ * que estão em `CARD_EVENT_FIELDS` aqui em baixo — vinte e seis; a tabela tem
  * mais de sessenta, e várias são texto longo. Puxar tudo em listas de cem
  * custa largura de banda a cada visita e não serve para nada — a ficha do
  * evento é que pede o resto.
@@ -56,6 +56,18 @@ export const CARD_EVENT_FIELDS = [
    * `Capa` desenha o que há, como sempre desenhou.
    */
   'image_miniatura',
+  /*
+   * As medidas do cartaz (0126), dois inteiros — e entram no cartão pela capa.
+   *
+   * Um cartaz deitado ficava numa faixa estreita no meio da moldura 3:4 dos
+   * cartões, entre dois borrões do próprio cartaz desfocado (C1-009). Com as
+   * medidas, a `Capa` sabe que é deitado e enche a moldura com ele; sem elas
+   * não adivinha. Viajam também para quem integra pela `/api/events`, que é
+   * onde o exemplo de `/levar` as documenta: uma lista que desenha cartazes
+   * também quer reservar a caixa certa antes de eles chegarem.
+   */
+  'image_width',
+  'image_height',
   /*
    * O nome fica, a coluna muda: passa a vir a resolvida da 0129.
    *
@@ -190,11 +202,9 @@ export const DETAIL_EVENT_FIELDS = [
   'ticketing_url',
   'accessibility_notes',
   'image_credit',
-  // As medidas do cartaz: é com elas que a ficha reserva a caixa certa antes
-  // de a imagem chegar. Só a ficha as pede — um cartão de listagem desenha a
-  // capa numa moldura de proporção fixa, e aí não há salto para matar.
-  'image_width',
-  'image_height',
+  // As medidas do cartaz já vêm do cartão (C1-009), e é com elas que a ficha
+  // reserva a caixa certa antes de a imagem chegar. Estiveram aqui enquanto
+  // só a ficha as pedia; repetidas, eram o pedido malformado de cima.
   'origin',
   'source_url',
   'updated_at',

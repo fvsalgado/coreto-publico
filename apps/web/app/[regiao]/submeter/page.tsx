@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BotaoDeCopiar } from '@/src/components/BotaoDeCopiar';
 import { PageHeader } from '@/src/components/PageHeader';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
@@ -33,12 +34,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * saber o que é um «feed» nem porque é que uma newsletter não chega.
  */
 const ASSUNTO = encodeURIComponent('Evento para a agenda');
+/*
+ * O guião pede também o que os filtros da agenda precisam e nenhuma fonte
+ * declara (C2-030): para quem é, o acesso, os bilhetes. «Para crianças e
+ * famílias» e as caixas da Língua Gestual e da audiodescrição estão vazias
+ * porque ninguém o escreve — e este email é o único sítio onde a casa o pode
+ * perguntar a quem sabe. Sempre com «se souber»: um guião que exige faz
+ * desistir.
+ */
 const CORPO = encodeURIComponent(
   [
     'Nome do evento:',
     'Dia (e hora, se houver):',
     'Onde (espaço e concelho):',
     'Entrada (livre? bilhetes? quanto?):',
+    'Bilhetes (a ligação, ou onde se compram), se houver:',
+    'Para quem é (idades, famílias?), se souber:',
+    'Acessibilidade (cadeira de rodas, Língua Gestual, audiodescrição?), se souber:',
     '',
     'Duas linhas sobre o evento:',
     '',
@@ -149,7 +161,12 @@ const AJUDA: readonly [string, string][] = [
   ['O nome do evento', 'como aparece no cartaz.'],
   ['A data e a hora', 'e as datas todas, se repetir.'],
   ['Onde', 'o espaço e o concelho — «no coreto de Minde» chega perfeitamente.'],
-  ['A entrada', 'livre, ou quanto custa e onde se compra.'],
+  ['A entrada', 'livre, ou quanto custa e onde se compra — com a ligação dos bilhetes, se houver.'],
+  ['Para quem é', 'se é para crianças, para famílias, a partir de que idade — se souber.'],
+  [
+    'A acessibilidade',
+    'se se entra de cadeira de rodas, se há Língua Gestual ou audiodescrição — se souber.',
+  ],
   ['O cartaz', 'em anexo, no tamanho que houver.'],
 ];
 
@@ -168,45 +185,106 @@ export default async function SubmitPage({ params }: Props) {
         lead="Tem um concerto, uma exposição, uma festa? Mande-nos um email. Não é preciso conta, nem formulário, nem escrever bonito — e uma pessoa lê tudo antes de aparecer na agenda."
       />
 
-      <section aria-labelledby="tres-formas" className="mt-8">
-        <h2 id="tres-formas" className="ct-heading">
-          Qualquer uma destas três serve
-        </h2>
-        <ul className="mt-4 grid gap-3 sm:grid-cols-3">
-          {FORMAS.map(({ Icone, titulo, texto, nota }) => (
-            <li
-              key={titulo}
-              className="flex h-full flex-col rounded-lg border border-border bg-surface p-4"
-            >
-              <span className="ct-octagon grid size-11 place-items-center bg-accent-soft text-accent">
-                <Icone className="size-6" />
-              </span>
-              <p className="font-display mt-3 text-lg font-semibold">{titulo}</p>
-              <p className="mt-1 text-sm">{texto}</p>
-              <p className="mt-auto pt-2 text-sm text-muted">{nota}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/*
+        O endereço e o botão primeiro, logo a seguir à abertura (C1-020).
 
-      {/* Sem base não há endereço — e uma ligação sem texto é uma barreira,
-          não uma degradação. O bloco só se desenha quando há para onde
-          escrever. */}
+        Estavam depois dos três cartões das formas de enviar, abaixo do
+        primeiro ecrã do telemóvel: a página de quem programa pedia um email e
+        não mostrava para onde. Os cartões passam a vir a seguir, a dizer o que
+        se pode mandar a quem já sabe para onde o mandar.
+
+        Sem base não há endereço — e uma ligação sem texto é uma barreira, não
+        uma degradação. O bloco só se desenha quando há para onde escrever.
+      */}
       {EMAIL ? (
-        <div className="mt-8 max-w-2xl rounded-lg border border-border bg-accent-soft p-5">
+        <div className="max-w-2xl rounded-lg border border-border bg-accent-soft p-4 sm:p-5">
           <p className="text-sm font-medium">Para aqui:</p>
-          <a
-            href={MAILTO}
-            className="font-display mt-2 inline-flex min-h-11 items-center rounded-lg bg-accent px-5 py-3 text-xl font-semibold break-all text-on-accent shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-          >
-            {EMAIL}
-          </a>
+          <p className="font-display mt-1 text-xl font-semibold break-all">{EMAIL}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={MAILTO}
+              className="inline-flex min-h-12 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            >
+              Escrever o email
+            </a>
+            <BotaoDeCopiar
+              texto={EMAIL}
+              etiqueta="Copiar o endereço"
+              anuncio="Endereço de email copiado."
+            />
+          </div>
           <p className="mt-3 text-sm text-muted">
             O botão abre o seu programa de email já com um guião do que ajuda. Um email escrito à
             maneira de cada um serve exatamente na mesma.
           </p>
         </div>
       ) : null}
+
+      {/*
+        O que acontece depois de enviar (C2-029).
+
+        Quem programa manda o email numa terça e quer saber se o concerto de
+        sábado entra a tempo. Diz-se o que a casa faz, e só isso: não há aqui
+        um prazo em dias, porque um prazo é uma promessa da operação, e a
+        operação não o declarou — escrevê-lo aqui era inventá-lo. O que é
+        verdade escreve-se: uma pessoa lê, o evento aparece quando estiver
+        aprovado, e o que faltar pergunta-se para o endereço de onde veio.
+      */}
+      <section aria-labelledby="depois" className="mt-8 max-w-2xl">
+        <h2 id="depois" className="ct-heading">
+          Depois de enviar
+        </h2>
+        <ul className="mt-3 grid gap-2 text-[0.95rem]">
+          <li className="flex gap-2.5">
+            <span aria-hidden="true" className="ct-octagon mt-2 size-2 shrink-0 bg-accent" />
+            <span>
+              Uma pessoa lê o email e passa o evento para a agenda. Aparece aqui assim que estiver
+              aprovado, sem mais nada a fazer do seu lado.
+            </span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden="true" className="ct-octagon mt-2 size-2 shrink-0 bg-accent" />
+            <span>
+              Se faltar alguma coisa para o publicar, respondemos a perguntar, para o endereço de
+              onde escreveu.
+            </span>
+          </li>
+          <li className="flex gap-2.5">
+            <span aria-hidden="true" className="ct-octagon mt-2 size-2 shrink-0 bg-accent" />
+            <span>
+              Quanto mais cedo, melhor: quem procura o que fazer no fim de semana costuma procurá-lo
+              a meio da semana.
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="tres-formas" className="mt-10">
+        <h2 id="tres-formas" className="ct-heading">
+          O que pode mandar
+        </h2>
+        <p className="mt-2 max-w-2xl text-muted">Qualquer uma destas três serve.</p>
+        {/* No telemóvel, uma lista compacta — o ícone pequeno ao lado do texto
+            —, e não três cartões de pé com octógonos de 44 píxeis: eram eles
+            que empurravam o endereço para fora do primeiro ecrã (C1-020). */}
+        <ul className="mt-4 grid gap-3 sm:grid-cols-3">
+          {FORMAS.map(({ Icone, titulo, texto, nota }) => (
+            <li
+              key={titulo}
+              className="flex h-full gap-3 rounded-lg border border-border bg-surface p-3.5 sm:flex-col sm:gap-0 sm:p-4"
+            >
+              <span className="ct-octagon grid size-9 shrink-0 place-items-center bg-accent-soft text-accent sm:size-11">
+                <Icone className="size-5 sm:size-6" />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-display text-lg font-semibold sm:mt-3">{titulo}</span>
+                <span className="mt-1 text-sm">{texto}</span>
+                <span className="mt-auto pt-2 text-sm text-muted">{nota}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section aria-labelledby="o-que-ajuda" className="mt-10 max-w-2xl">
         <h2 id="o-que-ajuda" className="ct-heading">
@@ -269,7 +347,7 @@ export default async function SubmitPage({ params }: Props) {
                 ) : (
                   'o email da agenda'
                 )}
-                . E se a vossa agenda já vive num sítio que se possa ler todos os dias,{' '}
+                . E se a sua agenda já vive num sítio que se possa ler todos os dias,{' '}
                 {haFontes ? (
                   <Link href="/fontes" className="underline underline-offset-4">
                     ligamo-la de vez
@@ -277,7 +355,7 @@ export default async function SubmitPage({ params }: Props) {
                 ) : (
                   'ligamo-la de vez'
                 )}{' '}
-                e nunca mais têm de enviar nada.
+                e não tem de enviar mais nada.
               </p>
             </div>
           </div>
@@ -296,7 +374,7 @@ export default async function SubmitPage({ params }: Props) {
             Na dúvida, escreva a perguntar
           </h2>
           <p className="mt-2 text-[0.95rem]">
-            Tem uma programação grande, um sistema de bilheteira, uma folha de cálculo, um site que
+            Tem uma programação grande, um sistema de bilheteira, uma folha de cálculo, um sítio que
             já publica tudo? Diga o que tem e combinamos a melhor forma de o passar para cá. Muitas
             vezes é mais simples do que parece — e resolve-se de uma vez para sempre.
           </p>

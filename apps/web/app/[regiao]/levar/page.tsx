@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const regiao = await exigirRegiao(regiaoId);
   return {
     title: 'Levar a agenda',
-    description: `A agenda ${regiao.doNome} dentro do vosso sítio: uma caixa para colar, feeds RSS e iCalendar, e uma API aberta em JSON. Sem conta, sem chave, sem custo.`,
+    description: `A agenda ${regiao.doNome} dentro do seu sítio: uma caixa para colar, feeds RSS e iCalendar, e uma API aberta em JSON. Sem conta, sem chave, sem custo.`,
     alternates: { canonical: '/levar' },
   };
 }
@@ -121,6 +121,8 @@ const exemploDeResposta = (origem: string) => `{
       "image_url": "…",
       "image_alt": "…",
       "image_miniatura": "…",
+      "image_width": 600,
+      "image_height": 848,
       "wheelchair_accessible": true,
       "has_sign_language": false,
       "has_audio_description": false,
@@ -172,19 +174,19 @@ export default async function LevarPage({ params }: Props) {
     <>
       <PageHeader
         title="Levar a agenda"
-        eyebrow="Para o vosso sítio"
-        lead={`A programação ${regiao.doNome} dentro da vossa página: uma caixa pronta a colar, os feeds para calendários e leitores de notícias, e a API para quem quiser montar o seu próprio desenho.`}
+        eyebrow="Para o seu sítio"
+        lead={`A programação ${regiao.doNome} dentro da sua página: uma caixa pronta a colar, os feeds para calendários e leitores de notícias, e a API para quem quiser montar o seu próprio desenho.`}
       />
 
       <p className="max-w-2xl rounded border border-border bg-accent-soft p-4 text-sm">
-        <strong>Não é preciso conta, nem chave, nem pedir autorização.</strong> Escolham em baixo,
-        copiem o código e está feito. Não há nada para instalar do vosso lado e não vos vamos cobrar
+        <strong>Não é preciso conta, nem chave, nem pedir autorização.</strong> Escolha em baixo,
+        copie o código e está feito. Não há nada para instalar do seu lado e não lhe vamos cobrar
         nada — a agenda é pública e é para ser usada.
       </p>
 
       <section aria-labelledby="construtor" className="mt-10">
         <h2 id="construtor" className="ct-heading">
-          Montem a vossa
+          Monte a sua
         </h2>
         <ConstrutorDeWidget
           base={origem}
@@ -201,7 +203,7 @@ export default async function LevarPage({ params }: Props) {
         </h2>
         <p className="mt-2 max-w-2xl text-muted">
           O construtor cobre o que quase toda a gente precisa. Esta é a lista completa, para quem
-          quiser escrever o código à mão ou montá-lo a partir do vosso gestor de conteúdos.
+          quiser escrever o código à mão ou montá-lo a partir do seu gestor de conteúdos.
         </p>
         <div
           className="mt-4 overflow-x-auto"
@@ -245,7 +247,7 @@ export default async function LevarPage({ params }: Props) {
         </div>
         <p className="mt-3 max-w-2xl text-sm text-muted">
           Um valor que não seja reconhecido é ignorado e vale o valor por omissão. Um erro de
-          escrita do vosso lado nunca deixa a caixa em branco.
+          escrita do seu lado nunca deixa a caixa em branco.
         </p>
       </section>
 
@@ -255,27 +257,25 @@ export default async function LevarPage({ params }: Props) {
         </h2>
         <ul className="mt-3 max-w-2xl list-disc space-y-2 pl-5 text-muted">
           <li>
-            A caixa não põe cookies e não segue quem visita o vosso sítio. Carrega a lista e mais
+            A caixa não põe cookies e não segue quem visita o seu sítio. Carrega a lista e mais
             nada.
           </li>
+          <li>As ligações abrem num separador novo, para ninguém sair do seu sítio sem querer.</li>
           <li>
-            As ligações abrem num separador novo, para ninguém sair do vosso sítio sem querer.
-          </li>
-          <li>
-            A programação vem da mesma base que alimenta o Coreto: o que corrigirem numa, corrige-se
+            A programação vem da mesma base que alimenta o Coreto: o que se corrige numa, corrige-se
             na outra.
           </li>
           <li>
-            Se preferirem montar a lista com o vosso próprio desenho, os{' '}
+            Se preferir montar a lista com o seu próprio desenho, os{' '}
             <a href="#dados" className="underline underline-offset-4">
               feeds e a API aberta
             </a>{' '}
             estão aqui em baixo.
           </li>
           <li>
-            Falta um evento vosso na caixa?{' '}
+            Falta um evento seu na caixa?{' '}
             <Link href="/submeter" className="underline underline-offset-4">
-              Enviem-no
+              Envie-o
             </Link>{' '}
             — aparece assim que passar pela moderação.
           </li>
@@ -469,11 +469,11 @@ export default async function LevarPage({ params }: Props) {
             feed é muito mais do que suficiente.
           </li>
           <li>
-            Identifiquem-se no <code>User-Agent</code> com um nome e um contacto. É assim que vos
-            conseguimos avisar em vez de vos bloquear.
+            Identifique-se no <code>User-Agent</code> com um nome e um contacto. É o que nos deixa
+            avisar em vez de bloquear.
           </li>
           <li>
-            Precisam da exportação completa e não de uma janela dos próximos eventos? Escrevam — é
+            Precisa da exportação completa e não de uma janela dos próximos eventos? Escreva — é
             mais barato para os dois lados do que percorrer a paginação toda.
           </li>
         </ul>
@@ -490,8 +490,8 @@ export default async function LevarPage({ params }: Props) {
             >
               CC BY 4.0
             </a>
-            : podem usá-la para o que quiserem, incluindo comercialmente, desde que digam de onde
-            veio e liguem para o Coreto.
+            : pode usá-la para o que quiser, incluindo comercialmente, desde que diga de onde veio e
+            ligue para o Coreto.
           </p>
           <p>
             Os textos de apresentação, os cartazes e as fotografias <strong>não</strong> são nossos

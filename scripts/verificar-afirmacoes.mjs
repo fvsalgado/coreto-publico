@@ -345,6 +345,19 @@ const PALAVRAS_PROIBIDAS = [
   'one-stop-shop',
 ];
 
+/**
+ * O tratamento de `docs/NARRATIVA.md` §8: «você» implícito, a toda a gente.
+ *
+ * O plural é o que se procura porque é o que escorregava: «Montem a vossa» no
+ * «Levar a agenda», «a vossa agenda» na mesma caixa que dizia «mande» no
+ * «Enviar um evento» (C2-044). Só os pronomes e os possessivos — os verbos no
+ * plural não se distinguem, numa varredura, de «quem programa publicam».
+ */
+const TRATAMENTO_PLURAL = ['vocês', 'vosso', 'vossa', 'vossos', 'vossas', 'vos'];
+
+/** E «sítio», sempre — a palavra da casa (`docs/NARRATIVA.md` §8). */
+const SITE = ['site', 'sites'];
+
 function varrerDicionario(termos, { afirmacao, porque, prefixoDaChave }) {
   const achados = [];
   for (const ficheiro of ficheirosPublicos()) {
@@ -2102,6 +2115,18 @@ varrerDicionario(PALAVRAS_PROIBIDAS, {
   porque:
     'cada uma descreve qualquer coisa e por isso não descreve nada; ao lado de frases que se podem conferir, uma delas chega para pôr a página inteira em dúvida',
   prefixoDaChave: 'proibida',
+});
+varrerDicionario(TRATAMENTO_PLURAL, {
+  afirmacao: 'o texto servido trata quem lê por «você» implícito, e nunca por «vocês»',
+  porque:
+    'o tratamento mudava de página para página, e às vezes dentro da mesma caixa; uma regra que muda com a página ninguém a consegue seguir (docs/NARRATIVA.md §8)',
+  prefixoDaChave: 'tratamento',
+});
+varrerDicionario(SITE, {
+  afirmacao: 'o texto servido diz «sítio», e nunca «site»',
+  porque:
+    '«sítio» é a palavra da casa — «o sítio da câmara», «colar no seu sítio» — e as duas a conviver liam-se como descuido (docs/NARRATIVA.md §8)',
+  prefixoDaChave: 'sitio',
 });
 
 {

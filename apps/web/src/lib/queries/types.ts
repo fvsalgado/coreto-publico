@@ -47,6 +47,17 @@ export interface EventCard {
    */
   image_miniatura: string | null;
   /**
+   * As medidas do cartaz, quando a recolha as conseguiu ler (migração 0126).
+   *
+   * Nulas é o caso normal e não uma falha — um formato que não se lê, um
+   * servidor em baixo na noite da recolha, um cartaz que chegou por submissão.
+   * A vitrine da ficha reserva altura mínima quando não as tem, e reserva a
+   * caixa exacta quando as tem; a capa dos cartões enche a moldura com um
+   * cartaz deitado (C1-009), e sem elas não adivinha.
+   */
+  image_width: number | null;
+  image_height: number | null;
+  /**
    * Dá para entrar numa cadeira de rodas?
    *
    * Vem da coluna derivada `wheelchair_accessible_resolved` (0129) por alias
@@ -121,16 +132,6 @@ export interface EventDetail extends EventCard {
   is_relaxed_performance: boolean;
   accessibility_notes: string | null;
   image_credit: string | null;
-  /**
-   * As medidas do cartaz, quando a recolha as conseguiu ler (migração 0126).
-   *
-   * Nulas é o caso normal e não uma falha — um formato que não se lê, um
-   * servidor em baixo na noite da recolha, um cartaz que chegou por submissão.
-   * A vitrine da ficha reserva altura mínima quando não as tem, e reserva a
-   * caixa exacta quando as tem.
-   */
-  image_width: number | null;
-  image_height: number | null;
   /**
    * De onde o cartaz veio, no servidor de quem o publicou (0162).
    *

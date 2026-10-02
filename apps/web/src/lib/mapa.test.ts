@@ -10,7 +10,18 @@ import {
   type EspacoNoMapa,
   type EventoNoMapa,
   nomeDaMarca,
+  rotuloDaMarca,
+  LOCALE_DO_MAPA,
+  camadaAEsconder,
+  ancoraDoCoreto,
+  juntarCoretosNoEcra,
+  limitesDosCoretos,
+  nomeDaMarcaDeCoretos,
+  type CoretoNoMapa,
+  type Marca,
 } from './mapa';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
 /**
  * Três concelhos de mentira, com as coordenadas verdadeiras de Tomar, Abrantes
@@ -448,5 +459,133 @@ describe('folgaDoEnquadramento', () => {
   it('numa caixa sem medida ainda, fica pelo mínimo', () => {
     expect(folgaDoEnquadramento(0, 0)).toBe(24);
     expect(folgaDoEnquadramento(Number.NaN, 400)).toBe(24);
+  });
+});
+
+describe('rotuloDaMarca', () => {
+  const lugar = (concelhoNome: string) => ({
+    id: concelhoNome,
+    nome: concelhoNome,
+    concelhoId: concelhoNome.toLowerCase(),
+    concelhoNome,
+    latitude: 0,
+    longitude: 0,
+    precisao: 'concelho' as const,
+    eventos: [],
+  });
+  const marca = (...nomes: string[]): Marca => ({
+    id: 'm',
+    latitude: 0,
+    longitude: 0,
+    lugares: nomes.map(lugar),
+    eventos: nomes.length,
+    precisao: 'concelho',
+  });
+
+  it('diz o concelho de uma marca de um concelho só', () => {
+    expect(rotuloDaMarca(marca('Tomar', 'Tomar'))).toBe('Tomar');
+  });
+
+  it('diz os dois quando são dois, e quantos quando são mais', () => {
+    expect(rotuloDaMarca(marca('Tomar', 'Ourém'))).toBe('Tomar e Ourém');
+    expect(rotuloDaMarca(marca('Tomar', 'Ourém', 'Mação'))).toBe('3 concelhos');
+  });
+});
+
+describe('LOCALE_DO_MAPA', () => {
+  /*
+   * As chaves vêm do próprio MapLibre, lidas do ficheiro que ele publica: uma
+   * versão que acrescente uma chave faz este teste dizer qual falta, em vez de
+   * o controlo novo aparecer em inglês sem ninguém dar por isso.
+   */
+  it('traduz todas as chaves que o MapLibre usa', () => {
+    const require = createRequire(import.meta.url);
+    const pasta = require.resolve('maplibre-gl/package.json').replace(/package\.json$/, '');
+    const fonte = readFileSync(`${pasta}dist/maplibre-gl-dev.mjs`, 'utf8');
+    const bloco = fonte.slice(fonte.indexOf('const defaultLocale = {'));
+    const chaves = [
+      ...bloco.slice(0, bloco.indexOf('};')).matchAll(/"([A-Za-z]+\.[A-Za-z]+)":/g),
+    ].map((m) => m[1]);
+    expect(chaves.length).toBeGreaterThan(10);
+    for (const chave of chaves) expect(LOCALE_DO_MAPA, chave).toHaveProperty([chave as string]);
+  });
+
+  it('não deixa os botões de aproximar e afastar em inglês', () => {
+    expect(LOCALE_DO_MAPA['NavigationControl.ZoomIn']).toBe('Aproximar');
+    expect(LOCALE_DO_MAPA['NavigationControl.ZoomOut']).toBe('Afastar');
+  });
+});
+
+describe('camadaAEsconder', () => {
+  it('esconde os países e os distritos dos dois estilos, e mais nada', () => {
+    for (const id of ['label_country_1', 'place_country_major', 'label_state', 'place_state']) {
+      expect(camadaAEsconder({ id, type: 'symbol' }), id).toBe(true);
+    }
+    for (const id of ['label_town', 'place_city', 'water_name']) {
+      expect(camadaAEsconder({ id, type: 'symbol' }), id).toBe(false);
+    }
+    expect(camadaAEsconder({ id: 'boundary_country', type: 'line' })).toBe(false);
+  });
+});
+
+describe('o mapa dos coretos', () => {
+  /**
+   * Coretos de mentira, com a longitude a fazer de píxel: a junção é em píxeis
+   * do ecrã, e é isso que se mede — a projeção é do MapLibre.
+   */
+  function coreto(id: string, x: number, concelhoNome = 'Tomar', confirmado = true): CoretoNoMapa {
+    return { id, nome: `Coreto ${id}`, concelhoNome, latitude: 39.6, longitude: x, confirmado };
+  }
+  const noEcra = (c: CoretoNoMapa) => ({ x: c.longitude, y: 0 });
+
+  it('separa os que estão longe e junta os que cabem no mesmo alvo de 44 px', () => {
+    const marcas = juntarCoretosNoEcra([coreto('a', 0), coreto('b', 30), coreto('c', 200)], noEcra);
+    expect(marcas.map((marca) => marca.coretos.map((c) => c.id))).toEqual([['a', 'b'], ['c']]);
+  });
+
+  it('a âncora de uma junção é um coreto confirmado, mesmo que o por confirmar venha primeiro', () => {
+    const marcas = juntarCoretosNoEcra(
+      [coreto('a', 0, 'Tomar', false), coreto('b', 20, 'Tomar', true)],
+      noEcra,
+    );
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0]!.id).toBe('b');
+    expect(marcas[0]!.longitude).toBe(20);
+  });
+
+  it('um coreto diz o nome e o concelho, e a dúvida quando a há', () => {
+    const [confirmado] = juntarCoretosNoEcra([coreto('a', 0)], noEcra);
+    const [duvidoso] = juntarCoretosNoEcra([coreto('b', 0, 'Ourém', false)], noEcra);
+    expect(nomeDaMarcaDeCoretos(confirmado!)).toBe('Coreto a, Tomar');
+    expect(nomeDaMarcaDeCoretos(duvidoso!)).toBe('Coreto b, Ourém — por confirmar');
+  });
+
+  it('vários dizem quantos, onde, e o que o botão faz — sem afirmar um concelho que não é', () => {
+    const [doMesmo] = juntarCoretosNoEcra([coreto('a', 0), coreto('b', 10)], noEcra);
+    const [deDois] = juntarCoretosNoEcra([coreto('a', 0), coreto('b', 10, 'Ourém')], noEcra);
+    const [deTres] = juntarCoretosNoEcra(
+      [coreto('a', 0), coreto('b', 10, 'Ourém'), coreto('c', 20, 'Abrantes')],
+      noEcra,
+    );
+    expect(nomeDaMarcaDeCoretos(doMesmo!)).toBe('2 coretos em Tomar — aproximar o mapa');
+    expect(nomeDaMarcaDeCoretos(deDois!)).toBe('2 coretos em Tomar e Ourém — aproximar o mapa');
+    expect(nomeDaMarcaDeCoretos(deTres!)).toBe('3 coretos em 3 concelhos — aproximar o mapa');
+  });
+
+  it('a caixa de uns quantos coretos é a que os envolve, e sem coretos não há caixa', () => {
+    expect(
+      limitesDosCoretos([
+        { ...coreto('a', -8.4), latitude: 39.5 },
+        { ...coreto('b', -8.2), latitude: 39.7 },
+      ]),
+    ).toEqual([
+      [-8.4, 39.5],
+      [-8.2, 39.7],
+    ]);
+    expect(limitesDosCoretos([])).toBeNull();
+  });
+
+  it('a âncora do cartão é a mesma que a marca aponta', () => {
+    expect(ancoraDoCoreto('coreto-alvega')).toBe('coreto-coreto-alvega');
   });
 });

@@ -23,7 +23,7 @@ export default async function Fontes() {
     <>
       <PageHeader
         title="Saúde da recolha"
-        lead={`É este ecrã que evita que um concelho desapareça do site sem ninguém dar por isso. Uma fonte ligada e sem sucesso há mais de ${STALE_SOURCE_HOURS} horas aparece assinalada.`}
+        lead={`É este ecrã que evita que um concelho desapareça do sítio sem ninguém dar por isso. Uma fonte ligada e sem sucesso há mais de ${STALE_SOURCE_HOURS} horas aparece assinalada.`}
       />
 
       <div

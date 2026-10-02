@@ -99,6 +99,15 @@ As fotografias de terceiros entram **por endereço**: 60 URLs distintos de
 a licença guardados ao lado — e uma asserção SQL faz a migração falhar se
 houver imagem sem crédito.
 
+Desde 2 de outubro de 2026 as do Commons **servem-se pelo próprio sítio**, na
+medida que cada lugar pede (`/fotografia/<chave>/<largura>`, ver
+`apps/web/src/lib/fotografia.ts`): o servidor pede a miniatura ao Commons e
+devolve-a, e o navegador de quem visita não fala com a Wikimedia, que lhe
+deixava cookies. Continuam a não estar versionadas — a cópia vive na cache do
+alojamento, com o crédito ao lado como sempre. As que não são do Commons não
+têm licença livre declarada e continuam a vir de casa de quem as publicou, o
+que a `/privacidade` diz pelo nome do servidor.
+
 ## Tipos de letra
 
 Nenhum está versionado. A letra própria do produto é a **Fraunces**,

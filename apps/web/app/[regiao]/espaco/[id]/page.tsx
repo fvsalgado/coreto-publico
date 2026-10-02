@@ -2,15 +2,19 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { todayInLisbon } from '@coreto/core';
+import { CapaDoEspaco } from '@/src/components/CapaDoEspaco';
 import { EmptyState, quaisAgendasPorLer } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
+import { FotografiaDoEspaco } from '@/src/components/FotografiaDoEspaco';
 import { listFeedSessions } from '@/src/lib/feeds/data';
 import { HowToArriveSection } from '@/src/components/HowToArriveSection';
+import { NotaDiscreta } from '@/src/components/NotaDiscreta';
 import { PageHeader } from '@/src/components/PageHeader';
 import { Sinais, Sinal } from '@/src/components/Sinais';
 import { PlaceStructuredData } from '@/src/components/StructuredData';
 import { SITE_URL } from '@/src/lib/env';
 import { perfilDoEspaco } from '@/src/lib/espaco';
+import { fonteDaFotografia } from '@/src/lib/fotografia';
 import { avaliarRecolha, leituraDoConcelho } from '@/src/lib/estado';
 import { formatLongDate, formatVenueKind } from '@/src/lib/format';
 import {
@@ -222,25 +226,37 @@ export default async function VenuePage({ params }: Props) {
         </p>
       ) : null}
 
+      {/*
+        A fotografia, na medida do ecrã, e a capa do espaço por baixo dela.
+
+        Era um `<img>` do endereço guardado, a 1600 píxeis pedidos ao Commons
+        — que os arredonda para 1920: 1,5 MB para um ecrã de 360, a encher o
+        primeiro ecrã com uma caixa vazia enquanto chegava (C3-005), e o ícone
+        de imagem partida com o crédito por baixo quando não chegava (C1-016).
+        Passa a pedir a medida que a caixa usa, servida pelo próprio sítio
+        quando é do Commons (`lib/fotografia.ts`), e a capa fica sempre por
+        baixo.
+
+        A caixa tem medidas antes de a fotografia chegar — `aspect-ratio`, com
+        tecto na secretária —, e por isso a página não salta quando ela chega.
+
+        Sem fotografia nenhuma, a capa fica sozinha e mais baixa: diz o que o
+        espaço é, e não ocupa o primeiro ecrã a dizê-lo.
+      */}
       {venue.image_url ? (
-        <figure className="mt-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={venue.image_url}
-            alt={`Fotografia de ${venue.name}`}
-            // `h-96` e não `max-h-96`: a caixa é a mesma, mas passa a estar lá
-            // antes de a fotografia chegar. Com `object-cover` a imagem já era
-            // cortada à medida da caixa, por isso nada muda no que se vê — só
-            // deixa de haver um empurrão de 384 px a meio da leitura.
-            className="h-96 w-full rounded-lg border border-border object-cover"
-          />
-          {venue.image_credit ? (
-            <figcaption className="mt-2 text-sm text-muted">
-              Imagem: {venue.image_credit}
-            </figcaption>
-          ) : null}
-        </figure>
-      ) : null}
+        <FotografiaDoEspaco
+          {...fonteDaFotografia(venue.image_url, [500, 960, 1280])}
+          sizes="(min-width: 64rem) 62rem, 100vw"
+          alt={`Fotografia de ${venue.name}`}
+          credito={venue.image_credit}
+        >
+          <CapaDoEspaco kind={venue.kind} isAssociation={venue.is_association} />
+        </FotografiaDoEspaco>
+      ) : (
+        <div className="relative mt-6 h-36 overflow-hidden rounded-lg border border-border sm:h-44">
+          <CapaDoEspaco kind={venue.kind} isAssociation={venue.is_association} />
+        </div>
+      )}
 
       {venue.description ? <p className="mt-6 max-w-2xl text-lg">{venue.description}</p> : null}
 
@@ -282,33 +298,38 @@ export default async function VenuePage({ params }: Props) {
           Cine-Teatro Paraíso» era a frase da equipa, e a promessa de «todas
           as noites» não era nossa. O endereço do sítio é o que quem lê
           reconhece, e a ligação deixa-o confirmar. */}
-      {fonteDoEspaco && leituraDoEspaco ? (
-        <p
-          className={`mt-4 max-w-2xl text-sm ${leituraDoEspaco.tipo === 'por-ler' ? 'text-highlight' : 'text-muted'}`}
-        >
-          {leituraDoEspaco.tipo === 'por-ler' ? (
+      {fonteDoEspaco && leituraDoEspaco?.tipo === 'por-ler' ? (
+        // A mesma nota discreta da página do concelho (C1-022): estava na
+        // cor das ligações, e lia-se como coisa que se carrega.
+        <NotaDiscreta className="mt-4">
+          Pode faltar programação. {quaisAgendasPorLer(leituraDoEspaco.fontes, formatLongDate)}
+          {haFontes ? (
             <>
-              Pode faltar programação. {quaisAgendasPorLer(leituraDoEspaco.fontes, formatLongDate)}
-            </>
-          ) : (
-            <>
-              Lemos todos os dias a programação que o espaço publica
-              {dominioDaFonte && fonteDoEspaco.url ? (
-                <>
-                  {' '}
-                  em{' '}
-                  <a
-                    href={fonteDoEspaco.url}
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-4"
-                  >
-                    {dominioDaFonte}
-                  </a>
-                </>
-              ) : null}
+              {' '}
+              <Link href="/fontes" className="text-ink underline underline-offset-4">
+                Como lemos as agendas
+              </Link>
               .
             </>
-          )}
+          ) : null}
+        </NotaDiscreta>
+      ) : fonteDoEspaco && leituraDoEspaco ? (
+        <p className="mt-4 max-w-2xl text-sm text-muted">
+          Lemos todos os dias a programação que o espaço publica
+          {dominioDaFonte && fonteDoEspaco.url ? (
+            <>
+              {' '}
+              em{' '}
+              <a
+                href={fonteDoEspaco.url}
+                rel="noopener noreferrer"
+                className="underline underline-offset-4"
+              >
+                {dominioDaFonte}
+              </a>
+            </>
+          ) : null}
+          .
           {haFontes ? (
             <>
               {' '}

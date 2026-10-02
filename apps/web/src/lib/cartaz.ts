@@ -39,3 +39,33 @@ export function posterBackground(url: string | null | undefined): string | undef
 
   return `url("${limpo.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
 }
+
+/**
+ * O rácio a partir do qual um cartaz é «deitado»: um quinto mais largo do que
+ * alto. Os quadrados ficam de fora de propósito — são, quase sempre,
+ * publicações de rede social com texto até às bordas, e cortá-los cortava
+ * palavras.
+ */
+const DEITADO = 1.2;
+
+/**
+ * Um cartaz deitado enche a moldura dos cartões, em vez de ficar numa faixa
+ * estreita entre dois borrões (C1-009).
+ *
+ * A regra da casa é nunca cortar um cartaz, e serve os cartazes ao alto, que
+ * são quase todos: a moldura é 3:4 e eles cabem. Um deitado — uma fotografia
+ * de paisagem, uma faixa de 1200 × 630 — ocupava o terço do meio, e os dois
+ * terços à volta eram o próprio cartaz desfocado. Esses são, quase sempre,
+ * fotografias e não cartazes com texto, e numa fotografia o corte ao centro
+ * não tira nada que se leia. A ficha mostra-o sempre inteiro.
+ *
+ * Só com as duas medidas (0126): sem elas não se adivinha, e o cartaz fica
+ * inteiro, como sempre ficou.
+ */
+export function cartazDeitado(
+  largura: number | null | undefined,
+  altura: number | null | undefined,
+): boolean {
+  if (!largura || !altura || largura <= 0 || altura <= 0) return false;
+  return largura / altura >= DEITADO;
+}

@@ -37,6 +37,8 @@ const EVENTO: EventCard = {
   price_display: 'Entrada livre',
   image_url: null,
   image_miniatura: null,
+  image_width: null,
+  image_height: null,
   image_alt: null,
   wheelchair_accessible: null,
   has_sign_language: false,

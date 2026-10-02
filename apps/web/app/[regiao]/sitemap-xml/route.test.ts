@@ -142,7 +142,7 @@ describe('GET /sitemap.xml', () => {
     listMunicipalities.mockReset().mockResolvedValue(CONCELHOS);
     listVenues.mockReset().mockResolvedValue([ESPACO]);
     countEventsBySeries.mockReset().mockResolvedValue({
-      'festival-x': { total: 3, porAcontecer: 1 },
+      'festival-x': { total: 3, porAcontecer: 1, aVir: null, ultimaEdicao: null },
     });
     seccoesDesligadas.mockReset().mockResolvedValue([]);
   });

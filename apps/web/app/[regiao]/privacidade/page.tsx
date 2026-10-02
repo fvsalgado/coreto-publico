@@ -6,7 +6,9 @@ import { PorExtenso } from '@/src/components/informacoes/PorExtenso';
 import { PRIVACIDADE, SUBCONTRATANTES } from '@/src/components/informacoes/privacidade';
 import { postHogScriptUrl } from '@/src/lib/analytics/posthog';
 import { env, hasAnalytics } from '@/src/lib/env';
-import { formatLongDate } from '@/src/lib/format';
+import { formatLongDate, joinPt } from '@/src/lib/format';
+import { anfitrioesDeFora } from '@/src/lib/fotografia';
+import { listCoretos, listVenues } from '@/src/lib/queries/events';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import { REVISAO_PRIVACIDADE } from '@/src/lib/revisao';
@@ -52,9 +54,23 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
   // O texto nomeia páginas que se desligam no painel; nomeia-as só quando
   // existem. A página das informações é o contexto de onde isto veio, e a
   // ligação de volta só se desenha quando há para onde voltar.
-  const [haCoretos, haInformacoes] = await Promise.all([
+  const [haCoretos, haInformacoes, fotografiasDeFora] = await Promise.all([
     seccaoLigada(regiao.id, 'coretos'),
     seccaoLigada(regiao.id, 'informacoes'),
+    /*
+     * Os servidores de onde ainda vêm fotografias, lidos do que a região
+     * mostra. Degrada para `null` — e então a frase não os nomeia —, porque
+     * um texto legal não pode deixar de responder por causa de uma leitura
+     * de espaços.
+     */
+    Promise.all([listVenues(regiao.id), listCoretos(regiao.id)])
+      .then(([espacos, coretos]) =>
+        anfitrioesDeFora([
+          ...espacos.map((espaco) => espaco.image_url),
+          ...coretos.map((coreto) => coreto.photo_url),
+        ]),
+      )
+      .catch(() => null),
   ]);
   const EMAIL = regiao.email;
   const responsavel = regiao.responsavelPeloTratamento;
@@ -266,9 +282,23 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           IP ao servidor a que o navegador se liga, como acontece com qualquer conteúdo servido por
           terceiros.
         </p>
+        {/*
+          Duas páginas desde que o mapa dos coretos passou a ter o mesmo mapa de
+          base que o dos eventos (C2-025) — e a frase diz as duas, ou a única
+          que existe quando os coretos estão desligados no painel. Um «só em»
+          que deixasse uma de fora era a espécie de promessa que esta página
+          existe para não fazer.
+        */}
         <p>
-          <strong>Os pedaços do mapa</strong>, e só em <Link href="/mapa">/mapa</Link>. O mapa da
-          agenda desenha ruas, e as ruas vêm do{' '}
+          <strong>Os pedaços do mapa</strong>, e só em <Link href="/mapa">/mapa</Link>
+          {haCoretos ? (
+            <>
+              {' '}
+              e em <Link href="/coretos">/coretos</Link>
+            </>
+          ) : null}
+          . {haCoretos ? 'Os mapas da agenda desenham' : 'O mapa da agenda desenha'} ruas, e as ruas
+          vêm do{' '}
           <a
             href="https://openfreemap.org/"
             target="_blank"
@@ -286,13 +316,23 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           >
             OpenStreetMap
           </a>
-          . Ao abrir aquela página, e só então, o seu navegador pede os pedaços de mapa a{' '}
-          <code>tiles.openfreemap.org</code>, o que revela a esse servidor que pedaços do mapa está
-          a ver. Nada do que se passa no mapa volta para nós. Os contornos dos concelhos, esses, são
-          nossos: estão no repositório e desenham-se sem pedir nada a ninguém.
+          . Ao abrir {haCoretos ? 'uma dessas páginas' : 'aquela página'}, e só então, o seu
+          navegador pede os pedaços de mapa a <code>tiles.openfreemap.org</code>, o que revela a
+          esse servidor que pedaços do mapa está a ver. Nada do que se passa no mapa volta para nós.
+          Os contornos dos concelhos, esses, são nossos: estão no repositório e desenham-se sem
+          pedir nada a ninguém.
         </p>
+        {/*
+          As fotografias do Commons deixaram de sair daqui: o servidor do
+          sítio pede-as e serve-as (`lib/fotografia.ts`), e o navegador de quem
+          visita não fala com a Wikimedia — que lhe deixava cookies a cada
+          fotografia, numa página que diz logo acima que não há cookies. As
+          outras continuam a ser pedidas a quem as publica, porque não têm
+          licença livre declarada e ligar não é reproduzir. Os servidores
+          nomeiam-se a partir do que a região mostra, e não à mão.
+        */}
         <p>
-          <strong>As fotografias dos espaços e dos coretos</strong>, servidas pelo{' '}
+          <strong>As fotografias dos espaços e dos coretos</strong> que não são do{' '}
           <a
             href="https://commons.wikimedia.org/"
             target="_blank"
@@ -301,25 +341,25 @@ export default async function PrivacidadePage({ params }: { params: Promise<{ re
           >
             Wikimedia Commons
           </a>
-          . São imagens de licença livre, e ficam onde estão em vez de serem copiadas para cá: é o
-          que mantém a atribuição ligada ao autor. Aparecem em <Link href="/espacos">/espacos</Link>
-          , na ficha de cada espaço
-          {haCoretos ? (
+          . As do Commons são imagens de licença livre, e servimo-las nós, com o crédito de quem as
+          fez ao lado: o seu navegador não fala com a Wikimedia por causa delas. As outras não têm
+          licença livre declarada, e ficam onde estão em vez de serem copiadas para cá — ligar não é
+          reproduzir.{' '}
+          {fotografiasDeFora && fotografiasDeFora.length > 0 ? (
             <>
-              , em <Link href="/coretos">/coretos</Link>
+              Aparecem em <Link href="/espacos">/espacos</Link>, na ficha de cada espaço
+              {haCoretos ? (
+                <>
+                  , em <Link href="/coretos">/coretos</Link>
+                </>
+              ) : null}{' '}
+              e na página de cada concelho, e é aí que o seu navegador as pede a{' '}
+              {joinPt(fotografiasDeFora)}. Não temos ligação a nenhum destes servidores: o que cada
+              um faz com o pedido rege-se pela política de privacidade de quem o gere.
             </>
-          ) : null}{' '}
-          e na página de cada concelho, e é aí que o seu navegador pede a imagem a{' '}
-          <code>commons.wikimedia.org</code>. A{' '}
-          <a
-            href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-4"
-          >
-            política de privacidade da Fundação Wikimedia
-          </a>{' '}
-          diz o que essa fundação faz com o que recebe.
+          ) : fotografiasDeFora ? (
+            'Nesta agenda não há nenhuma assim, e por isso nenhuma fotografia faz o seu navegador falar com outro servidor.'
+          ) : null}
         </p>
         <p>
           <strong>Os cartazes dos eventos</strong>, que vêm do sítio de quem organiza — as câmaras e

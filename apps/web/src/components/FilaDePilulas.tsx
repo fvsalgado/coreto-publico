@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { primeiroNivel } from '@/src/lib/pilulas';
 
 export interface PilulaDaFila {
   chave: string;
@@ -38,6 +39,11 @@ interface Props {
    * `concelhosSemEventos`.
    */
   semEventos?: readonly { chave: string; rotulo: string; href: string }[];
+  /**
+   * Quantas pílulas no primeiro nível; as outras ficam atrás de um «Mais».
+   * Oito, mais o «Mais», são as nove do Selo — ver `primeiroNivel`.
+   */
+  maximo?: number;
   className?: string;
 }
 
@@ -77,11 +83,16 @@ export function FilaDePilulas({
   destaque = false,
   pilulas,
   semEventos = [],
+  maximo,
   className = '',
 }: Props) {
   if (pilulas.length === 0 && semEventos.length === 0) return null;
 
-  const ligacoes = pilulas.map((pilula) => {
+  const { aVista, resto } = maximo
+    ? primeiroNivel(pilulas, maximo)
+    : { aVista: pilulas, resto: [] };
+
+  const desenhar = (pilula: PilulaDaFila) => {
     const quantos = pilula.quantos ?? null;
     return (
       <li key={pilula.chave} className="flex-none snap-start">
@@ -115,7 +126,51 @@ export function FilaDePilulas({
         </Link>
       </li>
     );
-  });
+  };
+
+  /*
+   * O segundo nível, atrás de um «Mais» no fim da fila (Selo 3.1).
+   *
+   * Um `<details>`, como a gaveta da barra de baixo: abre sem JavaScript e o
+   * teclado já o sabe usar. A lista que ele abre é `absolute` em relação ao
+   * `<nav>`, e é isso que a deixa escapar à fila: no telemóvel a fila desliza,
+   * e um `overflow` corta o que lhe sai de dentro — mas não o que tem por bloco
+   * contentor um ascendente dele. Abre por baixo da fila, à largura dela.
+   *
+   * A chave muda com o que está aceso: escolher uma pílula lá de dentro leva-a
+   * para o primeiro nível, e a lista fecha-se em vez de ficar aberta por cima
+   * da página nova.
+   */
+  const acesas = pilulas.filter((pilula) => pilula.activa).map((pilula) => pilula.chave);
+  const ligacoes = [
+    ...aVista.map(desenhar),
+    ...(resto.length > 0
+      ? [
+          <li key={`mais:${acesas.join(',')}`} className="flex-none snap-start">
+            <details>
+              <summary className={`ct-sem-marca cursor-pointer ${APAGADA}`}>
+                {`Mais ${resto.length}`}
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="size-4"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </summary>
+              <ul className="absolute inset-x-0 top-full z-30 mt-2 flex flex-wrap gap-2 rounded-lg border border-border bg-surface p-3 shadow-lg">
+                {resto.map(desenhar)}
+              </ul>
+            </details>
+          </li>,
+        ]
+      : []),
+  ];
 
   const nomeAVista = rotulo ? (
     <p
@@ -130,7 +185,7 @@ export function FilaDePilulas({
     return (
       <nav
         aria-label={nome}
-        className={`${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
+        className={`relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
       >
         {nomeAVista}
         <ul className="ct-fila-fichas min-w-0 flex-1">{ligacoes}</ul>
@@ -156,7 +211,11 @@ export function FilaDePilulas({
    * no `globals.css`).
    */
   return (
-    <div className={`${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}>
+    // `relative` aqui, e não na navegação: ela vive dentro da fila que desliza,
+    // e a lista do «Mais» tem de ter por bloco contentor alguém de fora dela.
+    <div
+      className={`relative ${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
+    >
       {nomeAVista}
       <div className="ct-fila-fichas min-w-0 flex-1">
         {pilulas.length > 0 ? (

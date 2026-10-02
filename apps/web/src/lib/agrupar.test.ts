@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ONGOING, UNDATED, groupByDay } from './agrupar';
+import { ONGOING, UNDATED, dosPrimeirosDias, groupByDay } from './agrupar';
 
 const HOJE = '2026-08-28';
 
@@ -176,5 +176,45 @@ describe('groupByDay', () => {
 
   it('devolve lista vazia sem eventos', () => {
     expect(groupByDay([], HOJE)).toEqual([]);
+  });
+});
+
+describe('dosPrimeirosDias (C2-018)', () => {
+  const HOJE = '2026-10-02';
+  const ATE = '2026-10-04';
+  const ev = (id: string, date_start: string | null, extra: Record<string, unknown> = {}) => ({
+    id,
+    date_start,
+    date_end: null,
+    ...extra,
+  });
+
+  it('fica com os três primeiros dias e o que está em cartaz; larga o resto da semana e o que não tem data', () => {
+    const lista = dosPrimeirosDias(
+      [
+        ev('hoje', HOJE),
+        ev('domingo', ATE),
+        ev('segunda', '2026-10-05'),
+        ev('em-cartaz', '2026-09-20', { date_end: '2026-11-30', is_ongoing: true }),
+        ev('sem-data', null),
+      ],
+      HOJE,
+      ATE,
+    );
+    expect(lista.map((evento) => evento.id)).toEqual(['hoje', 'domingo', 'em-cartaz']);
+  });
+
+  it('corta pela próxima sessão, e não pela estreia', () => {
+    // Um coro que estreou na semana passada e volta a cantar amanhã fica; um
+    // que só volta na quarta, não.
+    const lista = dosPrimeirosDias(
+      [
+        ev('amanha', '2026-09-26', { dias: ['2026-10-03'] }),
+        ev('quarta', '2026-09-26', { dias: ['2026-10-07'] }),
+      ],
+      HOJE,
+      ATE,
+    );
+    expect(lista.map((evento) => evento.id)).toEqual(['amanha']);
   });
 });

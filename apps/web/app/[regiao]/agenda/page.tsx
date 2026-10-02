@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { todayInLisbon, type EventFilter } from '@coreto/core';
 import { ActiveFilters } from '@/src/components/ActiveFilters';
 import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
@@ -39,6 +39,7 @@ import {
   nomesDosEixos,
   pilulasDeFaceta,
   readFilter,
+  temCamposVazios,
   type SearchParams,
 } from '@/src/lib/agenda';
 import { descreverFiltro, saidasDoVazio, type PropostaDoVazio } from '@/src/lib/agenda-servidor';
@@ -118,7 +119,10 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function AgendaPage({ params, searchParams }: Props) {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
-  const filter = readFilter(await searchParams);
+  const pedidos = await searchParams;
+  const filter = readFilter(pedidos);
+  // Os campos vazios que o formulário GET submete saem do endereço (C2-037).
+  if (temCamposVazios(pedidos)) redirect(buildHref(filter, filter.page));
   const today = todayInLisbon();
 
   const [result, municipalities, categories, venueNames, series, facetas, eixosDaAgenda] =
@@ -340,15 +344,20 @@ export default async function AgendaPage({ params, searchParams }: Props) {
             activa: atalho.activo,
           }))}
         />
+        {/* Oito à vista e o resto atrás de um «Mais», nas duas filas que
+            passam de nove — os concelhos de uma região grande e as catorze
+            categorias (Selo 3.1, `primeiroNivel`). */}
         <FilaDePilulas
           nome="Concelhos"
           rotulo="Onde"
+          maximo={8}
           pilulas={pilulasDeConcelho.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
           semEventos={concelhosAZero.map((concelho) => ({ ...concelho, chave: concelho.valor }))}
         />
         <FilaDePilulas
           nome="Categorias"
           rotulo="O quê"
+          maximo={8}
           pilulas={pilulasDeCategoria.map((pilula) => ({
             ...pilula,
             chave: pilula.valor,

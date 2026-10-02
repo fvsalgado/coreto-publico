@@ -1,4 +1,4 @@
-import { posterBackground } from '@/src/lib/cartaz';
+import { cartazDeitado, posterBackground } from '@/src/lib/cartaz';
 import { coverDay, formatCategory } from '@/src/lib/format';
 import { BandstandMark } from '@/src/components/BandstandMark';
 
@@ -11,6 +11,9 @@ interface CapaEvent {
   category_slug: string | null;
   date_start: string | null;
   date_end: string | null;
+  /** As medidas do cartaz (0126): com elas, um deitado enche a moldura. */
+  image_width?: number | null;
+  image_height?: number | null;
 }
 
 interface Props {
@@ -131,6 +134,16 @@ export function Capa({ event, today, className = '', semTitulo = false }: Props)
    */
   const pequeno = posterBackground(event.image_miniatura) ?? cartaz;
   const duasMedidas = pequeno !== cartaz;
+  /*
+   * Deitado, o cartaz enche a moldura em vez de ficar numa faixa entre dois
+   * borrões (C1-009) — ver `cartazDeitado`. Cortado ao centro e um pouco acima
+   * do meio, que é onde uma fotografia costuma ter o que interessa; sem o
+   * desfocado por trás, que deixava de se ver.
+   */
+  const deitado = cartazDeitado(event.image_width, event.image_height);
+  const frente = deitado
+    ? 'absolute inset-0 z-20 bg-cover bg-[center_30%] bg-no-repeat'
+    : 'absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md';
 
   return (
     <div
@@ -202,8 +215,9 @@ export function Capa({ event, today, className = '', semTitulo = false }: Props)
               faixas vazias, e por elas via-se o chão: a data por cima do
               cartaz e um pedaço do título por baixo, dois textos sobrepostos e
               nenhum legível. */}
-          <div aria-hidden="true" className="absolute inset-0 z-10 overflow-hidden">
-            {/* O desfocado transborda a moldura e a moldura corta-o.
+          {deitado ? null : (
+            <div aria-hidden="true" className="absolute inset-0 z-10 overflow-hidden">
+              {/* O desfocado transborda a moldura e a moldura corta-o.
                 `filter: blur(24px)` desvanece as margens do próprio elemento —
                 σ é metade do raio e a franja chega a uns trinta e seis píxeis —,
                 e era por essa franja que a capa tipográfica se via em fantasma
@@ -214,11 +228,11 @@ export function Capa({ event, today, className = '', semTitulo = false }: Props)
                 A folga é em `inset` negativo e não em `scale`: o `scale`
                 amplia a franja na mesma proporção em que afasta a margem, e
                 nunca a alcança. */}
-            {/* O desfocado é sempre a miniatura, e nunca outra coisa: por
+              {/* O desfocado é sempre a miniatura, e nunca outra coisa: por
                 baixo de um `blur(24px)` não há detalhe nenhum que os mil e
                 duzentos píxeis do grande acrescentem. É o caso em que a
                 medida pequena não é um compromisso — é a certa. */}
-            {/*
+              {/*
               Mais calmo do que era (C1-009): com `saturate(150%)`, um cartaz
               deitado ficava numa faixa estreita entre dois borrões de
               verde-lama. A saturação desce, e um véu claro a 35 % faz do
@@ -234,11 +248,12 @@ export function Capa({ event, today, className = '', semTitulo = false }: Props)
               passa de 1, por isso nada se queima. No escuro o véu é o escuro,
               como já era.
             */}
-            <div
-              style={{ backgroundImage: pequeno }}
-              className="absolute -inset-12 bg-cover bg-center [filter:blur(24px)_saturate(1.1)_contrast(0.48)_brightness(1.35)] dark:[filter:blur(24px)_brightness(0.45)]"
-            />
-          </div>
+              <div
+                style={{ backgroundImage: pequeno }}
+                className="absolute -inset-12 bg-cover bg-center [filter:blur(24px)_saturate(1.1)_contrast(0.48)_brightness(1.35)] dark:[filter:blur(24px)_brightness(0.45)]"
+              />
+            </div>
+          )}
           {/* E à frente, a medida que a caixa merece.
  
               São duas camadas e não uma com dois endereços porque não há
@@ -255,20 +270,16 @@ export function Capa({ event, today, className = '', semTitulo = false }: Props)
               <div
                 aria-hidden="true"
                 style={{ backgroundImage: pequeno }}
-                className="absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md @min-[16rem]:hidden"
+                className={`${frente} @min-[16rem]:hidden`}
               />
               <div
                 aria-hidden="true"
                 style={{ backgroundImage: cartaz }}
-                className="absolute inset-0 z-20 m-[3px] hidden rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md @min-[16rem]:block"
+                className={`${frente} hidden @min-[16rem]:block`}
               />
             </>
           ) : (
-            <div
-              aria-hidden="true"
-              style={{ backgroundImage: cartaz }}
-              className="absolute inset-0 z-20 m-[3px] rounded-[3px] bg-contain bg-center bg-no-repeat drop-shadow-md"
-            />
+            <div aria-hidden="true" style={{ backgroundImage: cartaz }} className={frente} />
           )}
         </>
       ) : null}

@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { BandstandMark } from '@/src/components/BandstandMark';
+import { FotografiaDeCartao } from '@/src/components/FotografiaDeCartao';
 import { Sinal } from '@/src/components/Sinais';
-import { posterBackground } from '@/src/lib/cartaz';
-import { formatVenueKind, thumbUrl } from '@/src/lib/format';
+import { freguesiaCurta } from '@/src/lib/espaco';
+import { formatVenueKind } from '@/src/lib/format';
 import type { Venue } from '@/src/lib/queries/types';
 
 interface Props {
@@ -35,7 +35,7 @@ interface Props {
  * por cima: é a mesma informação, arrumada para o espaço que existe.
  */
 export function VenueCard({ venue, count, porConfirmar = false }: Props) {
-  const fotografia = venue.image_url ? posterBackground(thumbUrl(venue.image_url)) : undefined;
+  const tipo = venue.is_association ? 'Coletividade' : formatVenueKind(venue.kind);
 
   // A moldura a tracejado é a mesma que a página dos coretos usa para o que
   // está por confirmar — a dúvida diz-se com o mesmo sinal em toda a casa.
@@ -45,43 +45,26 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
         porConfirmar ? 'border-dashed border-border' : 'border-border'
       }`}
     >
-      {/* A fotografia é decorativa — o nome está mesmo ao lado — e sem ela o
-          coreto em filigrana segura o lugar, para a grelha não coxear.
-
-          O coreto está sempre desenhado, e a fotografia é uma camada por cima:
-          quando ela não chega, o que fica por baixo é o mesmo desenho que a
-          grelha já mostra para os espaços sem foto.
-
-          Em fundo e não em `<img>`, pela lição que `cartaz.ts` mediu no
-          Chromium e aplicou aos cartazes: um `<img>` que falha desenha o ícone
-          de imagem partida mesmo com `alt=""`, e um `background-image` que
-          falha não desenha nada. Aqui isso não é hipótese — cada foto do
-          Commons custa três viagens (302 para `Special:Redirect`, 301 para
-          `thumb.wikimedia.org`, e só a terceira traz bytes), as cinquenta e
-          seis fotos de `/espacos` são perto de cento e setenta pedidos numa
-          visita, e a Wikimedia responde 429 com `retry-after: 600`. Com o
-          `<img>`, esse 429 punha o ícone partido no canto de um retângulo
-          vazio.
-
-          O que se perde é o `loading="lazy"`: um fundo é pedido logo que a
-          caixa entra na árvore de pintura, esteja ou não à vista. Numa vista
-          com rolagem completa não muda nada — as fotos vinham todas na mesma —,
-          e quem não rola paga pedidos que antes não fazia. */}
-      <div className="ct-grain relative aspect-square w-24 shrink-0 self-stretch overflow-hidden border-r border-border bg-accent-soft sm:aspect-[5/3] sm:w-full sm:border-r-0 sm:border-b">
-        <BandstandMark className="absolute inset-0 m-auto size-10 text-ink opacity-[0.12] sm:size-14" />
-        {fotografia ? (
-          <div
-            aria-hidden="true"
-            style={{ backgroundImage: fotografia }}
-            className="absolute inset-0 bg-cover bg-center"
-          />
-        ) : null}
-      </div>
+      {/* A capa do espaço por baixo, a fotografia por cima — ver
+          `FotografiaDeCartao`. A capa diz pela cor e pelo nome o que o espaço
+          é (C1-017): era um quadrado turquesa pálido com o coreto a 12 %,
+          igual para um cine-teatro, uma biblioteca e um museu, em quatro de
+          cada dez cartões desta lista. */}
+      <FotografiaDeCartao
+        url={venue.image_url}
+        kind={venue.kind}
+        isAssociation={venue.is_association}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-3.5">
         <p className="font-medium leading-snug">
+          {/* Sem pré-carregamento: a lista tem mais de cem cartões, e o Next
+              pré-carregava a ficha de cada um que passasse pelo ecrã — cento e
+              tal pedidos numa rolagem, de páginas que quase ninguém abre. Ao
+              tocar, a ficha abre como sempre. */}
           <Link
             href={`/espaco/${venue.id}`}
+            prefetch={false}
             className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
           >
             {venue.name}
@@ -92,10 +75,20 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
             Rio Torto…». Num cartão de telemóvel isso afoga o nome do espaço,
             que é o que ali se vai procurar; a ficha do espaço tem a linha
             inteira. */}
+        {/* Sem fotografia, o tipo está escrito na capa ao lado, e dizê-lo
+            outra vez aqui era a mesma palavra duas vezes no mesmo cartão. Fica
+            para quem ouve, que não vê a capa. */}
         <p className="mt-0.5 line-clamp-2 text-sm text-muted sm:line-clamp-none">
-          {[formatVenueKind(venue.kind), venue.parish]
-            .filter((part): part is string => Boolean(part))
-            .join(' · ')}
+          {venue.image_url ? (
+            [tipo, freguesiaCurta(venue.parish)]
+              .filter((part): part is string => Boolean(part))
+              .join(' · ')
+          ) : (
+            <>
+              <span className="sr-only">{tipo}. </span>
+              {freguesiaCurta(venue.parish)}
+            </>
+          )}
         </p>
 
         {/* A apresentação do espaço, mas só a partir do tablet.
@@ -115,18 +108,14 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
           <p className="mt-1.5 line-clamp-2 text-sm max-sm:hidden">{venue.description}</p>
         ) : null}
 
-        {count > 0 ||
-        venue.is_association ||
-        porConfirmar ||
-        venue.wheelchair_accessible === true ? (
+        {count > 0 || porConfirmar || venue.wheelchair_accessible === true ? (
           <p className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-sm">
+            {/* Uma pílula e não uma frase: é o sinal que distingue os espaços
+                com programação, que a lista passou a pôr primeiro (C1-017). */}
             {count > 0 ? (
-              <span className="font-medium text-accent">
+              <span className="rounded-full bg-accent-soft px-2.5 py-0.5 font-medium text-accent">
                 {count === 1 ? '1 evento marcado' : `${count} eventos marcados`}
               </span>
-            ) : null}
-            {venue.is_association ? (
-              <span className="text-sm font-semibold text-muted">Coletividade</span>
             ) : null}
             {porConfirmar ? (
               <span className="text-sm font-semibold text-muted">Por confirmar</span>

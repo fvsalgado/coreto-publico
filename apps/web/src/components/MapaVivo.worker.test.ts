@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 /**
  * O processador do mapa em `public/` é o do pacote instalado, byte a byte.
  *
- * O `MapaVivo` diz ao MapLibre que o processador está em
+ * O `carregarMapLibre` (em `MapaDeBase`) diz ao MapLibre que o processador está em
  * `/maplibre/<versão>/maplibre-gl-worker.mjs`, e quem o põe lá é
  * `scripts/copiar-maplibre.mjs`, no `postinstall` e antes de cada build. Este
  * teste é o que apanha um `pnpm add maplibre-gl@…` seguido de um `vitest`

@@ -133,3 +133,28 @@ export function groupByDay<T extends EventoAgrupavel>(
     ...(semData ? [semData] : []),
   ];
 }
+
+/**
+ * Só o que cai nos primeiros dias — a lista curta da entrada (C2-018).
+ *
+ * A entrada mostrava os sete dias inteiros, quarenta cartões, e a porta dos
+ * concelhos e o resto da página ficavam a dez ecrãs do topo. Quem chega
+ * pergunta «o que há hoje, amanhã, no fim de semana»; a semana inteira está a
+ * um toque, no atalho dos sete dias.
+ *
+ * O corte é pelo mesmo dia que a lista usa para arrumar cada evento — a
+ * próxima sessão, e não a estreia —, para não sair da lista curta um coro que
+ * estreou há uma semana e canta amanhã. O que está em cartaz fica: abriu e
+ * pode ir ver-se hoje. O que não tem data fica de fora: não cai em dia nenhum.
+ * `ultimoDia` é inclusivo, em `AAAA-MM-DD`.
+ */
+export function dosPrimeirosDias<T extends EventoAgrupavel>(
+  events: readonly T[],
+  today: string,
+  ultimoDia: string,
+): T[] {
+  return events.filter((evento) => {
+    const dia = diaDoEvento(evento, today);
+    return dia === ONGOING || (dia !== UNDATED && dia <= ultimoDia);
+  });
+}

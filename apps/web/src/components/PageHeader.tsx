@@ -29,21 +29,38 @@ interface Props {
    * (C1-027), e a sobrancelha passou de 11 para 14 píxeis (C1-004).
    */
   compacto?: boolean;
+  /**
+   * O título na escala de cartaz (`ct-display`), e não na de secção. É o da
+   * página de um concelho, que uma câmara mostra e liga do seu sítio: com o
+   * título do tamanho do de «Agenda», a página mais importante para quem a
+   * licencia era a mais pobre do sítio (C1-021).
+   */
+  grande?: boolean;
   children?: React.ReactNode;
 }
 
-export function PageHeader({ title, eyebrow, lead, migalhas, lado, compacto, children }: Props) {
+export function PageHeader({
+  title,
+  eyebrow,
+  lead,
+  migalhas,
+  lado,
+  compacto,
+  grande,
+  children,
+}: Props) {
+  const titulo = <h1 className={grande ? 'ct-display' : 'ct-display-sm'}>{title}</h1>;
   return (
     <header className={compacto ? 'mb-4 sm:mb-5' : 'mb-8'}>
       {migalhas ? <Migalhas trilha={migalhas} /> : null}
       {eyebrow && !compacto ? <p className="ct-eyebrow mb-2.5">{eyebrow}</p> : null}
       {lado ? (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <h1 className="ct-display-sm">{title}</h1>
+          {titulo}
           {lado}
         </div>
       ) : (
-        <h1 className="ct-display-sm">{title}</h1>
+        titulo
       )}
       {lead ? <p className="mt-3 max-w-2xl text-muted">{lead}</p> : null}
       {children}

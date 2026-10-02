@@ -58,9 +58,10 @@ const CALIBRAR = process.env.DESEMPENHO_CALIBRAR === '1';
  * O único terceiro autorizado, e só onde faz falta.
  *
  * Os mosaicos do mapa vêm do OpenFreeMap — dados do OpenStreetMap, sem chave e
- * sem conta —, e é a única excepção à regra da casa. Está aqui pelo nome para
- * que acrescentar outra seja uma decisão visível e não um descuido; a mesma
- * lista vive na `connect-src` da CSP, em `apps/web/next.config.ts`.
+ * sem conta —, e é a única excepção à regra da casa: no `/mapa` e no
+ * `/coretos`, as duas páginas com mapa de base. Está aqui pelo nome para que
+ * acrescentar outra seja uma decisão visível e não um descuido; a mesma lista
+ * vive na `connect-src` da CSP, em `apps/web/next.config.ts`.
  */
 const MAPA_HOST = 'tiles.openfreemap.org';
 
@@ -101,7 +102,17 @@ const MAPA_HOST = 'tiles.openfreemap.org';
 const ORCAMENTOS = {
   '/': { js: 170, css: 30, html: 250 },
   '/agenda': { js: 170, css: 30, html: 250 },
-  '/espacos': { js: 170, css: 30, html: 250 },
+  /*
+   * Os espaços declaram imagens de terceiros, e só imagens — pela razão da
+   * ficha, mais abaixo. As fotografias do Commons servem-se do próprio sítio
+   * desde 2 de outubro de 2026 (`apps/web/src/lib/fotografia.ts`), e com elas
+   * foram-se os cookies da Wikimedia que esta medição apanhava com dados. As
+   * outras — o blogue do inventário dos coretos, o arquivo InfoPortugal — não
+   * têm licença livre declarada e continuam a vir de casa de quem as publicou,
+   * que é a decisão escrita em `/privacidade`. Os cookies continuam a reprovar
+   * aqui como em todo o lado: é essa a fronteira que interessa.
+   */
+  '/espacos': { js: 170, css: 30, html: 250, imagensDeTerceiros: true },
   /*
    * O `/levar` está aqui pelo construtor de widget.
    *
@@ -125,6 +136,21 @@ const ORCAMENTOS = {
    * 170 kB que o apanham.
    */
   '/mapa': { js: 170, css: 30, html: 250, terceiros: [MAPA_HOST] },
+  /*
+   * Os coretos são a segunda página com mapa de base, desde 2 de outubro de
+   * 2026 (C2-025): os octógonos num retângulo branco passaram a assentar no
+   * mesmo mapa do OpenFreeMap que o `/mapa` usa, e a `/privacidade` diz as
+   * duas páginas pelo nome. A excepção fica escrita aqui como a do mapa — uma
+   * rota, um terceiro —, e as fotografias pela razão dos espaços: as do
+   * inventário dos coretos vêm do blogue de quem as publicou.
+   */
+  '/coretos': {
+    js: 170,
+    css: 30,
+    html: 250,
+    terceiros: [MAPA_HOST],
+    imagensDeTerceiros: true,
+  },
 };
 
 /** Um salto de layout acima disto sente-se. Ver `docs/ARQUITETURA.md`. */

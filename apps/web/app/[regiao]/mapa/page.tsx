@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { todayInLisbon } from '@coreto/core';
 import { ActiveFilters } from '@/src/components/ActiveFilters';
 import { EmptyState } from '@/src/components/EmptyState';
+import { FilaDePilulas } from '@/src/components/FilaDePilulas';
 import { MapaDosEventos } from '@/src/components/MapaDosEventos';
 import { PageHeader } from '@/src/components/PageHeader';
 import { VistaDaAgenda } from '@/src/components/VistaDaAgenda';
 import {
   PATH_DO_MAPA,
+  atalhosDeData,
   buildHref,
   fichasDosFiltros,
   readFilter,
@@ -38,6 +40,10 @@ import { seccaoLigada } from '@/src/lib/queries/seccoes';
 interface Props {
   params: Promise<{ regiao: string }>;
   searchParams: Promise<SearchParams>;
+}
+
+function contarEventos(quantos: number): string {
+  return quantos === 1 ? '1 evento' : `${quantos} eventos`;
 }
 
 /** O mapa está a mostrar um recorte — há pelo menos um filtro no endereço. */
@@ -170,6 +176,24 @@ export default async function MapaPage({ params, searchParams }: Props) {
         <ActiveFilters filters={fichas} clearHref={PATH_DO_MAPA} />
       </PageHeader>
 
+      {/* Os mesmos três recortes de tempo da agenda (C2-028). O mapa abria com
+          tudo o que há até janeiro e não deixava escolher o quando — que é a
+          pergunta de quase toda a gente que procura «o que há perto». Os
+          endereços são os da agenda com o caminho do mapa, pelo mesmo
+          `buildHref`, e guardam os outros filtros a valer. */}
+      <FilaDePilulas
+        nome="Atalhos de data"
+        rotulo="Quando"
+        destaque
+        className="mb-4"
+        pilulas={atalhosDeData(filter, hoje, PATH_DO_MAPA).map((atalho) => ({
+          chave: atalho.id,
+          rotulo: atalho.rotulo,
+          href: atalho.href,
+          activa: atalho.activo,
+        }))}
+      />
+
       <MapaDosEventos
         lugares={lugares}
         concelhos={paraOMapa}
@@ -181,11 +205,21 @@ export default async function MapaPage({ params, searchParams }: Props) {
       <h2 className="font-display mt-10 text-2xl leading-tight font-semibold">
         Concelho a concelho
       </h2>
+      {/* O título da lista segue o recorte (C2-028): com o fim de semana
+          escolhido, a tabela continuava a chamar-se «todos os eventos por
+          acontecer» — e era o que um leitor de ecrã ouvia. */}
+      <p className="mt-1 text-sm text-muted">
+        {descricao?.rotulo
+          ? `${contarEventos(eventos.length)} ${descricao.rotulo}.`
+          : `${contarEventos(eventos.length)} por acontecer, de hoje em diante.`}
+      </p>
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">
-            {`Todos os eventos por acontecer nos ${concelhos.length} concelhos ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`}
+            {descricao?.rotulo
+              ? `Os eventos ${descricao.rotulo}, nos ${concelhos.length} concelhos ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`
+              : `Todos os eventos por acontecer nos ${concelhos.length} concelhos ${regiao.doNome}, agrupados por concelho, com a data e o sítio de cada um.`}
           </caption>
           <thead>
             <tr className="border-b border-border text-left">
@@ -215,9 +249,12 @@ export default async function MapaPage({ params, searchParams }: Props) {
                     colSpan={3}
                     className="border-y border-border py-2 pr-4 text-left"
                   >
+                    {/* Com 44 píxeis de altura, como todos os alvos da casa: as
+                        ligações desta tabela tinham 16 a 20 e o `check:selo`
+                        media-as com dados. */}
                     <Link
                       href={`/concelho/${concelho.id}`}
-                      className="font-display text-base font-semibold underline-offset-4 hover:underline"
+                      className="font-display inline-flex min-h-11 items-center text-base font-semibold underline-offset-4 hover:underline"
                     >
                       {concelho.name}
                     </Link>
@@ -243,9 +280,11 @@ export default async function MapaPage({ params, searchParams }: Props) {
                       ) : (
                         <>
                           {comFonte.has(concelho.id)
-                            ? 'Lemos as fontes deste concelho todas as noites e, de momento, não há nada marcado.'
-                            : 'Ainda sem fonte que possamos ler todas as noites.'}{' '}
-                          <span className="text-ink">Enviem o que se prepara.</span>
+                            ? 'Lemos as fontes deste concelho todos os dias e, de momento, não há nada marcado.'
+                            : 'Ainda sem fonte que possamos ler todos os dias.'}{' '}
+                          <span className="text-ink">
+                            Quem organiza pode enviar o que se prepara.
+                          </span>
                         </>
                       )}
                     </td>
@@ -259,7 +298,7 @@ export default async function MapaPage({ params, searchParams }: Props) {
                       <td className="py-2.5 pr-4">
                         <Link
                           href={`/evento/${evento.slug}`}
-                          className="font-medium underline-offset-4 hover:underline"
+                          className="inline-flex min-h-11 items-center font-medium underline-offset-4 hover:underline"
                         >
                           {evento.title}
                         </Link>

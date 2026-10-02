@@ -1,6 +1,7 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { horaDeInicioConhecida, todayInLisbon, type EventFilter } from '@coreto/core';
+import { contagensDosCiclos, type ContagemDoCiclo, type LinhaDeCiclo } from '../ciclo';
 import type { AnelDeFronteira } from '../mapa';
 import { EIXOS_DE_ACESSIBILIDADE, FAMILIA } from '../agenda';
 import { filtroDaPalavra, planoDePesquisa, type PlanoDePesquisa } from '../pesquisa';
@@ -1172,13 +1173,11 @@ export function listSeriesEvents(seriesId: string): Promise<SeriesEvent[]> {
   })(seriesId);
 }
 
-/** Quantos eventos tem cada ciclo, indexado pelo `id` do ciclo. */
-export interface ContagemDoCiclo {
-  /** Tudo o que o ciclo tem registado, incluindo o que já passou. */
-  total: number;
-  /** Só o que ainda está publicado — o que está para vir. */
-  porAcontecer: number;
-}
+/**
+ * Quantos eventos tem cada ciclo, e quando — indexado pelo `id` do ciclo. O
+ * tipo e a conta vivem em `lib/ciclo.ts`, onde se testam sem base de dados.
+ */
+export type { ContagemDoCiclo } from '../ciclo';
 
 export type SeriesEventCounts = Record<string, ContagemDoCiclo>;
 
@@ -1207,7 +1206,8 @@ async function fetchSeriesEventCounts(regiao: string): Promise<SeriesEventCounts
 
   const { data, error } = await supabase
     .from('events')
-    .select('series_id, status, series!inner()')
+    // As datas vêm para o índice dizer quando é, ou quando foi (C2-023).
+    .select('series_id, status, date_start, date_end, series!inner()')
     .eq('series.region_id', regiao)
     // A mesma razão da `fetchSeriesEvents`: a contagem conta o que a página
     // do ciclo mostra, e um cancelado não está lá.
@@ -1216,17 +1216,7 @@ async function fetchSeriesEventCounts(regiao: string): Promise<SeriesEventCounts
     .not('series_id', 'is', null);
 
   exigirLeitura('countEventsBySeries', error);
-
-  const counts: SeriesEventCounts = {};
-  const linhas = (data ?? []) as unknown as Array<{ series_id: string | null; status: string }>;
-  for (const row of linhas) {
-    if (!row.series_id) continue;
-    const contagem = counts[row.series_id] ?? { total: 0, porAcontecer: 0 };
-    contagem.total += 1;
-    if (row.status === 'published') contagem.porAcontecer += 1;
-    counts[row.series_id] = contagem;
-  }
-  return counts;
+  return contagensDosCiclos((data ?? []) as unknown as LinhaDeCiclo[]);
 }
 
 /**
@@ -1376,6 +1366,20 @@ export const countEventsByVenue = degradarForaDaCache(
   contarPorEspaco,
   () => ({}),
 );
+
+/**
+ * A mesma contagem, para quem escreve uma frase sobre o zero.
+ *
+ * A página dos coretos diz, coreto a coreto, «sem eventos marcados» (C2-024) —
+ * e essa frase só é verdade se a contagem tiver chegado. Com o recurso de
+ * cima, uma falha de leitura punha a frase em todos os cartões durante uma
+ * hora de cache. Este devolve `null` em vez de vazio: a página cala-se sobre a
+ * programação, e não afirma de nenhum coreto o que não se chegou a contar.
+ */
+export const countEventsByVenueOuNada = degradarForaDaCache<
+  [string],
+  Record<string, number> | null
+>('countEventsByVenue', contarPorEspaco, () => null);
 
 /**
  * Só o nome de cada espaço, indexado por `id`.

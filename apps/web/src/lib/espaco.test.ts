@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { VenueKind } from '@coreto/core';
-import { filtrarEspacos, nomeCasaCom, perfilDoEspaco } from './espaco';
+import {
+  corDoEspaco,
+  filtrarEspacos,
+  freguesiaCurta,
+  nomeCasaCom,
+  ordenarEspacos,
+  perfilDoEspaco,
+} from './espaco';
 
 const GENEROS: VenueKind[] = [
   'theatre',
@@ -133,5 +140,71 @@ describe('filtrarEspacos', () => {
 
   it('sem filtros, passam todos', () => {
     expect(filtrarEspacos(ESPACOS, SEM_FILTRO)).toHaveLength(ESPACOS.length);
+  });
+});
+
+describe('corDoEspaco', () => {
+  it('dá a cada género uma das cores com par de contraste medido', () => {
+    // Só os pares que o `cores.test.ts` mede: uma família com a tinta da capa,
+    // ou o turquesa da casa com a tinta dele. Uma cor nova aqui era uma cor
+    // que nenhum teste tinha medido.
+    for (const kind of GENEROS) {
+      expect(corDoEspaco(kind, false), kind).toMatch(
+        /^(bg-cat-[a-z]+ text-on-cat|bg-accent text-on-accent)$/,
+      );
+    }
+  });
+
+  it('pinta a coletividade como coletividade, seja qual for a casa', () => {
+    expect(corDoEspaco('cultural_centre', true)).toBe(corDoEspaco('association', false));
+  });
+
+  it('não parte com um género que o catálogo ainda não conhece', () => {
+    expect(corDoEspaco('planetario', false)).toBe(corDoEspaco('other', false));
+  });
+});
+
+describe('ordenarEspacos', () => {
+  const ESPACOS = [
+    { id: 'centro', name: 'Centro Cultural', is_association: false },
+    { id: 'banda', name: 'Sociedade Filarmónica', is_association: true },
+    { id: 'teatro', name: 'Teatro', is_association: false },
+    { id: 'biblioteca', name: 'Biblioteca', is_association: false },
+  ];
+
+  it('põe primeiro os que têm alguma coisa marcada', () => {
+    const ordem = ordenarEspacos(ESPACOS, { teatro: 40, biblioteca: 1 }).map((e) => e.id);
+    expect(ordem.slice(0, 2).sort()).toEqual(['biblioteca', 'teatro']);
+  });
+
+  it('não premeia quem publica mais: com eventos, a ordem é a do nome', () => {
+    const ordem = ordenarEspacos(ESPACOS, { teatro: 40, biblioteca: 1 }).map((e) => e.id);
+    expect(ordem.slice(0, 2)).toEqual(['biblioteca', 'teatro']);
+  });
+
+  it('mantém as coletividades à frente dentro de cada grupo', () => {
+    const ordem = ordenarEspacos(ESPACOS, {}).map((e) => e.id);
+    expect(ordem[0]).toBe('banda');
+    const comEventos = ordenarEspacos(ESPACOS, { banda: 2, teatro: 3 }).map((e) => e.id);
+    expect(comEventos.slice(0, 2)).toEqual(['banda', 'teatro']);
+  });
+});
+
+describe('freguesiaCurta', () => {
+  it('tira o «União das freguesias de» e mais nada', () => {
+    expect(
+      freguesiaCurta('União das freguesias de Torres Novas (Santa Maria, Salvador e Santiago)'),
+    ).toBe('Torres Novas (Santa Maria, Salvador e Santiago)');
+    expect(freguesiaCurta('União das Freguesias de Alvega e Concavada')).toBe('Alvega e Concavada');
+  });
+
+  it('deixa os parênteses, que às vezes dizem a aldeia', () => {
+    expect(freguesiaCurta('Malhou, Louriceira e Espinheiro (Louriceira)')).toBe(
+      'Malhou, Louriceira e Espinheiro (Louriceira)',
+    );
+  });
+
+  it('não inventa nada quando não há freguesia', () => {
+    expect(freguesiaCurta(null)).toBeNull();
   });
 });

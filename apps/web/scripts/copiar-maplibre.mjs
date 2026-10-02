@@ -13,7 +13,7 @@
  * Chromium, contra a compilação de produção.
  *
  * A saída é dizer à biblioteca onde está o processador (`setWorkerUrl`, em
- * `MapaVivo.tsx`) e garantir que ele está lá: os dois ficheiros copiados para
+ * `MapaDeBase.tsx`) e garantir que ele está lá: os dois ficheiros copiados para
  * `public/maplibre/<versão>/`, tal como saem do pacote, sem os passar pelo
  * empacotador — que os trataria como recursos soltos e partia o `import`
  * relativo entre eles (foi o que aconteceu ao deixá-lo tentar).

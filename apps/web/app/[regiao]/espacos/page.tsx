@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { EmptyState } from '@/src/components/EmptyState';
 import { PageHeader } from '@/src/components/PageHeader';
 import { ListagemStructuredData } from '@/src/components/StructuredData';
 import { VenueCard } from '@/src/components/VenueCard';
 import { espacosPorConfirmar } from '@/src/lib/coreto';
-import { filtrarEspacos } from '@/src/lib/espaco';
+import { filtrarEspacos, ordenarEspacos } from '@/src/lib/espaco';
 import { formatVenueKind } from '@/src/lib/format';
 import {
   countEventsByVenue,
@@ -41,6 +42,7 @@ interface Props {
  */
 const venueFilterSchema = z.object({
   q: z.string().trim().max(80).optional(),
+  concelho: z.string().trim().max(80).optional(),
   kind: z.string().trim().max(40).optional(),
   associations: z.literal('1').optional(),
   acessivel: z.literal('1').optional(),
@@ -48,18 +50,47 @@ const venueFilterSchema = z.object({
 
 type VenueFilter = z.infer<typeof venueFilterSchema>;
 
+/** Os campos do formulário, pela ordem em que vão no endereço. */
+const CAMPOS = ['q', 'concelho', 'kind', 'associations', 'acessivel'] as const;
+
 function firstValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
 function readFilter(searchParams: SearchParams): VenueFilter {
   const raw: Record<string, string> = {};
-  for (const key of ['q', 'kind', 'associations', 'acessivel'] as const) {
+  for (const key of CAMPOS) {
     const value = firstValue(searchParams[key])?.trim();
     if (value) raw[key] = value;
   }
   const parsed = venueFilterSchema.safeParse(raw);
   return parsed.success ? parsed.data : {};
+}
+
+/** O endereço canónico de um filtro: só os campos que valem, pela ordem de `CAMPOS`. */
+function hrefDoFiltro(filtro: VenueFilter): string {
+  const params = new URLSearchParams();
+  for (const key of CAMPOS) {
+    const valor = filtro[key];
+    if (valor) params.set(key, valor);
+  }
+  const query = params.toString();
+  return query ? `${PATH}?${query}` : PATH;
+}
+
+/**
+ * O formulário é GET, e um GET submete os campos que ficaram por preencher:
+ * `/espacos?q=&concelho=&kind=tomar`. O endereço funciona, mas parece avariado
+ * num WhatsApp — e a promessa da casa é que cada filtro é uma ligação que se
+ * partilha tal como está (C2-037). Com um campo vazio no endereço, a página
+ * manda para o canónico; sem JavaScript continua a funcionar, porque é o
+ * servidor que o faz.
+ */
+function temCamposVazios(searchParams: SearchParams): boolean {
+  return CAMPOS.some((key) => {
+    const valor = searchParams[key];
+    return valor !== undefined && (firstValue(valor)?.trim() ?? '') === '';
+  });
 }
 
 interface Group {
@@ -68,22 +99,22 @@ interface Group {
 }
 
 /**
- * Agrupa por concelho pela ordem oficial dos concelhos.
- *
- * Dentro de cada concelho as coletividades vêm primeiro. Não é uma questão
- * de gosto: numa lista alfabética a filarmónica fica sempre atrás do centro
- * cultural, e a filarmónica é metade da razão de esta agenda existir.
+ * Agrupa por concelho pela ordem oficial dos concelhos. A ordem dentro de
+ * cada um — os que têm programação primeiro, as coletividades a seguir — e as
+ * razões dela estão em `ordenarEspacos`.
  */
-function groupByMunicipality(municipalities: Municipality[], venues: Venue[]): Group[] {
+function groupByMunicipality(
+  municipalities: Municipality[],
+  venues: Venue[],
+  eventCounts: Readonly<Record<string, number>>,
+): Group[] {
   return municipalities
     .map((municipality) => ({
       municipality,
-      venues: venues
-        .filter((venue) => venue.municipality_id === municipality.id)
-        .sort((a, b) => {
-          if (a.is_association !== b.is_association) return a.is_association ? -1 : 1;
-          return a.name.localeCompare(b.name, 'pt');
-        }),
+      venues: ordenarEspacos(
+        venues.filter((venue) => venue.municipality_id === municipality.id),
+        eventCounts,
+      ),
     }))
     .filter((group) => group.venues.length > 0);
 }
@@ -101,7 +132,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function VenuesPage({ params, searchParams }: Props) {
   const { regiao: regiaoId } = await params;
   const regiao = await exigirRegiao(regiaoId);
-  const filter = readFilter(await searchParams);
+  const pedidos = await searchParams;
+  const filter = readFilter(pedidos);
+  if (temCamposVazios(pedidos)) redirect(hrefDoFiltro(filter));
   const [municipalities, allVenues, eventCounts, coretos] = await Promise.all([
     listMunicipalities(regiao.id),
     listVenues(regiao.id),
@@ -144,7 +177,19 @@ export default async function VenuesPage({ params, searchParams }: Props) {
     soAcessiveis,
   });
 
-  const groups = groupByMunicipality(municipalities, venues);
+  /*
+   * O concelho, que era uma fila de onze âncoras — «Saltar para um concelho»
+   * — e passou a campo do formulário. Onze opções num nível de navegação é o
+   * que o requisito 3.1 da lista «Conteúdo» do Selo recusa (no máximo nove,
+   * `docs/SELO.md`); como campo, filtra a lista em vez de a percorrer, e
+   * funciona sem JavaScript.
+   */
+  const concelhoEscolhido =
+    municipalities.find((municipality) => municipality.id === filter.concelho) ?? null;
+  const groups = groupByMunicipality(municipalities, venues, eventCounts).filter(
+    (group) => !concelhoEscolhido || group.municipality.id === concelhoEscolhido.id,
+  );
+  const quantosNaLista = groups.reduce((soma, group) => soma + group.venues.length, 0);
   const associationCount = allVenues.filter((venue) => venue.is_association).length;
   const acessiveisCount = allVenues.filter((venue) => venue.wheelchair_accessible === true).length;
 
@@ -152,14 +197,21 @@ export default async function VenuesPage({ params, searchParams }: Props) {
 
   const summary = !hasCatalogue
     ? 'O catálogo de espaços ainda não está disponível.'
-    : venues.length === 0
+    : quantosNaLista === 0
       ? 'Nenhum espaço corresponde a estes filtros.'
-      : venues.length === 1
+      : quantosNaLista === 1
         ? '1 espaço.'
-        : `${venues.length} espaços em ${groups.length} ${groups.length === 1 ? 'concelho' : 'concelhos'}.`;
+        : `${quantosNaLista} espaços em ${groups.length} ${groups.length === 1 ? 'concelho' : 'concelhos'}.`;
 
   const activeFilterCount =
-    (procura ? 1 : 0) + (activeKind ? 1 : 0) + (onlyAssociations ? 1 : 0) + (soAcessiveis ? 1 : 0);
+    (procura ? 1 : 0) +
+    (concelhoEscolhido ? 1 : 0) +
+    (activeKind ? 1 : 0) +
+    (onlyAssociations ? 1 : 0) +
+    (soAcessiveis ? 1 : 0);
+  // Os que vivem atrás de «Mais filtros»: o nome e o concelho estão à vista.
+  const filtrosEscondidos =
+    (activeKind ? 1 : 0) + (onlyAssociations ? 1 : 0) + (soAcessiveis ? 1 : 0);
   const origem = urlDoSitio(regiao, SITE_URL);
 
   return (
@@ -168,7 +220,7 @@ export default async function VenuesPage({ params, searchParams }: Props) {
           que está no ecrã é um recorte, e o canónico continua a ser
           `/espacos`. Publicar o recorte com o endereço do todo era descrever o
           catálogo inteiro com meia dúzia de casas. */}
-      {activeFilterCount === 0 && venues.length > 0 ? (
+      {activeFilterCount === 0 && quantosNaLista > 0 ? (
         <ListagemStructuredData
           nome="Espaços"
           descricao={`Teatros, museus, bibliotecas, coletividades, filarmónicas e coretos ${regiao.doNome}.`}
@@ -191,143 +243,169 @@ export default async function VenuesPage({ params, searchParams }: Props) {
         lead={`Onde acontece a programação ${regiao.doNome}: cine-teatros e museus, mas também filarmónicas, ranchos, cineclubes e casas do povo — que vêm primeiro em cada concelho.`}
       />
 
-      <details className="ct-recolhivel rounded border border-border bg-surface">
-        <summary aria-label="Mostrar ou esconder os filtros dos espaços">
-          <span>Filtrar</span>
-          {activeFilterCount > 0 ? (
-            <span className="ct-octagon grid size-6 shrink-0 place-items-center bg-accent text-xs font-semibold text-on-accent">
-              {activeFilterCount}
-            </span>
-          ) : null}
-        </summary>
+      {/*
+        A pesquisa pelo nome e o concelho à vista; o resto atrás de «Mais
+        filtros», recolhido em qualquer largura.
 
-        <form
-          method="get"
-          action={PATH}
-          role="search"
-          aria-label="Filtrar os espaços"
-          className="px-4 pt-1 pb-4 sm:pt-4"
-        >
-          <div className="mb-4">
-            <label htmlFor="filtro-nome" className="block text-sm font-medium">
-              Procurar pelo nome
-            </label>
-            <input
-              type="search"
-              id="filtro-nome"
-              name="q"
-              defaultValue={filter.q ?? ''}
-              placeholder="Virgínia, Gil Vicente, filarmónica…"
-              className="mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink"
-            />
-          </div>
+        Em secretária o formulário estava aberto à frente da grelha, e os
+        primeiros espaços começavam aos 760 píxeis (C1-017). O nome é o que
+        quem chega costuma saber — «Virgínia», «a filarmónica» — e o concelho
+        é a outra pergunta da lista; o tipo e as duas caixas são para quem já
+        está a afinar.
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="filtro-tipo" className="block text-sm font-medium">
-                Tipo de espaço
+        Um formulário só, e por isso um botão só: as duas metades escrevem no
+        mesmo endereço, e partido em dois um deles perdia os campos do outro.
+      */}
+      <form method="get" action={PATH} role="search" aria-label="Procurar nos espaços">
+        <div className="flex flex-wrap gap-2">
+          <label htmlFor="filtro-nome" className="sr-only">
+            Procurar pelo nome
+          </label>
+          <input
+            type="search"
+            id="filtro-nome"
+            name="q"
+            defaultValue={filter.q ?? ''}
+            placeholder="Virgínia, Gil Vicente, filarmónica…"
+            className="min-h-11 min-w-0 flex-[1_1_14rem] rounded border border-field bg-surface px-3 py-2 text-base text-ink"
+          />
+          {municipalities.length > 1 ? (
+            <>
+              <label htmlFor="filtro-concelho" className="sr-only">
+                Concelho
               </label>
-              {/* `border-field` e não `border-border`: a moldura de um campo
-                  identifica um controlo e tem de ter 3:1 contra o fundo. */}
               <select
-                id="filtro-tipo"
-                name="kind"
-                defaultValue={activeKind?.kind ?? ''}
-                className="mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink"
+                id="filtro-concelho"
+                name="concelho"
+                defaultValue={concelhoEscolhido?.id ?? ''}
+                className="min-h-11 min-w-0 flex-[1_1_10rem] rounded border border-field bg-surface px-3 py-2 text-base text-ink"
               >
-                <option value="">Todos os tipos</option>
-                {kinds.map((item) => (
-                  <option key={item.kind} value={item.kind}>
-                    {item.label}
+                <option value="">Todos os concelhos</option>
+                {municipalities.map((municipality) => (
+                  <option key={municipality.id} value={municipality.id}>
+                    {municipality.name}
                   </option>
                 ))}
               </select>
-            </div>
+            </>
+          ) : null}
+          <button
+            type="submit"
+            className="min-h-11 rounded bg-accent px-5 text-sm font-medium text-on-accent"
+          >
+            Procurar
+          </button>
+        </div>
 
-            <fieldset>
-              <legend className="block text-sm font-medium">Mostrar apenas</legend>
-              <label
-                htmlFor="filtro-coletividades"
-                className="flex min-h-11 items-center gap-2.5 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  id="filtro-coletividades"
-                  name="associations"
-                  value="1"
-                  defaultChecked={onlyAssociations}
-                  className="size-5 accent-accent"
-                />
-                Só coletividades{associationCount > 0 ? ` (${associationCount})` : ''}
-              </label>
-              {/* Oferece-se quando há o que mostrar, como as caixas da agenda:
-                  uma caixa que devolve sempre zero é uma armadilha. Sem
-                  nenhum, diz-se — esconder calado é a outra armadilha. */}
-              {acessiveisCount > 0 || soAcessiveis ? (
+        <details className="ct-recolhivel ct-recolhivel-sempre mt-2 rounded border border-border bg-surface">
+          <summary>
+            <span>Mais filtros</span>
+            {filtrosEscondidos > 0 ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="ct-octagon grid size-6 shrink-0 place-items-center bg-accent text-xs font-semibold text-on-accent"
+                >
+                  {filtrosEscondidos}
+                </span>
+                <span className="sr-only">
+                  {filtrosEscondidos === 1
+                    ? ', 1 filtro ativo'
+                    : `, ${filtrosEscondidos} filtros ativos`}
+                </span>
+              </>
+            ) : null}
+          </summary>
+
+          <div className="ct-recolhivel-conteudo px-4 pt-1 pb-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="filtro-tipo" className="block text-sm font-medium">
+                  Tipo de espaço
+                </label>
+                {/* `border-field` e não `border-border`: a moldura de um campo
+                    identifica um controlo e tem de ter 3:1 contra o fundo. */}
+                <select
+                  id="filtro-tipo"
+                  name="kind"
+                  defaultValue={activeKind?.kind ?? ''}
+                  className="mt-1 min-h-11 w-full rounded border border-field bg-surface px-3 py-2 text-base text-ink"
+                >
+                  <option value="">Todos os tipos</option>
+                  {kinds.map((item) => (
+                    <option key={item.kind} value={item.kind}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <fieldset>
+                <legend className="block text-sm font-medium">Mostrar apenas</legend>
                 <label
-                  htmlFor="filtro-acessivel"
+                  htmlFor="filtro-coletividades"
                   className="flex min-h-11 items-center gap-2.5 text-sm"
                 >
                   <input
                     type="checkbox"
-                    id="filtro-acessivel"
-                    name="acessivel"
+                    id="filtro-coletividades"
+                    name="associations"
                     value="1"
-                    defaultChecked={soAcessiveis}
-                    aria-describedby="filtro-acessivel-nota"
+                    defaultChecked={onlyAssociations}
                     className="size-5 accent-accent"
                   />
-                  Com acesso a cadeiras de rodas{acessiveisCount > 0 ? ` (${acessiveisCount})` : ''}
+                  Só coletividades{associationCount > 0 ? ` (${associationCount})` : ''}
                 </label>
-              ) : null}
-              <p id="filtro-acessivel-nota" className="mt-1 text-sm text-muted">
-                {acessiveisCount > 0 || soAcessiveis
-                  ? 'Os espaços que declaram acesso a cadeiras de rodas — sem declaração, um espaço fica de fora. A ficha de cada um diz o que se sabe.'
-                  : 'Por agora, nenhum espaço desta lista declara acesso a cadeiras de rodas.'}
-              </p>
-            </fieldset>
-          </div>
+                {/* Oferece-se quando há o que mostrar, como as caixas da agenda:
+                    uma caixa que devolve sempre zero é uma armadilha. Sem
+                    nenhum, diz-se — esconder calado é a outra armadilha. */}
+                {acessiveisCount > 0 || soAcessiveis ? (
+                  <label
+                    htmlFor="filtro-acessivel"
+                    className="flex min-h-11 items-center gap-2.5 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      id="filtro-acessivel"
+                      name="acessivel"
+                      value="1"
+                      defaultChecked={soAcessiveis}
+                      aria-describedby="filtro-acessivel-nota"
+                      className="size-5 accent-accent"
+                    />
+                    Com acesso a cadeiras de rodas
+                    {acessiveisCount > 0 ? ` (${acessiveisCount})` : ''}
+                  </label>
+                ) : null}
+                <p id="filtro-acessivel-nota" className="mt-1 text-sm text-muted">
+                  {acessiveisCount > 0 || soAcessiveis
+                    ? 'Os espaços que declaram acesso a cadeiras de rodas — sem declaração, um espaço fica de fora. A ficha de cada um diz o que se sabe.'
+                    : 'Por agora, nenhum espaço desta lista declara acesso a cadeiras de rodas.'}
+                </p>
+              </fieldset>
+            </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="submit"
-              className="min-h-11 rounded bg-accent px-5 text-sm font-medium text-on-accent"
-            >
-              Filtrar
-            </button>
-            <Link
-              href={PATH}
-              className="inline-flex min-h-11 items-center rounded px-3 text-sm underline underline-offset-4"
-            >
-              Limpar filtros
-            </Link>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                className="min-h-11 rounded bg-accent px-5 text-sm font-medium text-on-accent"
+              >
+                Filtrar
+              </button>
+              <Link
+                href={PATH}
+                className="inline-flex min-h-11 items-center rounded px-3 text-sm underline underline-offset-4"
+              >
+                Limpar filtros
+              </Link>
+            </div>
           </div>
-        </form>
-      </details>
+        </details>
+      </form>
 
       <p role="status" className="mt-6 text-sm text-muted">
         {summary}
       </p>
-
-      {/* Onze concelhos são uma página comprida: as âncoras poupam o dedo a
-          quem só quer chegar ao seu. */}
-      {groups.length > 1 ? (
-        <nav aria-label="Saltar para um concelho" className="mt-4">
-          <ul className="ct-fila-fichas">
-            {groups.map((group) => (
-              <li key={group.municipality.id}>
-                <a
-                  href={`#espacos-${group.municipality.id}`}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-surface px-4 text-sm whitespace-nowrap underline-offset-4 hover:border-accent hover:underline"
-                >
-                  {group.municipality.name}
-                  <span className="text-muted">{group.venues.length}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      ) : null}
 
       {groups.length > 0 ? (
         <div className="mt-6 space-y-12">
@@ -337,9 +415,11 @@ export default async function VenuesPage({ params, searchParams }: Props) {
               aria-labelledby={`espacos-${group.municipality.id}`}
             >
               <h2 id={`espacos-${group.municipality.id}`} className="ct-heading scroll-mt-6">
+                {/* 44 px de alvo, e não os 34 da linha do título: é uma ligação
+                    que se toca, e o check:selo mediu-a com dados (5.2). */}
                 <Link
                   href={`/concelho/${group.municipality.id}`}
-                  className="underline-offset-4 hover:underline"
+                  className="inline-flex min-h-11 items-center underline-offset-4 hover:underline"
                 >
                   {group.municipality.name}
                 </Link>
@@ -367,10 +447,10 @@ export default async function VenuesPage({ params, searchParams }: Props) {
           }
           description={
             !hasCatalogue
-              ? 'Estamos a reunir os espaços concelho a concelho. Se faltar aqui a coletividade da vossa terra, é a melhor altura para o dizer.'
+              ? 'Estamos a reunir os espaços concelho a concelho. Se faltar aqui a coletividade da sua terra, é a melhor altura para o dizer.'
               : soAcessiveis
                 ? 'Só aparecem os espaços que declaram acesso a cadeiras de rodas, e sem declaração não quer dizer sem acesso: a ficha de cada espaço diz o que se sabe.'
-                : 'Talvez o tipo escolhido ainda não tenha nenhum espaço registado. E se faltar aqui a coletividade da vossa terra, basta dizer — é para isso que a lista existe.'
+                : 'Talvez o tipo escolhido ainda não tenha nenhum espaço registado. E se faltar aqui a coletividade da sua terra, basta dizer — é para isso que a lista existe.'
           }
           action={{ href: '/submeter', label: 'Falta um espaço' }}
         />

@@ -21,6 +21,8 @@ const EVENTO: EventCard = {
   price_display: null,
   image_url: 'https://exemplo.pt/cartaz.jpg',
   image_miniatura: null,
+  image_width: null,
+  image_height: null,
   image_alt: 'O cartaz',
   wheelchair_accessible: true,
   has_sign_language: false,

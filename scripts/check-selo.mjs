@@ -50,6 +50,11 @@ const ROTAS = [
   '/fontes',
   '/levar',
   '/estado',
+  // Os coretos têm mapa de base desde 2 de outubro de 2026 (C2-025), com os
+  // mesmos controlos do MapLibre que reprovavam no `/mapa`, e marcas próprias.
+  // Uma secção que se desliga: desligada, responde 404 e salta-se. No fim da
+  // lista, para não mudar as seis primeiras, que são as do aspeto 8.
+  '/coretos',
 ];
 
 /**
@@ -245,7 +250,12 @@ function medirNaPagina({ SECUNDARIO_MINIMO, ENTRELINHA_MINIMA, ALVO_MINIMO }) {
       const r = caixaDoAlvo(el);
       return { w: r.width, h: r.height, texto: (el.textContent || '').trim().slice(0, 40) };
     })
-    .filter((a) => a.w > 0 && a.h > 0);
+    // O que está escondido de quem vê não é um alvo de toque. Um `sr-only` é
+    // uma caixa de um píxel, recortada: existe para o teclado e para o leitor
+    // de ecrã, e quando recebe o foco ganha o tamanho todo — a «Saltar o mapa»
+    // dos coretos mede 44 px focada, e 1 × 1 em repouso. Medi-la em repouso
+    // era chamar alvo pequeno a uma coisa que nenhum dedo consegue tocar.
+    .filter((a) => a.w > 1 && a.h > 1);
 
   return {
     h1: document.querySelectorAll('h1').length,

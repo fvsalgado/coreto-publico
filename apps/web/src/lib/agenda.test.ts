@@ -16,6 +16,7 @@ import {
   nomesDosEixos,
   pilulasDeFaceta,
   readFilter,
+  temCamposVazios,
 } from './agenda';
 
 /** Um filtro válido a partir do que se escreveria no endereço. */
@@ -340,6 +341,14 @@ describe('atalhosDeData', () => {
     expect(fimDeSemana?.href).toBe('/agenda?from=2026-09-11&to=2026-09-13');
   });
 
+  it('no mapa, os mesmos recortes levam ao mapa, com os mesmos parâmetros', () => {
+    const doMapa = atalhosDeData(filtro({ municipality: 'tomar' }), QUARTA, '/mapa');
+    const daAgenda = atalhosDeData(filtro({ municipality: 'tomar' }), QUARTA);
+    expect(doMapa.map((a) => a.href)).toEqual(
+      daAgenda.map((a) => a.href.replace(/^\/agenda/, '/mapa')),
+    );
+  });
+
   it('preserva os filtros a valer — incluindo os que só existem escondidos', () => {
     const atual = filtro({
       municipality: 'tomar',
@@ -469,5 +478,23 @@ describe('filtroIndexavel', () => {
     expect(filtroIndexavel(filtro({ from: QUARTA, to: QUARTA }))).toBe(false);
     expect(filtroIndexavel(filtro({ from: QUARTA }))).toBe(false);
     expect(filtroIndexavel(filtro({ to: QUARTA }))).toBe(false);
+  });
+});
+
+describe('temCamposVazios (C2-037)', () => {
+  it('apanha o que o formulário GET submete por preencher, e o canónico tira-o', () => {
+    const pedidos = { q: 'cinema', from: '', to: '', municipality: '', category: '' };
+    expect(temCamposVazios(pedidos)).toBe(true);
+    expect(buildHref(readFilter(pedidos), 1)).toBe('/agenda?q=cinema');
+  });
+
+  it('um endereço limpo não redirige — senão era um ciclo', () => {
+    expect(temCamposVazios({ q: 'cinema', municipality: 'tomar' })).toBe(false);
+    expect(temCamposVazios({})).toBe(false);
+  });
+
+  it('espaços em branco contam como vazio; o que não é filtro não conta', () => {
+    expect(temCamposVazios({ q: '   ' })).toBe(true);
+    expect(temCamposVazios({ utm_source: '' })).toBe(false);
   });
 });

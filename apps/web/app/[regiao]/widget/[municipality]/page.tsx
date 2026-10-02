@@ -408,7 +408,7 @@ export default async function WidgetPage({ params, searchParams }: Props) {
       <WidgetShell opcoes={opcoes}>
         <p className="text-muted">
           {hasDatabase
-            ? 'Concelho desconhecido. Confirmem o valor de data-concelho no código do widget.'
+            ? 'Concelho desconhecido. Confirme o valor de data-concelho no código do widget.'
             : 'Agenda temporariamente indisponível.'}
         </p>
       </WidgetShell>

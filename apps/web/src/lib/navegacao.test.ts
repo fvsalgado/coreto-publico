@@ -5,6 +5,7 @@ import {
   BARRA,
   DESTINOS,
   MAIS,
+  MAIS_DO_TOLDO,
   RODAPE_ANCORAS,
   RODAPE_PROGRAMAR,
   RODAPE_PROJETO,
@@ -412,5 +413,30 @@ describe('caminhoPublico', () => {
     const interno = caminhoPublico('/medio-tejo/agenda', 'medio-tejo');
     const publico = caminhoPublico('/agenda', 'medio-tejo');
     expect(interno).toBe(publico);
+  });
+});
+
+describe('o «Mais» do cabeçalho largo (C2-038)', () => {
+  it('leva os Guardados, os ciclos e o «Levar a agenda», que na secretária só estavam no rodapé', () => {
+    const hrefs = MAIS_DO_TOLDO.map((atalho) => atalho.href);
+    expect(hrefs).toEqual(expect.arrayContaining(['/favoritos', '/ciclos', '/levar']));
+  });
+
+  it('não repete o que o cabeçalho já mostra — nem os destinos, nem o envio', () => {
+    const noCabecalho = new Set([...DESTINOS.map((destino) => destino.href), '/submeter']);
+    expect(MAIS_DO_TOLDO.filter((atalho) => noCabecalho.has(atalho.href))).toEqual([]);
+  });
+
+  it('juntos, o cabeçalho e o «Mais» alcançam tudo o que a gaveta alcança', () => {
+    const alcancados = new Set([
+      ...DESTINOS.map((destino) => destino.href),
+      '/submeter',
+      ...MAIS_DO_TOLDO.map((atalho) => atalho.href),
+    ]);
+    expect(MAIS.filter((atalho) => !alcancados.has(atalho.href))).toEqual([]);
+  });
+
+  it('cabe num nível do Selo: no máximo nove ligações', () => {
+    expect(MAIS_DO_TOLDO.length).toBeLessThanOrEqual(9);
   });
 });

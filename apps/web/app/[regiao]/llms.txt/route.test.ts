@@ -142,7 +142,7 @@ describe('GET /llms.txt', () => {
     listCategories.mockReset().mockResolvedValue(CATEGORIAS);
     listSeries.mockReset().mockResolvedValue(CICLOS);
     countEventsBySeries.mockReset().mockResolvedValue({
-      'festival-x': { total: 3, porAcontecer: 1 },
+      'festival-x': { total: 3, porAcontecer: 1, aVir: null, ultimaEdicao: null },
     });
     seccaoLigada.mockReset().mockResolvedValue(true);
   });

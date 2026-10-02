@@ -225,6 +225,24 @@ export function readFilter(searchParams: SearchParams): EventFilter {
 }
 
 /**
+ * O endereço trouxe campos por preencher?
+ *
+ * O formulário dos filtros é GET, e um GET submete todos os campos, incluindo
+ * os que ficaram vazios: pesquisar «cinema» dava
+ * `/agenda?q=cinema&from=&to=&municipality=&category=`. Funciona, mas parece
+ * avariado num WhatsApp — e o próprio formulário promete que cada filtro é uma
+ * ligação que se guarda e se partilha tal como está (C2-037). Quando isto é
+ * verdade, a página redirige para o canónico de `buildHref`, que só escreve o
+ * que vale; sem JavaScript continua a funcionar, porque é o servidor que o faz.
+ */
+export function temCamposVazios(searchParams: SearchParams): boolean {
+  return FILTER_KEYS.some((key) => {
+    const valor = searchParams[key];
+    return valor !== undefined && (firstValue(valor)?.trim() ?? '') === '';
+  });
+}
+
+/**
  * Reconstrói o endereço a partir dos filtros já validados — nunca do que veio
  * em bruto.
  *
@@ -462,12 +480,17 @@ export function janelaActiva(filter: EventFilter, hoje: string): AtalhoId | null
  * escondidos e que um endereço escrito à mão deitaria fora sem ninguém
  * perceber porquê.
  */
-export function atalhosDeData(filter: EventFilter, hoje: string): AtalhoDeData[] {
+export function atalhosDeData(
+  filter: EventFilter,
+  hoje: string,
+  /** O caminho a que os atalhos levam: a agenda, ou o mapa com os mesmos filtros. */
+  base: string = PATH,
+): AtalhoDeData[] {
   const activo = janelaActiva(filter, hoje);
   return ATALHOS.map((atalho) => ({
     id: atalho.id,
     rotulo: atalho.rotulo,
-    href: buildHref({ ...filter, ...atalho.janela(hoje) }, 1),
+    href: buildHref({ ...filter, ...atalho.janela(hoje) }, 1, undefined, base),
     activo: activo === atalho.id,
   }));
 }

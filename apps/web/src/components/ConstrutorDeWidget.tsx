@@ -164,7 +164,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
   return (
     <div className="mt-6 grid gap-8 *:min-w-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
       <div>
-        <h3 className="ct-heading">Escolham</h3>
+        <h3 className="ct-heading">Escolha</h3>
 
         <div className="mt-4 grid gap-4 *:min-w-0 sm:grid-cols-2">
           <div>
@@ -290,7 +290,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
         </fieldset>
 
         <fieldset className="mt-6">
-          <legend className="text-sm font-medium">A vossa cor</legend>
+          <legend className="text-sm font-medium">A sua cor</legend>
           <label className="mt-2 flex min-h-11 items-center gap-2.5 text-sm">
             <input
               type="checkbox"
@@ -357,7 +357,7 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
 
           <div>
             <label htmlFor="w-letra" className={rotulo}>
-              A vossa letra
+              A sua letra
             </label>
             <input
               id="w-letra"
@@ -462,9 +462,9 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
       </div>
 
       <div className="lg:col-span-2">
-        <h3 className="ct-heading">Copiem</h3>
+        <h3 className="ct-heading">Copie</h3>
         <p className="mt-2 max-w-2xl text-muted">
-          Colem esta linha no sítio onde a agenda deve aparecer. A caixa ajusta a altura ao conteúdo
+          Cole esta linha no sítio onde a agenda deve aparecer. A caixa ajusta a altura ao conteúdo
           sozinha.
         </p>
         <pre
@@ -485,8 +485,8 @@ export function ConstrutorDeWidget({ base, concelhos, espacos, ciclos, categoria
             O nosso gestor de conteúdos não deixa colar &lt;script&gt;
           </summary>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            Acontece em muitos. Usem o <code>iframe</code> diretamente — funciona igual, mas a
-            altura fica fixa no valor abaixo, calculado para o que escolheram.
+            Acontece em muitos. Use o <code>iframe</code> diretamente — funciona igual, mas a altura
+            fica fixa no valor abaixo, calculado para o que escolheu.
           </p>
           <pre
             className="mt-3 overflow-x-auto rounded border border-border bg-paper p-3 text-xs leading-relaxed"

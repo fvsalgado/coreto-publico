@@ -823,6 +823,19 @@
     contain-intrinsic-size: auto 300px;
   }
 
+  /*
+   * A etiqueta do concelho por baixo de uma marca do mapa (C1-019): o halo do
+   * papel à volta das letras é o que a deixa ler-se por cima das ruas e dos
+   * contornos sem precisar de caixa — uma caixa por marca tapava o mapa.
+   */
+  .ct-rotulo-da-marca {
+    text-shadow:
+      0 0 2px var(--color-paper),
+      0 0 2px var(--color-paper),
+      0 0 4px var(--color-paper),
+      0 0 6px var(--color-paper);
+  }
+
   .ct-grain {
     position: relative;
   }
@@ -1000,6 +1013,39 @@
    ganhar. Fica fora das camadas de propósito: uma regra sem camada ganha a
    todas as utilidades, e é isso que se quer de uma folha de impressão.
    ========================================================================== */
+
+/*
+ * Os controlos do mapa com 44 píxeis (C3-017, e o 5.2 do Selo).
+ *
+ * O MapLibre desenha os botões de aproximar e afastar com 29 píxeis e o da
+ * atribuição com 24 — abaixo do mínimo que esta casa aceita para o polegar, e
+ * o `check:selo` media-os com dados. Fora das camadas de propósito: a folha do
+ * MapLibre não está em camada nenhuma, e uma regra numa `@layer` perde sempre
+ * para uma que não está, seja qual for a especificidade. Aqui, fora delas, a
+ * especificidade decide — e `.maplibregl-map` à frente ganha às regras dele.
+ */
+.maplibregl-map .maplibregl-ctrl-group button {
+  width: 44px;
+  height: 44px;
+}
+
+.maplibregl-map .maplibregl-ctrl-attrib-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 44px;
+  padding-right: 44px;
+  border-radius: 22px;
+}
+
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  padding: 6px 48px 6px 10px;
+}
 
 @media print {
   .ct-sem-impressao {

@@ -1,67 +1,35 @@
 'use client';
 
-// A versão 6 do MapLibre, e as duas coisas que ela obriga a fazer.
-//
-// **Esta casa ficou na 5 de propósito, e a razão estava escrita aqui.** Dizia,
-// à letra: a 6 deriva o endereço do seu processador de `import.meta.url` e
-// desiste em silêncio quando ele não é um `http(s)` — que é o que acontece
-// depois de um empacotador inlinar a biblioteca; o resultado é
-// `new Worker('')`, nenhuma fonte carrega, e o mapa fica um retângulo vazio
-// sem um único erro na consola. A análise estava certa: a 19 de setembro de
-// 2026 subiu-se à 6 por causa de uma vulnerabilidade crítica na 5 e
-// reencontrou-se exatamente isso, num Chromium, contra a compilação de
-// produção.
-//
-// O que mudou não foi o diagnóstico: foi haver saída. A 6 expõe
-// `setWorkerUrl`, e o processador passa a ser servido por nós, de
-// `public/maplibre/<versão>/` (ver `scripts/copiar-maplibre.mjs`) — dito em
-// vez de descoberto. A versão vai no caminho para que a cache de um navegador
-// nunca junte um processador antigo a um módulo principal novo.
-//
-// **E a biblioteca carrega-se aqui dentro, não no topo.** A 6 é ESM puro, e um
-// `import` estático punha-a no pacote comum a todas as páginas: medido, a
-// entrada — que não tem mapa nenhum — passou de 144 kB de JavaScript para 357,
-// contra um tecto de 170. Um `await import()` dentro do efeito devolve-a ao seu
-// próprio pedaço, pedido só por quem abre o mapa. O `dynamic()` de
-// `MapaDosEventos` não chegava para isso: separa este componente, não o que ele
-// importa estaticamente.
+// A biblioteca, os mosaicos e o tema vêm de `MapaDeBase`, que os partilha com o
+// mapa dos coretos — e é lá que está escrito porque é que o MapLibre se carrega
+// por `import()` e o processador é servido por nós.
 //
 // `Map` e `Marker` vêm renomeados porque `Map` é o da linguagem; aqui são só
 // tipos, que não sobrevivem à compilação e não pesam nada.
 import type { Map as MapaLibre, Marker as MarcaLibre } from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ALTURA_DO_MAPA,
+  ESTILOS_DO_MAPA,
+  carregarMapLibre,
+  corDoTema,
+  useTemaEscuro,
+} from '@/src/components/MapaDeBase';
+import {
+  LOCALE_DO_MAPA,
   agruparNoEcra,
+  camadaAEsconder,
   contornosDosConcelhos,
   folgaDoEnquadramento,
   limitesDaRegiao,
   nomeDaMarca,
+  rotuloDaMarca,
   type ConcelhoNoMapa,
   type Lugar,
   type Marca,
 } from '@/src/lib/mapa';
-import { estaEscuro } from '@/src/lib/tema';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
-
-/**
- * A biblioteca, carregada uma vez e guardada.
- *
- * `import()` é ele próprio memoizado pelo navegador, mas guardar a promessa
- * aqui poupa a segunda travessia do módulo e, mais importante, deixa dito num
- * sítio só que isto se carrega uma vez: o `setWorkerUrl` tem de acontecer
- * antes do primeiro `new Map` e nunca mais, e amarrá-lo ao carregamento é o
- * que o garante sem uma bandeira à parte.
- */
-let biblioteca: Promise<typeof import('maplibre-gl')> | null = null;
-
-function carregarMapLibre(): Promise<typeof import('maplibre-gl')> {
-  biblioteca ??= import('maplibre-gl').then((modulo) => {
-    modulo.setWorkerUrl(`/maplibre/${modulo.getVersion()}/maplibre-gl-worker.mjs`);
-    return modulo;
-  });
-  return biblioteca;
-}
 
 interface Props {
   lugares: Lugar[];
@@ -70,36 +38,6 @@ interface Props {
   escolhida: string | null;
   /** Estável (é um `setState`): entra nas dependências do efeito das marcas. */
   onEscolher: (marca: Marca) => void;
-}
-
-/**
- * Os mosaicos do OpenFreeMap, um por tema.
- *
- * «Positron» e «dark matter» são estilos feitos para serem o fundo de outra
- * coisa: cinzentos, sem cor a competir com as marcas. Um mapa de base colorido
- * faz um mapa de eventos mau, porque as marcas deixam de ser a primeira coisa
- * que se vê.
- */
-const ESTILOS = {
-  claro: 'https://tiles.openfreemap.org/styles/positron',
-  escuro: 'https://tiles.openfreemap.org/styles/dark',
-} as const;
-
-/**
- * As cores dos contornos, lidas dos tokens do próprio sítio.
- *
- * O MapLibre pinta num `canvas` e não sabe o que é uma variável de CSS, por
- * isso o valor tem de ser lido e passado. Lê-se da caixa do mapa, e não do
- * `documentElement`: uma variável herda-se, e é na caixa que ela chega já
- * resolvida — com o tema, e com a paleta do sítio onde o mapa está (a montra
- * veste vermelho por um invólucro, e o `<html>` não sabe disso). Assim o mapa
- * muda de cor com o tema em vez de ter uma cor escrita à mão que fica
- * ilegível metade do dia.
- */
-function corDoTema(caixa: Element | null, nome: string, alternativa: string): string {
-  if (typeof window === 'undefined' || !caixa) return alternativa;
-  const valor = getComputedStyle(caixa).getPropertyValue(nome).trim();
-  return valor || alternativa;
 }
 
 /** Onde a vista estava, para uma reconstrução não atirar quem lá está de volta ao princípio. */
@@ -135,28 +73,7 @@ interface Vista {
 export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, onEscolher }: Props) {
   const caixa = useRef<HTMLDivElement>(null);
   const [mapa, setMapa] = useState<MapaLibre | null>(null);
-  const [escuro, setEscuro] = useState<boolean | null>(null);
-
-  // O tema, lido como o CSS o lê: atributo explícito primeiro, sistema depois.
-  // Fica em estado porque muda enquanto a página está aberta — pelo botão do
-  // masthead ou pelo anoitecer.
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const ler = () =>
-      setEscuro(estaEscuro(document.documentElement.dataset['theme'], media.matches));
-    ler();
-
-    const observador = new MutationObserver(ler);
-    observador.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme'],
-    });
-    media.addEventListener('change', ler);
-    return () => {
-      observador.disconnect();
-      media.removeEventListener('change', ler);
-    };
-  }, []);
+  const escuro = useTemaEscuro();
 
   // O mapa, um por tema.
   //
@@ -194,7 +111,7 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
       const folga = folgaDoEnquadramento(alvo.clientWidth, alvo.clientHeight);
       const mapa = new maplibre.Map({
         container: alvo,
-        style: escuro ? ESTILOS.escuro : ESTILOS.claro,
+        style: escuro ? ESTILOS_DO_MAPA.escuro : ESTILOS_DO_MAPA.claro,
         ...(guardada
           ? { center: guardada.centro, zoom: guardada.zoom }
           : limites
@@ -208,6 +125,9 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
         // ilegível num telemóvel.
         dragRotate: false,
         pitchWithRotate: false,
+        // Os controlos em português — ver `LOCALE_DO_MAPA`. O título é o nome
+        // da região que o leitor de ecrã anuncia: era «Map».
+        locale: { ...LOCALE_DO_MAPA, 'Map.Title': 'Mapa dos eventos' },
       });
       instancia = mapa;
 
@@ -227,6 +147,13 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
       const desenhar = () => {
         if (!mapa.isStyleLoaded()) return;
         if (mapa.getSource('concelhos')) return;
+
+        // Fora as etiquetas de país e de distrito: num mapa da região, a
+        // palavra maior era «Portugal», em negrito, no meio do território
+        // (C1-019). Ver `camadaAEsconder`.
+        for (const camada of mapa.getStyle().layers ?? []) {
+          if (camadaAEsconder(camada)) mapa.setLayoutProperty(camada.id, 'visibility', 'none');
+        }
 
         const acesa = corDoTema(alvo, '--color-accent', '#14676b');
         const apagada = corDoTema(alvo, '--color-muted', '#4b545c');
@@ -319,6 +246,15 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
           elemento.dataset['precisao'] = agrupada.precisao;
           elemento.dataset['marca'] = agrupada.id;
           elemento.textContent = String(agrupada.eventos);
+          // O concelho por baixo do número (C1-019): as marcas assentam onde o
+          // mapa de base escreve o nome da sede, e tapavam-no. Escondida de
+          // quem ouve: o nome acessível já diz o sítio e o concelho, e
+          // dizê-lo duas vezes é ruído. O desenho está em `CLASSE_DO_ROTULO`.
+          const rotulo = document.createElement('span');
+          rotulo.className = CLASSE_DO_ROTULO;
+          rotulo.textContent = rotuloDaMarca(agrupada);
+          rotulo.setAttribute('aria-hidden', 'true');
+          elemento.append(rotulo);
           // O nome acessível diz o sítio e quantos eventos são: a marca desenha
           // só o número, e um botão que anuncia «7» não diz nada a quem ouve.
           elemento.setAttribute('aria-label', nomeDaMarca(agrupada));
@@ -358,7 +294,7 @@ export function MapaVivo({ lugares, concelhos, eventosPorConcelho, escolhida, on
   return (
     <div
       ref={caixa}
-      className="h-[60vh] max-h-[560px] min-h-[320px] w-full overflow-hidden rounded-lg border border-border bg-paper"
+      className={`${ALTURA_DO_MAPA} w-full overflow-hidden rounded-lg border border-border bg-paper`}
     />
   );
 }
@@ -395,4 +331,19 @@ const CLASSE_DA_MARCA = [
   // telemóvel, onde quase tudo se junta, era o mapa inteiro.
   'data-[precisao=mista]:border-dashed data-[precisao=mista]:border-on-accent data-[precisao=mista]:bg-accent data-[precisao=mista]:text-on-accent',
   'data-[escolhida=true]:ring-2 data-[escolhida=true]:ring-highlight data-[escolhida=true]:ring-offset-2',
+].join(' ');
+
+/**
+ * A etiqueta do concelho, por baixo da marca: letra pequena e escura com um
+ * halo do papel à volta (`.ct-rotulo-da-marca`, no `globals.css`), para se ler
+ * por cima das ruas sem precisar de caixa.
+ *
+ * `absolute` a partir da marca, que o MapLibre já posiciona — fica fora da
+ * caixa de 44 px, e o círculo continua centrado no ponto. E sem eventos de
+ * ponteiro: uma etiqueta é mais larga do que a marca, e por cima de uma
+ * vizinha roubava-lhe o toque.
+ */
+const CLASSE_DO_ROTULO = [
+  'ct-rotulo-da-marca pointer-events-none absolute top-full left-1/2 mt-0.5 -translate-x-1/2',
+  'font-sans text-xs leading-tight font-semibold whitespace-nowrap text-ink',
 ].join(' ');
