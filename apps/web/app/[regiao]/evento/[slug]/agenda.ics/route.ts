@@ -1,3 +1,5 @@
+import { todayInLisbon } from '@coreto/core';
+import { estadoDaFicha } from '@/src/lib/ficha';
 import { toCalendarEntries } from '@/src/lib/feeds/build';
 import { calendarResponse, feedNotFound } from '@/src/lib/feeds/http';
 import { buildCalendar } from '@/src/lib/feeds/ical';
@@ -46,7 +48,21 @@ export async function GET(
    * A ficha desse evento continua a responder 200 — é o registo do que houve.
    * O que não se serve é o convite.
    */
-  if (event.status !== 'published') {
+  /*
+   * E desde a 0163 também não abre o do cancelado nem o do adiado, que a ficha
+   * passou a mostrar — nem o publicado cujo último dia já passou e que a
+   * recolha ainda não arquivou: a ficha deixou de lhe oferecer o botão, e a
+   * porta fecha-se pelo mesmo critério (`estadoDaFicha`), para os dois não
+   * voltarem a discordar.
+   */
+  const estado = estadoDaFicha(event, todayInLisbon());
+  if (estado === 'cancelado') {
+    return feedNotFound('Este evento foi cancelado. A ficha continua a abrir.');
+  }
+  if (estado === 'adiado') {
+    return feedNotFound('Este evento foi adiado e ainda não tem data. A ficha continua a abrir.');
+  }
+  if (estado === 'ja-aconteceu') {
     return feedNotFound('Este evento já aconteceu. A ficha continua a abrir.');
   }
 

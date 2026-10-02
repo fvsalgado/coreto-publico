@@ -5,7 +5,7 @@
 // páginas. Medido a 19 de setembro de 2026: a entrada passou de 144 kB de
 // JavaScript para 357, contra um tecto de 170, e o `check:desempenho`
 // apanhou-o.
-import { addDays, isoWeekday, weekdayName } from '@coreto/core/dates';
+import { addDays, horaDeInicioConhecida, isoWeekday, weekdayName } from '@coreto/core/dates';
 
 /**
  * Datas e horas em português, para leitura humana.
@@ -187,12 +187,21 @@ export function coverDay(
   return dia ? { ...dia, untilEnd: running } : null;
 }
 
-/** «21h30», «21h» */
+/**
+ * «21h30», «21h» — e «meia-noite», e não «0h».
+ *
+ * «0h» colado ao dia lia-se como erro, e quase sempre era: o zero com que um
+ * gestor de conteúdos preenche a hora que não tem. Esse caso já não chega
+ * aqui — quem mostra uma hora passa-a primeiro por `horaDeInicioConhecida`, que
+ * o devolve como «sem hora». O que chega a 00:00 é a meia-noite a sério, com
+ * hora de fim, e diz-se pelo nome.
+ */
 export function formatTime(time: string | null): string | null {
   if (!time) return null;
   const match = /^(\d{2}):(\d{2})/.exec(time);
   if (!match) return null;
   const [, hours, minutes] = match;
+  if (hours === '00' && minutes === '00') return 'meia-noite';
   return minutes === '00' ? `${Number(hours)}h` : `${Number(hours)}h${minutes}`;
 }
 
@@ -221,26 +230,34 @@ export function formatAudience(audience: string | null): string | null {
 }
 
 /**
- * O catálogo fechado de categorias, com o nome como se escreve e o token de
- * cor do ponto que acompanha o nome nos cartões. O ponto é decorativo — o
- * nome está sempre escrito — por isso a cor não carrega significado sozinha.
+ * O catálogo fechado de categorias, com o nome como se escreve e a família de
+ * cor a que pertence (C1-007). O ponto continua decorativo — o nome está
+ * sempre escrito —, mas deixou de ser ao acaso: as categorias da mesma
+ * família partilham a cor, e as pílulas de categoria da agenda levam o ponto
+ * ao lado do nome, que é a legenda que faltava. As cores estão em
+ * `globals.css`; o teste `cores.test.ts` confere que cada uma existe lá.
  */
 const CATEGORY_META: Record<string, { label: string; dot: string }> = {
   musica: { label: 'Música', dot: 'bg-cat-musica' },
-  teatro: { label: 'Teatro', dot: 'bg-cat-teatro' },
-  danca: { label: 'Dança', dot: 'bg-cat-danca' },
+  teatro: { label: 'Teatro', dot: 'bg-cat-palco' },
+  danca: { label: 'Dança', dot: 'bg-cat-palco' },
   cinema: { label: 'Cinema', dot: 'bg-cat-cinema' },
   exposicoes: { label: 'Exposições', dot: 'bg-cat-exposicoes' },
-  literatura: { label: 'Literatura e ideias', dot: 'bg-cat-literatura' },
-  patrimonio: { label: 'Património e visitas', dot: 'bg-cat-cinema' },
-  'festas-populares': { label: 'Festas e romarias', dot: 'bg-cat-festas' },
-  'feiras-mercados': { label: 'Feiras e mercados', dot: 'bg-cat-festas' },
-  infantil: { label: 'Infantil e família', dot: 'bg-cat-exposicoes' },
-  formacao: { label: 'Formação e oficinas', dot: 'bg-cat-literatura' },
-  'desporto-natureza': { label: 'Desporto e natureza', dot: 'bg-cat-musica' },
-  comunidade: { label: 'Comunidade', dot: 'bg-cat-teatro' },
+  patrimonio: { label: 'Património e visitas', dot: 'bg-cat-exposicoes' },
+  literatura: { label: 'Literatura e ideias', dot: 'bg-cat-palavra' },
+  formacao: { label: 'Formação e oficinas', dot: 'bg-cat-palavra' },
+  'festas-populares': { label: 'Festas e romarias', dot: 'bg-cat-festa' },
+  'feiras-mercados': { label: 'Feiras e mercados', dot: 'bg-cat-festa' },
+  comunidade: { label: 'Comunidade', dot: 'bg-cat-festa' },
+  'desporto-natureza': { label: 'Desporto e natureza', dot: 'bg-cat-arlivre' },
+  infantil: { label: 'Infantil e família', dot: 'bg-cat-infantil' },
   outros: { label: 'Outros', dot: 'bg-cat-outros' },
 };
+
+/** As categorias do catálogo e a família de cor de cada uma — para os testes. */
+export const CORES_DAS_CATEGORIAS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(CATEGORY_META).map(([slug, meta]) => [slug, meta.dot.replace(/^bg-/, '')]),
+);
 
 export function formatCategory(slug: string | null): { label: string; dot: string } | null {
   if (!slug) return null;
@@ -282,27 +299,101 @@ export function formatSeriesKind(kind: string): string {
 }
 
 /**
- * «Hoje», «Amanhã», «Sábado, 5 set» ou a data por extenso — o cabeçalho de um
- * grupo de dias na agenda.
+ * «Hoje», «Amanhã», ou «Sábado, 3 de outubro» — o cabeçalho de um grupo de
+ * dias na agenda.
  *
  * O dia da semana sozinho não chega. «Sábado» num cabeçalho a meio de uma
  * lista deixa quem chegou de um motor de busca sem saber de que sábado se
  * fala — e a data existia mesmo, mas só dentro do atributo `datetime`, que só
  * as máquinas lêem. Agora está nos dois sítios.
+ *
+ * **E um formato só, a qualquer distância** (C2-041, C1-004). Até aos seis
+ * dias saía «Sábado, 3 out», e a partir dos sete «sábado, 10 de outubro», com
+ * minúscula: dois formatos na mesma coluna, que pareciam dois sistemas. O ano
+ * escreve-se quando não é este.
  */
 export function formatRelativeDay(iso: string, today: string): string {
   if (iso === today) return 'Hoje';
   const tomorrow = addDays(today, 1);
   if (iso === tomorrow) return 'Amanhã';
 
-  const diff = Math.round(
-    (Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
-  );
-  if (diff > 1 && diff < 7) {
-    const name = weekdayName(iso);
-    return `${name.charAt(0).toUpperCase()}${name.slice(1)}, ${formatShortDate(iso)}`;
+  const texto = formatWeekdayDate(iso);
+  const comAno = iso.slice(0, 4) === today.slice(0, 4) ? texto : `${texto} de ${iso.slice(0, 4)}`;
+  return `${comAno.charAt(0).toUpperCase()}${comAno.slice(1)}`;
+}
+
+/** «4 e 12 out», «4, 11 e 18 out», «28 set e 4 out» — dias soltos, sem intervalo. */
+function diasSoltos(dias: readonly string[]): string {
+  const p = dias.map((dia) => parts(dia));
+  const mesmoMes = p.every((d) => d && d.month === p[0]?.month && d.year === p[0]?.year);
+  if (mesmoMes && p[0]) {
+    return `${joinPt(p.map((d) => String(d?.day)))} ${MONTHS_SHORT[p[0].month - 1]}`;
   }
-  return formatWeekdayDate(iso);
+  return joinPt(dias.map((dia) => formatShortDate(dia)));
+}
+
+/** Os dias seguem-se um ao outro, sem buraco nenhum? */
+function seguidos(dias: readonly string[]): boolean {
+  return dias.every((dia, i) => i === 0 || dia === addDays(dias[i - 1] as string, 1));
+}
+
+/**
+ * A linha de datas do cartão — e a hora, quando se sabe.
+ *
+ * **Um intervalo é para o que é contínuo.** Um coro com duas sessões, a 4 e a
+ * 12, saía «4–12 out · 16h», que se lê «todos os dias de 4 a 12, às 16h» — e
+ * quem fosse na quarta encontrava a sala fechada (C2-013, C1-029). Com os dias
+ * das sessões de pé (`withCardTimes`), escreve-se o que é:
+ *
+ * - um dia só: «12 out · 21h»;
+ * - dias seguidos: o intervalo, como sempre — «4–6 out»;
+ * - dias soltos com hora: a hora é do primeiro, e os outros dizem-se à parte —
+ *   «4 out · 16h · também a 12 out»; com mais de dois, «e mais 3 datas»;
+ * - dias soltos sem hora: «4 e 12 out»; com mais de três, «4 out e mais 3
+ *   datas».
+ *
+ * Um período (`is_ongoing`), ou um evento de que não se leram as sessões,
+ * continua a ser `formatEventDates` — «até 22 out» é o que interessa de uma
+ * exposição aberta.
+ */
+export function formatDatasDoCartao(
+  evento: {
+    date_start: string | null;
+    date_end: string | null;
+    is_ongoing?: boolean;
+    dias?: readonly string[];
+    start_time?: string | null;
+  },
+  today: string,
+  /** O primeiro dia da janela da lista; os dias antes dele já não contam. */
+  inicio: string = today,
+): string {
+  const hora = formatTime(evento.start_time ?? null);
+  const comHora = (texto: string) => (hora ? `${texto} · ${hora}` : texto);
+  const dias = evento.dias ?? [];
+  if (evento.is_ongoing || dias.length === 0) {
+    return comHora(formatEventDates(evento.date_start, evento.date_end, today));
+  }
+
+  const proximos = dias.filter((dia) => dia >= inicio);
+  const lista = proximos.length > 0 ? proximos : dias;
+  const primeiro = lista[0] as string;
+  const ano = primeiro.slice(0, 4) !== today.slice(0, 4) ? ` ${primeiro.slice(0, 4)}` : '';
+
+  if (lista.length === 1) return comHora(`${formatShortDate(primeiro)}${ano}`);
+  if (seguidos(lista)) {
+    return comHora(`${formatDateRange(primeiro, lista.at(-1) as string)}${ano}`);
+  }
+
+  const outros = lista.slice(1);
+  if (hora) {
+    const resto =
+      outros.length <= 2 ? `também a ${diasSoltos(outros)}` : `e mais ${outros.length} datas`;
+    return `${formatShortDate(primeiro)}${ano} · ${hora} · ${resto}`;
+  }
+  return lista.length <= 3
+    ? `${diasSoltos(lista)}${ano}`
+    : `${formatShortDate(primeiro)}${ano} e mais ${outros.length} datas`;
 }
 
 /** Junta uma lista com «e» antes do último elemento. */
@@ -312,7 +403,7 @@ export function joinPt(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
 }
 
-export { isoWeekday };
+export { horaDeInicioConhecida, isoWeekday };
 
 /** A largura que um cartão de espaço chega a ter: três colunas num ecrã largo, a dobrar para os ecrãs densos. */
 const LARGURA_DE_CARTAO = 800;

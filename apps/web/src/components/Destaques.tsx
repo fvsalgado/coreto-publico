@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Destaques da semana — os cartazes, em fila, para tocar e passar.
+ * Os destaques — os cartazes, em fila, para tocar e passar.
  *
  * A ideia é a das «stories»: a semana vista pelas imagens em vez de pela
  * lista. O que aqui muda em relação ao formato de onde veio são três coisas,
@@ -31,11 +31,14 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Capa } from '@/src/components/Capa';
-import { formatEventDates } from '@/src/lib/format';
+import { formatDatasDoCartao } from '@/src/lib/format';
 import type { EventCard } from '@/src/lib/queries/types';
 
+/** Um destaque já com a hora e os dias das sessões (`withCardTimes`). */
+type Destaque = EventCard & { start_time?: string | null; dias?: readonly string[] };
+
 interface Props {
-  events: EventCard[];
+  events: Destaque[];
   /**
    * O dia de hoje em Lisboa, `YYYY-MM-DD`, vindo do servidor.
    *
@@ -60,8 +63,16 @@ const MS_POR_CARTAZ = 5000;
  */
 const MINIMO = 3;
 
-/** Quantos cartazes cabem na montra antes de ela deixar de ser uma montra. */
+/** Quantos cartazes cabem na fila antes de ela deixar de ser uma escolha. */
 const DESTAQUES = 12;
+
+/**
+ * Quantos se veem na secretária: um grande e seis pequenos (C1-030).
+ *
+ * Os outros continuam no visor, que se percorre com as setas: a vitrine é a
+ * montra da semana e não o catálogo, e o catálogo está logo a seguir.
+ */
+const NA_VITRINE = 7;
 
 const CONSULTA_MOVIMENTO = '(prefers-reduced-motion: reduce)';
 
@@ -130,63 +141,130 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
   const atual = aberto === null ? null : comCartaz[aberto];
   const onde = (evento: EventCard) =>
     (evento.venue_id ? venueNames?.[evento.venue_id] : null) ?? evento.location_name;
+  // «Mação · Mação» não diz mais do que «Mação»: o concelho só entra quando
+  // acrescenta alguma coisa ao sítio — a mesma regra do cartão de evento.
+  const ondeComConcelho = (evento: EventCard) => {
+    const sitio = onde(evento);
+    const concelho = municipalityNames?.[evento.municipality_id];
+    return [sitio, concelho === sitio ? null : concelho]
+      .filter((parte): parte is string => Boolean(parte))
+      .join(' · ');
+  };
 
   return (
     <section aria-labelledby="destaques" className="mt-8">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        {/* Um nome só para a janela, «os próximos 7 dias» (C2-040): eram
+            quatro — «Esta semana», «Em cartaz esta semana», «A semana dia a
+            dia», «os próximos sete dias» —, e quatro nomes fazem pensar em
+            quatro coisas. Esta não é a janela: é uma escolha, e diz-se assim.
+            Tem fixados de quem administra, que podem ser de fora dos sete
+            dias, e o resto tirado à sorte da semana (`comporDestaques`). */}
         <h2 id="destaques" className="ct-heading">
-          Em cartaz esta semana
+          Em destaque
         </h2>
-        {/* Diz que é uma antecipação da lista de baixo, e não outra
-            programação. Os doze cartazes são os doze primeiros da mesma
-            semana: quem vê percebe-o pelo desenho, quem ouve não tinha como
-            saber — e ouvia doze títulos duas vezes sem perceber porquê. */}
+        {/* Diz que é uma escolha da programação, e não outra programação. Quem
+            vê percebe-o pelo desenho; quem ouve não tinha como saber — e ouvia
+            os mesmos títulos duas vezes sem perceber porquê. */}
         <p className="text-sm text-muted">
-          Os primeiros doze da semana, para ver de perto. Estão todos na lista a seguir.
+          Uma escolha da programação, para ver de perto. A lista dos próximos 7 dias vem a seguir.
         </p>
       </div>
 
-      {/* Uma prateleira e não um carrossel com botões: o gesto de arrastar já
-          existe em todos os dispositivos, e no computador a roda do rato e o
-          Tab fazem o mesmo. A barra de scroll fica escondida — o desvanecer na
-          margem direita é que diz que há mais. */}
-      <div className="ct-shelf-wrap mt-4">
-        <ul className="ct-rail gap-4 pb-2">
-          {comCartaz.map((evento, indice) => (
-            <li key={evento.id} className="shrink-0 snap-start">
-              <Link
-                href={`/evento/${evento.slug}`}
-                onClick={(acontecimento) => {
-                  // Só se interceta o clique simples e sem modificadores: abrir
-                  // num separador novo tem de continuar a abrir a página real.
-                  if (
-                    acontecimento.metaKey ||
-                    acontecimento.ctrlKey ||
-                    acontecimento.shiftKey ||
-                    acontecimento.button !== 0
-                  ) {
-                    return;
-                  }
-                  acontecimento.preventDefault();
-                  setPausado(false);
-                  setAberto(indice);
-                }}
-                className="group block w-36 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:w-44"
+      {/* No telemóvel, uma prateleira e não um carrossel com botões: o gesto
+          de arrastar já existe em todos os dispositivos, e no computador a
+          roda do rato e o Tab fazem o mesmo. A barra de scroll fica escondida
+          — o desvanecer na margem direita é que diz que há mais.
+
+          Na secretária, uma vitrine (C1-030): a fila de miniaturas de 176
+          píxeis punha os cartazes, que são o que a região tem de mais
+          vistoso, do tamanho de selos. O primeiro ocupa duas linhas e leva o
+          título grande; os seis seguintes ficam em grelha ao lado. */}
+      <div className="ct-shelf-wrap ct-vitrine mt-4">
+        <ul className="ct-rail gap-4 pb-2 lg:grid-cols-[minmax(0,22.5rem)_repeat(3,minmax(0,1fr))] lg:gap-x-6 lg:gap-y-5 lg:pb-0">
+          {comCartaz.map((evento, indice) => {
+            const grande = indice === 0;
+            const tipografica = !evento.image_url;
+            return (
+              <li
+                key={evento.id}
+                className={`shrink-0 snap-start ${grande ? 'lg:row-span-2' : ''} ${
+                  indice >= NA_VITRINE ? 'lg:hidden' : ''
+                }`}
               >
-                <Capa
-                  event={evento}
-                  today={today}
-                  className="shadow-sm transition-transform duration-300 group-hover:-translate-y-1 group-hover:shadow-md"
-                />
-                <p className="mt-2 line-clamp-2 text-sm font-medium group-hover:underline">
-                  {evento.title}
-                </p>
-                <p className="text-xs text-muted">
-                  {formatEventDates(evento.date_start, evento.date_end, today)}
-                </p>
-              </Link>
-            </li>
-          ))}
+                <Link
+                  href={`/evento/${evento.slug}`}
+                  onClick={(acontecimento) => {
+                    // Só se interceta o clique simples e sem modificadores:
+                    // abrir num separador novo tem de continuar a abrir a
+                    // página real.
+                    if (
+                      acontecimento.metaKey ||
+                      acontecimento.ctrlKey ||
+                      acontecimento.shiftKey ||
+                      acontecimento.button !== 0
+                    ) {
+                      return;
+                    }
+                    acontecimento.preventDefault();
+                    setPausado(false);
+                    setAberto(indice);
+                  }}
+                  className="group relative block w-36 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:w-44 lg:w-auto"
+                >
+                  {/* Com cartaz, a capa vai sem título: se o cartaz não
+                      responder, a capa que fica por baixo não o escreve uma
+                      segunda vez ao lado do que está aqui em baixo. */}
+                  <Capa
+                    event={evento}
+                    today={today}
+                    semTitulo={!tipografica}
+                    className="shadow-sm transition-transform duration-300 group-hover:-translate-y-1 group-hover:shadow-md"
+                  />
+                  {/*
+                    O título uma vez só (C1-008). A capa tipográfica já o tem
+                    escrito lá dentro, e repeti-lo por baixo gastava a linha
+                    onde devia estar o sítio; um cartaz tem-no no desenho, mas
+                    a cento e quarenta píxeis não se lê, e por isso fica
+                    escrito. Quem ouve ouve-o sempre: a capa é decorativa, e é
+                    o título que dá nome à ligação.
+                  */}
+                  {/* `relative` na ligação não é enfeite: o `sr-only` é
+                      `position: absolute`, e sem um ascendente posicionado
+                      dentro da prateleira o seu bloco contentor era o
+                      documento — o título do último cartaz, mil e tal píxeis
+                      à direita, alargava a página, e o telemóvel afastava-a
+                      até tudo caber. */}
+                  {tipografica ? (
+                    <span className="sr-only">{evento.title}</span>
+                  ) : (
+                    <p
+                      className={`mt-2 line-clamp-2 text-sm font-medium group-hover:underline ${
+                        grande ? 'lg:font-display lg:mt-3 lg:text-2xl lg:leading-tight' : ''
+                      }`}
+                    >
+                      {evento.title}
+                    </p>
+                  )}
+                  <p
+                    className={`text-sm font-medium text-accent ${tipografica ? 'mt-2' : 'mt-0.5'} ${
+                      grande ? 'lg:mt-2 lg:text-base' : ''
+                    }`}
+                  >
+                    {formatDatasDoCartao(evento, today)}
+                  </p>
+                  <p className={`line-clamp-2 text-sm text-muted ${grande ? 'lg:text-base' : ''}`}>
+                    {ondeComConcelho(evento)}
+                  </p>
+                  {grande && (evento.is_free || evento.price_display) ? (
+                    <p className="mt-1 hidden text-base text-muted lg:block">
+                      {evento.is_free ? 'Entrada livre' : evento.price_display}
+                    </p>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </div>
 
@@ -194,7 +272,7 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
         ref={dialogo}
         onClose={() => setAberto(null)}
         onCancel={() => setAberto(null)}
-        aria-label="Em cartaz esta semana"
+        aria-label="Em destaque"
         className="ct-bloco-escuro m-0 h-dvh max-h-none w-dvw max-w-none bg-accent-deep/97 p-0 backdrop:bg-accent-deep/80"
         onKeyDown={(acontecimento) => {
           if (acontecimento.key === 'ArrowRight') seguinte();
@@ -259,16 +337,10 @@ export function Destaques({ events, today, municipalityNames, venueNames }: Prop
             </div>
 
             <div className="p-4">
-              {/* «Mação · Mação» não diz mais do que «Mação»: o concelho só
-                  entra quando acrescenta alguma coisa ao sítio — a mesma
-                  regra que o cartão de evento já seguia. */}
               <p className="text-sm text-white/80">
                 {[
-                  formatEventDates(atual.date_start, atual.date_end, today),
-                  onde(atual),
-                  municipalityNames?.[atual.municipality_id] === onde(atual)
-                    ? null
-                    : municipalityNames?.[atual.municipality_id],
+                  formatDatasDoCartao(atual, today),
+                  ondeComConcelho(atual),
                   atual.is_free ? 'Entrada livre' : null,
                 ]
                   .filter((parte): parte is string => Boolean(parte))

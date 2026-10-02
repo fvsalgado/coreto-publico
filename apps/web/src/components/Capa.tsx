@@ -24,6 +24,11 @@ interface Props {
    */
   today: string;
   className?: string;
+  /**
+   * Sem o título lá dentro: nas prateleiras o título está escrito por baixo
+   * da capa, e com ele dentro lia-se duas vezes, lado a lado (C1-008).
+   */
+  semTitulo?: boolean;
 }
 
 /**
@@ -98,10 +103,17 @@ interface Props {
  * não há nada para escolher.
  */
 const DIA = 'text-xl @min-[7rem]:text-4xl @min-[16rem]:text-7xl';
-const MES = 'font-medium text-muted text-[0.5rem] @min-[7rem]:text-sm @min-[16rem]:text-xl';
+/*
+ * O mês e o «até» só a partir dos sete rem (C1-006, C3-018). Abaixo disso
+ * saíam a oito píxeis, ao lado de um numeral de vinte, e com a mesma data
+ * escrita por extenso a catorze logo à direita, no texto do cartão: duas
+ * vezes a data, uma delas ilegível. Fica o numeral, que é o que se lê de
+ * relance; o mês está ao lado.
+ */
+const MES = 'hidden font-medium @min-[7rem]:inline @min-[7rem]:text-sm @min-[16rem]:text-xl';
 const TITULO = 'text-sm @min-[16rem]:text-2xl';
 
-export function Capa({ event, today, className = '' }: Props) {
+export function Capa({ event, today, className = '', semTitulo = false }: Props) {
   const category = formatCategory(event.category_slug);
   const when = coverDay(event.date_start, event.date_end, today);
   const cartaz = posterBackground(event.image_url);
@@ -125,10 +137,17 @@ export function Capa({ event, today, className = '' }: Props) {
       aria-hidden="true"
       className={`ct-capa ct-grain @container relative isolate aspect-[3/4] overflow-hidden rounded-lg border border-border bg-surface ${className}`}
     >
-      <div className="absolute inset-0 flex flex-col justify-between p-1.5 @min-[7rem]:p-3">
-        {/* A cor da categoria como luz ambiente, não como parede. */}
-        <div className={`absolute inset-0 -z-10 opacity-[0.14] ${category?.dot ?? 'bg-accent'}`} />
-        <BandstandMark className="pointer-events-none absolute -right-1 -bottom-1 -z-10 size-10 text-ink opacity-[0.07] @min-[7rem]:-right-3 @min-[7rem]:-bottom-3 @min-[7rem]:size-24" />
+      <div className="absolute inset-0 flex flex-col justify-between p-1.5 text-on-cat @min-[7rem]:p-3">
+        {/*
+         * A cor da categoria em cheio, e a tinta por cima a contrastar com ela.
+         *
+         * Era «luz ambiente»: a cor a 14 %, um cinzento-esverdeado quase igual
+         * ao papel, e ao lado de cartazes saturados a capa parecia um buraco e
+         * não uma escolha (C1-008). Em cheio é um cartaz da casa — e a cor,
+         * que passou a ter família e nome, lê-se de longe.
+         */}
+        <div className={`absolute inset-0 -z-10 ${category?.dot ?? 'bg-cat-outros'}`} />
+        <BandstandMark className="pointer-events-none absolute -right-1 -bottom-1 -z-10 size-10 text-on-cat opacity-[0.16] @min-[7rem]:-right-3 @min-[7rem]:-bottom-3 @min-[7rem]:size-24" />
 
         {when ? (
           <p className="flex items-baseline gap-1 @min-[7rem]:gap-1.5">
@@ -150,12 +169,14 @@ export function Capa({ event, today, className = '' }: Props) {
             não do servidor: a mesma capa serve os dois lados do `sm:` do
             cartão sem trocar de árvore. */}
         <div className="hidden min-w-0 @min-[7rem]:block">
-          <p className={`font-display line-clamp-4 leading-snug font-semibold ${TITULO}`}>
-            {event.title}
-          </p>
+          {semTitulo ? null : (
+            <p className={`font-display line-clamp-4 leading-snug font-semibold ${TITULO}`}>
+              {event.title}
+            </p>
+          )}
           {category ? (
-            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
-              <span className={`ct-octagon size-2 ${category.dot}`} />
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium">
+              <span className="ct-octagon size-2 bg-on-cat" />
               {category.label}
             </p>
           ) : null}
@@ -197,9 +218,25 @@ export function Capa({ event, today, className = '' }: Props) {
                 baixo de um `blur(24px)` não há detalhe nenhum que os mil e
                 duzentos píxeis do grande acrescentem. É o caso em que a
                 medida pequena não é um compromisso — é a certa. */}
+            {/*
+              Mais calmo do que era (C1-009): com `saturate(150%)`, um cartaz
+              deitado ficava numa faixa estreita entre dois borrões de
+              verde-lama. A saturação desce, e um véu claro a 35 % faz do
+              desfocado fundo, e não figura.
+
+              O véu é um filtro e não uma camada por cima, e é isso que o deixa
+              cair com o cartaz: um filtro só pinta os píxeis que a imagem
+              pintou, e um cartaz que não responde não pinta nenhum. Uma
+              camada de papel por cima ficava lá na mesma — e lavava a capa
+              tipográfica que estava por baixo, que é a que se quer ver nesse
+              caso. As contas: `contrast(.48)` e depois `brightness(1.35)` dão
+              0,65 × cor + 0,35, que é misturar 35 % de branco; nenhum canal
+              passa de 1, por isso nada se queima. No escuro o véu é o escuro,
+              como já era.
+            */}
             <div
               style={{ backgroundImage: pequeno }}
-              className="absolute -inset-12 bg-cover bg-center blur-xl saturate-150 dark:brightness-[0.45] dark:saturate-100"
+              className="absolute -inset-12 bg-cover bg-center [filter:blur(24px)_saturate(1.1)_contrast(0.48)_brightness(1.35)] dark:[filter:blur(24px)_brightness(0.45)]"
             />
           </div>
           {/* E à frente, a medida que a caixa merece.

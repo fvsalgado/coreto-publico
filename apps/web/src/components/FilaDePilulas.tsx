@@ -7,11 +7,30 @@ export interface PilulaDaFila {
   activa: boolean;
   /** Quantos eventos há por trás desta pílula; sem número não se escreve nada. */
   quantos?: number | null;
+  /**
+   * A classe da cor da família, nas pílulas de categoria: o ponto ao lado do
+   * nome é a legenda das cores que os cartões usam (C1-007).
+   */
+  ponto?: string;
 }
 
 interface Props {
   /** O nome da fila, para quem navega por marcos — «Datas», «Concelhos». */
   nome: string;
+  /**
+   * O nome à vista — «Quando», «Onde», «O quê» (C1-027). As filas eram vinte e
+   * cinco pílulas iguais sem nada que dissesse onde acabava o tempo e começava
+   * o lugar. Fica à esquerda da fila, e não por cima: uma linha a mais por
+   * fila empurrava o primeiro cartão para fora do primeiro ecrã, que é outra
+   * verificação do CI. É `aria-hidden` porque quem ouve já tem o nome do
+   * marco, que é mais completo.
+   */
+  rotulo?: string;
+  /**
+   * As pílulas desta fila em destaque — as de tempo, que respondem à pergunta
+   * mais comum e tinham o peso de «Formação e oficinas 2».
+   */
+  destaque?: boolean;
   pilulas: readonly PilulaDaFila[];
   /**
    * O que ficou sem nada neste recorte, no fim da fila e apagado — com a
@@ -34,6 +53,8 @@ const ACESA =
   'relative inline-flex min-h-11 items-center gap-1.5 rounded-full border border-accent bg-accent-soft px-4 text-sm font-semibold whitespace-nowrap text-accent';
 const APAGADA =
   'relative inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border bg-surface px-4 text-sm font-medium whitespace-nowrap hover:border-accent/40';
+const EM_DESTAQUE =
+  'relative inline-flex min-h-11 items-center gap-1.5 rounded-full border border-transparent bg-accent-soft px-4 text-sm font-semibold whitespace-nowrap hover:border-accent/40';
 
 /**
  * Uma fila de pílulas que são ligações.
@@ -50,7 +71,14 @@ const APAGADA =
 const SEM_NADA =
   'relative inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-border px-4 text-sm whitespace-nowrap text-muted hover:border-accent/40';
 
-export function FilaDePilulas({ nome, pilulas, semEventos = [], className = '' }: Props) {
+export function FilaDePilulas({
+  nome,
+  rotulo,
+  destaque = false,
+  pilulas,
+  semEventos = [],
+  className = '',
+}: Props) {
   if (pilulas.length === 0 && semEventos.length === 0) return null;
 
   const ligacoes = pilulas.map((pilula) => {
@@ -60,12 +88,23 @@ export function FilaDePilulas({ nome, pilulas, semEventos = [], className = '' }
         <Link
           href={pilula.href}
           aria-current={pilula.activa ? 'page' : undefined}
-          className={pilula.activa ? ACESA : APAGADA}
+          className={pilula.activa ? ACESA : destaque ? EM_DESTAQUE : APAGADA}
         >
+          {pilula.ponto ? (
+            <span aria-hidden="true" className={`ct-octagon size-2.5 shrink-0 ${pilula.ponto}`} />
+          ) : null}
           {pilula.rotulo}
           {quantos !== null ? (
             <>
-              <span aria-hidden="true" className="ct-numeral text-xs opacity-70">
+              {/* Na letra do texto e em algarismos de largura igual: estavam
+                  na letra dos títulos ao lado de rótulos em sans, e nas
+                  pílulas dos espaços em sans — duas letras para o mesmo
+                  número (C1-027). Apagado só quando a pílula não está acesa:
+                  acesa, a 70 % ficava a 3,1:1 (C3-008). */}
+              <span
+                aria-hidden="true"
+                className={`text-xs tabular-nums ${pilula.activa ? '' : 'opacity-70'}`}
+              >
                 {quantos}
               </span>
               <span className="sr-only">
@@ -78,10 +117,23 @@ export function FilaDePilulas({ nome, pilulas, semEventos = [], className = '' }
     );
   });
 
+  const nomeAVista = rotulo ? (
+    <p
+      aria-hidden="true"
+      className="flex min-h-11 w-16 flex-none items-center text-sm font-semibold text-muted lg:w-18"
+    >
+      {rotulo}
+    </p>
+  ) : null;
+
   if (semEventos.length === 0) {
     return (
-      <nav aria-label={nome} className={className}>
-        <ul className="ct-fila-fichas">{ligacoes}</ul>
+      <nav
+        aria-label={nome}
+        className={`${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}
+      >
+        {nomeAVista}
+        <ul className="ct-fila-fichas min-w-0 flex-1">{ligacoes}</ul>
       </nav>
     );
   }
@@ -104,29 +156,35 @@ export function FilaDePilulas({ nome, pilulas, semEventos = [], className = '' }
    * no `globals.css`).
    */
   return (
-    <div className={`ct-fila-fichas ${className}`}>
-      {pilulas.length > 0 ? (
-        <nav aria-label={nome} className="sm:max-w-full">
-          <ul className="flex gap-2 sm:flex-wrap">{ligacoes}</ul>
-        </nav>
-      ) : null}
-      <div className="ct-fila-resto flex items-start gap-2">
-        <p className="flex min-h-11 flex-none snap-start items-center text-sm whitespace-nowrap text-muted">
-          Sem eventos:
-        </p>
-        <ul aria-label={`${nome} sem eventos`} className="flex min-w-0 gap-2 sm:flex-wrap">
-          {semEventos.map((item) => (
-            <li key={item.chave} className="flex-none snap-start">
-              <Link href={item.href} className={SEM_NADA}>
-                {item.rotulo}
-                <span aria-hidden="true" className="ct-numeral text-xs">
-                  0
-                </span>
-                <span className="sr-only">, sem eventos aqui — ver a página</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+    <div className={`${rotulo ? 'ct-fila-com-nome flex items-start gap-2' : ''} ${className}`}>
+      {nomeAVista}
+      <div className="ct-fila-fichas min-w-0 flex-1">
+        {pilulas.length > 0 ? (
+          <nav aria-label={nome} className="sm:max-w-full">
+            <ul className="flex gap-2 sm:flex-wrap lg:gap-y-1.5">{ligacoes}</ul>
+          </nav>
+        ) : null}
+        <div className="ct-fila-resto flex items-start gap-2">
+          <p className="flex min-h-11 flex-none snap-start items-center text-sm whitespace-nowrap text-muted">
+            Sem eventos:
+          </p>
+          <ul
+            aria-label={`${nome} sem eventos`}
+            className="flex min-w-0 gap-2 sm:flex-wrap lg:gap-y-1.5"
+          >
+            {semEventos.map((item) => (
+              <li key={item.chave} className="flex-none snap-start">
+                <Link href={item.href} className={SEM_NADA}>
+                  {item.rotulo}
+                  <span aria-hidden="true" className="text-xs tabular-nums">
+                    0
+                  </span>
+                  <span className="sr-only">, sem eventos aqui — ver a página</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </div>
   );

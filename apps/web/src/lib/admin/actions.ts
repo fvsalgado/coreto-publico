@@ -100,7 +100,20 @@ export async function approveSubmission(formData: FormData): Promise<void> {
   redirect('/admin/fila');
 }
 
-const ESTADOS_PERMITIDOS = new Set(['published', 'draft', 'hidden', 'cancelled', 'archived']);
+/*
+ * O adiado entrou com a 0163, que é quando passou a ter onde se mostrar: a
+ * ficha pública de um cancelado ou de um adiado abre e diz o estado por cima
+ * do título, em vez de responder «Esta página não existe» a quem guardou a
+ * ligação. Até aí marcá-lo era esconder o evento com outro nome.
+ */
+const ESTADOS_PERMITIDOS = new Set([
+  'published',
+  'draft',
+  'hidden',
+  'cancelled',
+  'postponed',
+  'archived',
+]);
 
 /**
  * Publicar, despublicar e arrumar, em lote, a partir de `/admin/eventos`.

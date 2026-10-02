@@ -138,6 +138,31 @@ describe('toCalendarEntries', () => {
     expect(entries[0]?.startTime).toBeUndefined();
   });
 
+  /*
+   * O almoço que ia para o calendário às 00:00, com o alerta a tocar à
+   * meia-noite: o 00:00 sem fim é o campo vazio de quem publicou (C2-004).
+   */
+  it('um 00:00 sem fim sai como dia inteiro, e o UID não muda', () => {
+    const entries = toCalendarEntries([EVENT], context([session({ start_time: '00:00:00' })]));
+    expect(entries[0]?.startTime).toBe(null);
+    expect(entries[0]?.endTime).toBe(null);
+    expect(entries[0]?.uid).toBe('e1-2027-01-01-000000@coreto.mediotejo.pt');
+  });
+
+  it('a meia-noite com fim fica meia-noite', () => {
+    const entries = toCalendarEntries(
+      [EVENT],
+      context([session({ start_time: '00:00:00', end_time: '02:00:00' })]),
+    );
+    expect(entries[0]?.startTime).toBe('00:00:00');
+    expect(entries[0]?.endTime).toBe('02:00:00');
+  });
+
+  it('leva a duração que a fonte declarou, quando o evento a traz', () => {
+    const entries = toCalendarEntries([{ ...EVENT, duration_minutes: 50 }], context([session()]));
+    expect(entries[0]?.durationMinutes).toBe(50);
+  });
+
   it('respeita o local próprio de uma sessão em itinerância', () => {
     const entries = toCalendarEntries(
       [EVENT],

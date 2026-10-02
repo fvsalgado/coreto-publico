@@ -453,6 +453,17 @@ const OFUSCADOR_DE_EMAIL =
   /\s*(?:este endere[çc]o de e-?mail (?:est[áa]|encontra-se)[^.]*?\.(?:[^.]*?javascript[^.]*?\.)?|this e-?mail address is being protected from spambots\.?[^.]*?javascript[^.]*?(?:\.|$))/gi;
 
 /**
+ * Um rótulo de ficha técnica sozinho na última linha, sem nada a seguir.
+ *
+ * Só no fim, só sozinho na linha, e só estas palavras: são as que antecedem os
+ * logótipos de quem organiza e apoia, que a recolha não lê. No meio do texto,
+ * ou com conteúdo à frente («Organização: Junta de Freguesia»), é informação, e
+ * fica.
+ */
+const ROTULO_SEM_CONTEUDO =
+  /\n[^\S\n]*(?:co-?)?(?:organiza[çc][ãa]o|apoios?|parceiros?|parcerias?|patroc[íi]nios?|produ[çc][ãa]o|promo[çc][ãa]o)[^\S\n]*:?\s*$/i;
+
+/**
  * Limpa a prosa que a fonte cola à volta da descrição.
  *
  * Dois vícios concretos, vistos nas agendas municipais:
@@ -468,6 +479,17 @@ const OFUSCADOR_DE_EMAIL =
  *      está protegido contra piratas. Necessita ativar o JavaScript para o
  *      visualizar.» Nove eventos publicados do Médio Tejo tinham-na no meio da
  *      prosa a 7 de setembro de 2026, em cinco concelhos.
+ *   4. O rótulo que ficou sem o que rotulava — «Organização», sozinho na
+ *      última linha, quando o que vinha a seguir eram os logótipos e a
+ *      recolha só lê texto (C2-022).
+ *
+ * E o título só se corta quando é cabeçalho, e não o sujeito da primeira
+ * frase. «Almoço dos Idosos, oferecido todos os anos pela Junta» perdia o
+ * sujeito e abria a ficha com uma vírgula — «, oferecido todos os anos…» —,
+ * que lida por quem visita é erro do sítio e não da fonte (C2-022). Corta-se
+ * quando a seguir ao título vem uma fronteira: o fim, uma quebra de linha,
+ * pontuação de cabeçalho, ou uma frase nova (maiúscula); com uma vírgula ou
+ * uma palavra que continua a frase, o título fica onde está.
  *
  * Não inventa nada: só corta o que reconhece, e devolve `null` quando não
  * sobra texto nenhum.
@@ -487,8 +509,13 @@ export function cleanEventDescription(
       acc += normalizeForHash(text[i] as string);
       consumed = i + 1;
     }
-    if (acc === key) {
-      text = text.slice(consumed).replace(/^[\s\-–—:.!?|]+/, '');
+    const resto = text.slice(consumed);
+    const fronteira =
+      /^[^\S\n]*(?:$|\n|[-–—:.!?|])/.test(resto) ||
+      /^\s+\p{Lu}/u.test(resto) ||
+      /[.!?:]$/.test((title ?? '').trim());
+    if (acc === key && fronteira) {
+      text = resto.replace(/^[\s\-–—:.!?|]+/, '');
     }
   }
 
@@ -499,6 +526,7 @@ export function cleanEventDescription(
       '',
     )
     .replace(OFUSCADOR_DE_EMAIL, '')
+    .replace(ROTULO_SEM_CONTEUDO, '')
     // O corte deixa espaço a mais onde a legenda estava. Isto é arrumação
     // mecânica e não edição: junta espaços seguidos e não deixa três linhas
     // em branco onde havia texto.

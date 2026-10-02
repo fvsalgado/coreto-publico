@@ -5,7 +5,7 @@ import { REGIAO_DE_RECURSO, regiaoDaLinha, type LinhaDeRegiao, type Regiao } fro
 import { REGIAO_PRINCIPAL } from '../regiao-host';
 import { publicClient } from '../supabase/server';
 import { CACHE_TAGS } from './events';
-import { exigirLeitura } from './falhas';
+import { degradarForaDaCache, exigirLeitura } from './falhas';
 
 /**
  * A leitura das regiões, com o mesmo contrato do resto das queries: cache
@@ -135,3 +135,37 @@ export async function exigirRegiao(id: string): Promise<Regiao> {
   if (id === REGIAO_PRINCIPAL) return REGIAO_DE_RECURSO;
   notFound();
 }
+
+/**
+ * O planeador de transportes públicos que a região declarou (0164), ou `null`.
+ *
+ * **Uma leitura à parte, e que degrada.** A coluna é nova, e o código chega à
+ * produção antes da migração sempre que o deploy corre à frente dela — o que já
+ * custou duas publicações (ver `deploy.yml`). Posta em `COLUNAS_DA_REGIAO`, uma
+ * coluna em falta fazia o PostgREST recusar a leitura da região inteira, e o
+ * domínio inteiro de uma CIM caía por causa de uma ligação de «como chegar».
+ * Aqui, sem a coluna, a resposta é a de uma região sem planeador: a ligação
+ * não aparece, e o resto da ficha nem dá por isso.
+ *
+ * Só se aceita `https://`, que é o que a restrição da coluna já garante: o
+ * endereço vai parar a um `href` público, e a dupla verificação custa uma
+ * expressão regular.
+ */
+const lerPlaneador = unstable_cache(
+  async (id: string): Promise<string | null> => {
+    const supabase = publicClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('regions')
+      .select('transit_planner_url')
+      .eq('id', id)
+      .maybeSingle();
+    exigirLeitura('planeadorDaRegiao', error);
+    const endereco = (data as { transit_planner_url?: string | null } | null)?.transit_planner_url;
+    return typeof endereco === 'string' && /^https:\/\/\S+$/.test(endereco) ? endereco : null;
+  },
+  ['planeador-da-regiao'],
+  { tags: [CACHE_TAGS.regions], revalidate: 3600 },
+);
+
+export const planeadorDaRegiao = degradarForaDaCache('planeadorDaRegiao', lerPlaneador, () => null);

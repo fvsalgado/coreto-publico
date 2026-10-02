@@ -33,13 +33,21 @@ const MAX_LINE_OCTETS = 75;
 export const ICAL_PRODUCT_ID = '-//Coreto//Agenda Cultural//PT';
 
 /**
- * Duração assumida para uma sessão com hora de início e sem hora de fim.
+ * O que se escreve quando não se sabe a que horas uma sessão acaba.
  *
- * Sem `DTEND` nem `DURATION` o evento ocupa um instante, e a maioria dos
- * calendários desenha-o como um risco de zero minutos que ninguém vê. Duas
- * horas é a duração mediana de um espetáculo e erra para o lado seguro.
+ * **Escrevia-se `DURATION:PT2H`, e deixou de se escrever.** Duas horas eram «a
+ * duração mediana de um espetáculo», e num espetáculo para bebés de quarenta
+ * minutos, num almoço, numa caminhada, eram um facto que ninguém afirmou —
+ * escrito no calendário de quem confiou na agenda, a ocupar-lhe a tarde. É o
+ * género de coisa que esta casa não fabrica (C2-021).
+ *
+ * Sem fim, o `VEVENT` leva só o início: pela RFC 5545 (3.6.1) acaba onde
+ * começa, e os calendários desenham-no como uma marcação à hora certa. A
+ * descrição diz que o fim não foi indicado, para quem o abre não ler a
+ * marcação curta como uma sessão curta. Quando a fonte dá a duração, é ela que
+ * vale (`durationMinutes`) — isso já não é inventar.
  */
-const DEFAULT_DURATION = 'PT2H';
+const FIM_NAO_INDICADO = 'Hora de fim não indicada.';
 
 /**
  * Europe/Lisbon segundo a diretiva europeia: transições no último domingo de
@@ -80,6 +88,11 @@ export interface CalendarEntry {
   /** `HH:MM`. Sem ela, o evento sai como dia inteiro. */
   startTime?: string | null;
   endTime?: string | null;
+  /**
+   * A duração que a fonte declarou, em minutos. Só conta quando há início e
+   * não há fim — é o fim que manda quando existe.
+   */
+  durationMinutes?: number | null;
   summary: string;
   description?: string | null;
   location?: string | null;
@@ -190,19 +203,25 @@ function entryLines(entry: CalendarEntry, stamp: string): string[] {
 
   const startTime = entry.startTime ?? null;
   const start = startTime ? compactTime(startTime) : null;
+  // Fica a saber-se se o fim ficou por dizer, para a descrição o dizer.
+  let semFim = false;
 
   if (startTime && start) {
     lines.push(`DTSTART;TZID=${LISBON_TIME_ZONE}:${date}T${start}`);
 
     const endTime = entry.endTime ?? null;
     const end = endTime ? compactTime(endTime) : null;
+    const duracao = entry.durationMinutes ?? null;
     if (endTime && end) {
       // Um arraial que acaba às 02:00 acaba no dia seguinte. Sem isto, o
       // evento sai com fim anterior ao início e o cliente descarta-o.
       const lastDay = endTime <= startTime ? addDays(entry.date, 1) : entry.date;
       lines.push(`DTEND;TZID=${LISBON_TIME_ZONE}:${compactDate(lastDay)}T${end}`);
+    } else if (duracao !== null && Number.isInteger(duracao) && duracao > 0) {
+      lines.push(`DURATION:PT${duracao}M`);
     } else {
-      lines.push(`DURATION:${DEFAULT_DURATION}`);
+      // Nem fim nem duração: só o início. Ver `FIM_NAO_INDICADO`.
+      semFim = true;
     }
   } else {
     lines.push(`DTSTART;VALUE=DATE:${date}`);
@@ -213,7 +232,10 @@ function entryLines(entry: CalendarEntry, stamp: string): string[] {
   }
 
   lines.push(`SUMMARY:${escapeText(entry.summary)}`);
-  if (entry.description) lines.push(`DESCRIPTION:${escapeText(entry.description)}`);
+  const descricao = [entry.description, semFim ? FIM_NAO_INDICADO : null]
+    .filter((parte): parte is string => Boolean(parte))
+    .join('\n\n');
+  if (descricao) lines.push(`DESCRIPTION:${escapeText(descricao)}`);
   if (entry.location) lines.push(`LOCATION:${escapeText(entry.location)}`);
   if (entry.url) lines.push(`URL:${sanitizeUri(entry.url)}`);
 

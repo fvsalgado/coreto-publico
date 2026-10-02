@@ -158,8 +158,19 @@ function medirNaPagina({ SECUNDARIO_MINIMO, ENTRELINHA_MINIMA, ALVO_MINIMO }) {
   // Só o que é mesmo texto corrido: um elemento com quarenta caracteres de
   // texto próprio. Um `<li>` que só contém outro elemento não é uma linha de
   // texto, e contá-lo dava um número que não quer dizer nada.
+  //
+  // E só o que se lê. Com a base vazia nunca fez diferença; com eventos, o
+  // título que a capa tipográfica desenha por cima da cor reprovava o 2.4 —
+  // dentro de uma miniatura onde está `display: none`, e numa capa que é
+  // `aria-hidden` por ser decorativa: o título está escrito ao lado, em texto
+  // a sério. Letra de cartaz numa moldura decorativa não é texto corrido, como
+  // um título também não é, e os títulos nunca entraram nesta conta.
   const blocos = [...document.querySelectorAll('main p, main li')].filter(
-    (el) => textoProprio(el).length >= 40 && !el.closest('pre, code'),
+    (el) =>
+      textoProprio(el).length >= 40 &&
+      !el.closest('pre, code') &&
+      !el.closest('[aria-hidden="true"]') &&
+      el.getClientRects().length > 0,
   );
 
   const corpo = blocos.map((el) => ({ ...medida(el), texto: textoProprio(el).slice(0, 60) }));
@@ -206,10 +217,32 @@ function medirNaPagina({ SECUNDARIO_MINIMO, ENTRELINHA_MINIMA, ALVO_MINIMO }) {
     return ['p', 'li', 'blockquote', 'figcaption', 'dd', 'dt'].includes(pai.tagName.toLowerCase());
   };
 
+  // Uma ligação esticada mede-se pelo que se toca, e não pela caixa do texto.
+  //
+  // O título de um cartão de evento é uma ligação com um `::after` absoluto em
+  // `inset: 0`, que cobre o cartão inteiro: é o cartão todo que leva à ficha,
+  // e o toque no título é só um dos sítios onde se pode tocar. Medir a caixa
+  // do texto dava 25 píxeis a cada título e um defeito que não existe — que
+  // nunca apareceu porque este guião nunca tinha visto um cartão (C3-006). O
+  // alvo é o bloco contentor do `::after`: o primeiro ascendente posicionado.
+  const caixaDoAlvo = (el) => {
+    const depois = getComputedStyle(el, '::after');
+    const esticado =
+      depois.content !== 'none' &&
+      depois.position === 'absolute' &&
+      ['top', 'right', 'bottom', 'left'].every((lado) => depois[lado] === '0px');
+    if (esticado) {
+      for (let pai = el.parentElement; pai; pai = pai.parentElement) {
+        if (getComputedStyle(pai).position !== 'static') return pai.getBoundingClientRect();
+      }
+    }
+    return el.getBoundingClientRect();
+  };
+
   const alvosBlocos = [...document.querySelectorAll('main a, main button, main summary')]
     .filter((el) => !numaFrase(el))
     .map((el) => {
-      const r = el.getBoundingClientRect();
+      const r = caixaDoAlvo(el);
       return { w: r.width, h: r.height, texto: (el.textContent || '').trim().slice(0, 40) };
     })
     .filter((a) => a.w > 0 && a.h > 0);
@@ -238,6 +271,10 @@ function medirNaPagina({ SECUNDARIO_MINIMO, ENTRELINHA_MINIMA, ALVO_MINIMO }) {
     niveis,
     alvosPequenos: alvosBlocos.filter((a) => a.w < ALVO_MINIMO || a.h < ALVO_MINIMO),
     alvosTotal: alvosBlocos.length,
+    // Os cartões de evento na página: são o único controlo que se repete
+    // quarenta vezes por página, e o 5.2 só diz alguma coisa sobre eles se
+    // eles lá estiverem.
+    cartoes: document.querySelectorAll('[data-cartao-de-evento]').length,
     rodapeComEntidade: /coreto/i.test(document.querySelector('footer')?.textContent ?? ''),
     pdfs: document.querySelectorAll('a[href$=".pdf"]').length,
     campos: [...document.querySelectorAll('input:not([type=hidden]), select, textarea')].map(
@@ -401,14 +438,29 @@ console.log('\n— lista «Conteúdo» —\n');
 }
 
 // 5.2 — alvos de 44px
+//
+// **Com cartões, ou di-lo.** Este ✓ foi levantado a 15 de setembro de 2026
+// com o sítio a correr sobre uma base vazia — sem um único cartão de evento —,
+// e os três botões de 36px que cada cartão passou a ter a seguir (Guardar,
+// Calendário, Partilhar: cento e cinco na entrada) nunca foram medidos. Passava
+// em todos os ensaios e falhava onde havia público (C3-006). Agora conta os
+// cartões que mediu: sem nenhum, o requisito fica por ligar, com a razão, em
+// vez de se dar por cumprido.
 {
   const maus = recolha.flatMap((r) => r.alvosPequenos.map((a) => ({ ...a, rota: r.rota })));
   const total = recolha.reduce((a, r) => a + r.alvosTotal, 0);
+  const cartoes = recolha.reduce((a, r) => a + r.cartoes, 0);
   afirmar(
     maus.length === 0,
-    `5.2 · os elementos interativos têm 44px CSS no mínimo (${total} alvos medidos)`,
+    `5.2 · os elementos interativos têm 44px CSS no mínimo (${total} alvos medidos, ${cartoes} cartões de evento)`,
     maus.slice(0, 8).map((m) => `${m.rota}: ${m.w.toFixed(0)}x${m.h.toFixed(0)}px — «${m.texto}»`),
   );
+  if (cartoes === 0) {
+    registar(
+      '5.2 · os alvos dos cartões de evento',
+      'não havia cartões nas páginas medidas: o catálogo estava vazio. Correr contra uma base com eventos — a local com dados, ou produção só de leitura.',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

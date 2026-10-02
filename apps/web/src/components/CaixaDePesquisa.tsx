@@ -60,14 +60,17 @@ export function CaixaDePesquisa({ filter, alvoDaLupa = false, className }: Props
       {[...resto.entries()].map(([nome, valor]) => (
         <input key={nome} type="hidden" name={nome} value={valor} />
       ))}
-      {/* O rótulo só se esconde no telemóvel, e só aos olhos: o primeiro
-          cartão da agenda tem de caber inteiro no primeiro ecrã (é uma
-          verificação do CI), e ali o botão «Pesquisar» ao lado já diz o que
-          a caixa é. Quem ouve ouve o rótulo em todas as larguras. */}
-      <label htmlFor="pesquisa-q" className="sr-only text-sm font-medium sm:not-sr-only sm:block">
+      {/* O rótulo esconde-se aos olhos em todas as larguras, e só aos olhos:
+          o botão «Pesquisar» colado à caixa já diz o que ela é (é a técnica
+          G167 da WCAG), e quem ouve ouve o rótulo inteiro. Começou por se
+          esconder só no telemóvel, para o primeiro cartão da agenda caber no
+          primeiro ecrã (é uma verificação do CI); com as filas de pílulas a
+          ganharem nome cada uma na sua linha (C1-027), a secretária passou a
+          precisar da mesma linha. */}
+      <label htmlFor="pesquisa-q" className="sr-only">
         Pesquisar na agenda
       </label>
-      <div className="flex gap-2 sm:mt-1">
+      <div className="flex gap-2">
         <input
           type="search"
           id="pesquisa-q"

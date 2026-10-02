@@ -1,4 +1,4 @@
-import { formatDateRange } from '../format';
+import { formatDateRange, horaDeInicioConhecida } from '../format';
 import type { EventCard } from '../queries/types';
 import type { FeedSession } from './data';
 import type { CalendarEntry } from './ical';
@@ -121,7 +121,12 @@ function calendarDescription(event: EventCard, url: string): string {
 }
 
 export function toCalendarEntries(
-  events: readonly EventCard[],
+  /*
+   * A duração vem quando quem chama a tem — a ficha, que lê o evento inteiro.
+   * As listagens servem o cartão, que não a traz, e aí uma sessão sem fim sai
+   * só com o início, que é o que se sabe (ver `ical.ts`).
+   */
+  events: readonly (EventCard & { duration_minutes?: number | null })[],
   context: FeedContext,
 ): CalendarEntry[] {
   const entries: CalendarEntry[] = [];
@@ -160,13 +165,21 @@ export function toCalendarEntries(
      */
     if (!event.is_ongoing && sessions.length > 0 && sessions.length <= SESSIONS_AS_APPOINTMENTS) {
       for (const session of sessions) {
+        // A identidade fica a da linha tal como está, e não a da hora que se
+        // mostra: um UID é permanente nos calendários que já o têm, e mudar o
+        // de um 00:00 para «sem hora» punha a mesma sessão lá duas vezes.
         const timeKey = session.start_time?.replace(/:/g, '') ?? 'dia';
+        // O 00:00 sem fim é o campo vazio de quem publicou: sai como dia
+        // inteiro, que é o que um calendário sabe dizer de «sem hora», e não
+        // com um alerta à meia-noite. Ver `horaDeInicioConhecida`.
+        const inicio = horaDeInicioConhecida(session.start_time, session.end_time);
         entries.push({
           ...shared,
           uid: `${event.id}-${session.session_date}-${timeKey}@${context.uidDomain}`,
           date: session.session_date,
-          startTime: session.start_time,
-          endTime: session.end_time,
+          startTime: inicio,
+          endTime: inicio ? session.end_time : null,
+          durationMinutes: event.duration_minutes ?? null,
           location: placeLabel(event, context, session.location_override),
           cancelled: session.is_cancelled,
         });

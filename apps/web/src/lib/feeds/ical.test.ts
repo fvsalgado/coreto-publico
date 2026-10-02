@@ -95,7 +95,28 @@ describe('buildCalendar', () => {
   it('marca a hora com o fuso de Lisboa', () => {
     const calendar = buildCalendar([base()], { name: 'Coreto', stamp: STAMP });
     expect(unfoldLines(calendar)).toContain('DTSTART;TZID=Europe/Lisbon:20260510T213000');
-    expect(unfoldLines(calendar)).toContain('DURATION:PT2H');
+  });
+
+  /*
+   * Escrevia-se `DURATION:PT2H` a toda a sessão sem fim — num espetáculo para
+   * bebés, num almoço, numa caminhada. Duas horas que ninguém afirmou, no
+   * calendário de quem confiou na agenda (C2-021).
+   */
+  it('sem fim nem duração, não inventa uma: só o início, e a descrição di-lo', () => {
+    const lines = unfoldLines(buildCalendar([base()], { name: 'Coreto', stamp: STAMP }));
+    expect(lines.some((linha) => linha.startsWith('DURATION'))).toBe(false);
+    expect(lines.some((linha) => linha.startsWith('DTEND'))).toBe(false);
+    expect(lines.find((linha) => linha.startsWith('DESCRIPTION:'))).toContain(
+      'Hora de fim não indicada.',
+    );
+  });
+
+  it('a duração que a fonte declara vale, quando não há fim', () => {
+    const lines = unfoldLines(
+      buildCalendar([base({ durationMinutes: 40 })], { name: 'Coreto', stamp: STAMP }),
+    );
+    expect(lines).toContain('DURATION:PT40M');
+    expect(lines.join('\n')).not.toContain('Hora de fim não indicada.');
   });
 
   it('leva para o dia seguinte um fim que atravessa a meia-noite', () => {
@@ -126,6 +147,9 @@ describe('buildCalendar', () => {
       [
         base({
           summary: 'Fado, vinho; e conversa',
+          // Com fim, para a descrição ser só a que o teste escreve: sem ele,
+          // leva também a nota de que a hora de fim não foi indicada.
+          endTime: '23:00',
           description: 'Bilhetes à porta.\nSem marcação.',
           categories: ['Música', 'Festas e romarias'],
         }),

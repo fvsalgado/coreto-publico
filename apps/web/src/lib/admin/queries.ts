@@ -1121,6 +1121,12 @@ export interface RegionAdminRow {
   data_controller_email: string | null;
   data_controller_dpo: string | null;
   data_controller_dpo_contact: string | null;
+  /**
+   * 0164 — o planeador de transportes públicos da região. Opcional no tipo
+   * porque a linha vem por `select('*')`, e antes de a migração chegar a uma
+   * base a coluna simplesmente não vem.
+   */
+  transit_planner_url?: string | null;
   expected_municipality_count: number;
   bbox_lat_min: number;
   bbox_lat_max: number;

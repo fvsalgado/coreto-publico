@@ -7,7 +7,12 @@
  */
 
 import { extractAccessibility, parseAudience, parseDurationMinutes } from './accessibility';
-import { parsePortugueseTimeRange, saneEndTime, type TimeRange } from './dates';
+import {
+  horaDeInicioConhecida,
+  parsePortugueseTimeRange,
+  saneEndTime,
+  type TimeRange,
+} from './dates';
 import { contentHash, eventFingerprint, eventSlug } from './fingerprint';
 import { formatPrice, parsePrice } from './price';
 import { resolveCategory } from './taxonomy';
@@ -328,7 +333,10 @@ export function harmonizeEvent(raw: RawEvent, context: HarmonizeContext): Harmon
  * `null` que aqui se respeita.
  */
 function horaDaProsa(raw: RawEvent): TimeRange | null {
-  if (!raw.dates.some((session) => session.date && !session.startTime)) return null;
+  const semHora = raw.dates.some(
+    (session) => session.date && !horaDeInicioConhecida(session.startTime, session.endTime),
+  );
+  if (!semHora) return null;
   return parsePortugueseTimeRange(raw.description);
 }
 
@@ -350,16 +358,25 @@ function buildSessions(raw: RawEvent): SessionRow[] {
   for (const session of raw.dates) {
     if (!session.date) continue;
 
+    // A hora que o adaptador deu, sem o zero com que os gestores de conteúdos
+    // preenchem o campo vazio: 00:00 sem fim é «sem hora», e a regra — com o
+    // porquê — é a de `horaDeInicioConhecida`. Cai antes de se ler a prosa de
+    // propósito: um almoço gravado às 00:00 cuja descrição diz «às 12h30»
+    // passa a ter a hora certa em vez de nenhuma.
+    const daFonte = horaDeInicioConhecida(session.startTime, session.endTime);
     // As notas da própria sessão primeiro; a prosa do evento só depois, e só
     // para quem não tem hora — o adaptador que a deu ganha sempre.
-    const lida = session.startTime
+    const lida = daFonte
       ? null
       : (parsePortugueseTimeRange(session.notes) ??
         (primeiraData === null || session.date === primeiraData ? daProsa : null));
-    const startTime = session.startTime ?? lida?.start ?? null;
+    const startTime = daFonte ?? lida?.start ?? null;
+    // O fim do adaptador só vale com o início dele: quando o início era o zero
+    // de enchimento, o fim é o outro zero, ou nada.
+    const fimDaFonte = daFonte || !session.startTime ? session.endTime : null;
     // Um fim antes do início só fica se atravessar a meia-noite; o resto é a
     // hora da matiné deixada na linha da noite. Ver `saneEndTime`.
-    const endTime = saneEndTime(startTime, session.endTime ?? lida?.end ?? null);
+    const endTime = saneEndTime(startTime, fimDaFonte ?? lida?.end ?? null);
 
     const key = `${session.date}|${startTime ?? ''}|${session.venueOverride ?? ''}`;
     if (seen.has(key)) continue;

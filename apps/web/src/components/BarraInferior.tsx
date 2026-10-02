@@ -295,7 +295,11 @@ export function BarraInferior({
                 >
                   <Icone className="size-5" />
                 </span>
-                <span className="text-[0.6875rem] leading-none font-medium">{destino.label}</span>
+                {/* Catorze píxeis, e não onze: são as palavras com que se navega o
+                    sítio inteiro no telemóvel, e estavam no tamanho mais
+                    pequeno da casa (C3-018). Ficam acima dos 10 pontos que o
+                    Selo pede, e cabem nos 56 px da barra. */}
+                <span className="text-sm leading-none font-medium">{destino.label}</span>
               </Link>
             </li>
           );
@@ -325,7 +329,7 @@ export function BarraInferior({
                   <path d="M12 5v14M5 12h14" />
                 </svg>
               </span>
-              <span className="text-[0.6875rem] leading-none font-medium">Mais</span>
+              <span className="text-sm leading-none font-medium">Mais</span>
             </summary>
 
             {/*

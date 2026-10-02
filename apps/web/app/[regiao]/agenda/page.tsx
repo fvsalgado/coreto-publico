@@ -43,6 +43,7 @@ import {
 } from '@/src/lib/agenda';
 import { descreverFiltro, saidasDoVazio, type PropostaDoVazio } from '@/src/lib/agenda-servidor';
 import { urlDoSitio, type Regiao } from '@/src/lib/regiao';
+import { formatCategory } from '@/src/lib/format';
 
 interface Props {
   params: Promise<{ regiao: string }>;
@@ -141,10 +142,19 @@ export default async function AgendaPage({ params, searchParams }: Props) {
   // para esta mesma página. As regras — e a razão de não ser coluna do cartão
   // — estão em `withCardTimes`. E, ao lado, de que eventos o acesso a cadeiras
   // de rodas é o do espaço, para o cartão o dizer (C2-011).
+  /*
+   * As horas leem-se a partir do primeiro dia da janela, e não de hoje: num
+   * recorte de dias que já passaram, o cartão diz a que horas foi; num de fim
+   * de semana, o evento entra pelo dia da sessão que lá cai.
+   */
+  const inicio = filter.from ?? today;
   const [events, acessoDoEspaco] = await Promise.all([
-    withCardTimes(result.events, today, listFeedSessions),
+    withCardTimes(result.events, inicio, listFeedSessions),
     eventosComAcessoDoEspaco(result.events),
   ]);
+  // Uma ligação partilhada para um fim de semana que já passou mostrava o que
+  // lá aconteceu como estando a acontecer (C2-016). Diz-se que passou.
+  const janelaPassada = Boolean(filter.to && filter.to < today);
 
   const municipalityNames: Record<string, string> = Object.fromEntries(
     municipalities.map((municipality) => [municipality.id, municipality.name]),
@@ -310,14 +320,19 @@ export default async function AgendaPage({ params, searchParams }: Props) {
 
       {/* Fora do recolhível de propósito: são ligações, funcionam sem
           JavaScript, e um atalho atrás de uma gaveta é um campo de formulário
-          com outro nome. Quando, onde, o quê — três filas, cada uma numa
-          linha que desliza no telemóvel. A partir do tablet as três correm
-          numa só caixa que embrulha: cada fila a ocupar a sua linha gastava
-          quatro linhas onde três chegam, e cada linha é meio cartão a menos
-          no primeiro ecrã. */}
-      <div className="sm:flex sm:flex-wrap sm:items-start sm:gap-x-6 sm:gap-y-2">
+          com outro nome. Quando, onde, o quê — três filas, cada uma na sua
+          linha e com o nome à esquerda (C1-027): eram vinte e cinco pílulas
+          iguais, e a partir do tablet as três embrulhavam umas nas outras sem
+          nada que dissesse onde acabava o tempo e começava o lugar. No
+          telemóvel cada uma desliza; a partir do tablet embrulha na sua linha.
+          O tempo vem em destaque, porque é a pergunta mais comum, e cada
+          categoria leva o ponto da cor da sua família — a legenda das cores
+          dos cartões, que não existia em lado nenhum (C1-007). */}
+      <div className="space-y-2">
         <FilaDePilulas
           nome="Atalhos de data"
+          rotulo="Quando"
+          destaque
           pilulas={atalhos.map((atalho) => ({
             chave: atalho.id,
             rotulo: atalho.rotulo,
@@ -327,14 +342,18 @@ export default async function AgendaPage({ params, searchParams }: Props) {
         />
         <FilaDePilulas
           nome="Concelhos"
-          className="mt-2 sm:mt-0"
+          rotulo="Onde"
           pilulas={pilulasDeConcelho.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
           semEventos={concelhosAZero.map((concelho) => ({ ...concelho, chave: concelho.valor }))}
         />
         <FilaDePilulas
           nome="Categorias"
-          className="mt-2 sm:mt-0"
-          pilulas={pilulasDeCategoria.map((pilula) => ({ ...pilula, chave: pilula.valor }))}
+          rotulo="O quê"
+          pilulas={pilulasDeCategoria.map((pilula) => ({
+            ...pilula,
+            chave: pilula.valor,
+            ponto: formatCategory(pilula.valor)?.dot,
+          }))}
         />
       </div>
 
@@ -360,11 +379,27 @@ export default async function AgendaPage({ params, searchParams }: Props) {
         {totalPages > 1 ? ` A mostrar a página ${filter.page} de ${totalPages}.` : ''}
       </p>
 
+      {janelaPassada && events.length > 0 ? (
+        <p className="mt-4 rounded-lg border border-border bg-surface px-4 py-3 text-sm">
+          <strong className="font-semibold">Estas datas já passaram.</strong> O que está aqui é o
+          que houve, e não o que vem aí —{' '}
+          <Link
+            href={buildHref(filter, 1, ['from', 'to'])}
+            className="underline underline-offset-4"
+          >
+            ver o que vem aí
+          </Link>
+          .
+        </p>
+      ) : null}
+
       <div className="mt-4">
         {events.length > 0 ? (
           <EventList
             events={events}
             today={today}
+            inicio={inicio}
+            janelaPassada={janelaPassada}
             municipalityNames={municipalityNames}
             venueNames={venueNames}
             acessoDoEspaco={acessoDoEspaco}

@@ -1,6 +1,6 @@
 import 'server-only';
 import { unstable_cache } from 'next/cache';
-import { todayInLisbon, type EventFilter } from '@coreto/core';
+import { horaDeInicioConhecida, todayInLisbon, type EventFilter } from '@coreto/core';
 import type { AnelDeFronteira } from '../mapa';
 import { EIXOS_DE_ACESSIBILIDADE, FAMILIA } from '../agenda';
 import { filtroDaPalavra, planoDePesquisa, type PlanoDePesquisa } from '../pesquisa';
@@ -435,6 +435,12 @@ export function listEvents(regiao: string, filter: EventFilter): Promise<EventLi
 export interface SessionTime {
   session_date: string;
   start_time: string | null;
+  /**
+   * O fim, só para decidir se um 00:00 é meia-noite ou o campo vazio de quem
+   * publicou (`horaDeInicioConhecida`). Opcional porque quem não o tem passa
+   * as sessões como sempre passou, e aí um 00:00 conta como sem fim.
+   */
+  end_time?: string | null;
   is_cancelled: boolean;
 }
 
@@ -460,16 +466,38 @@ export interface SessionTime {
  *   das sessões da região, e numa lista de quarenta cartões a ausência de um
  *   sinal não é um sinal.
  */
-function cardTime(event: EventCard, sessions: readonly SessionTime[] | undefined): string | null {
-  if (event.is_ongoing || !event.date_start || !sessions) return null;
+function cardTime(
+  event: EventCard,
+  sessions: readonly SessionTime[] | undefined,
+  from: string,
+): { start_time: string | null; dias: string[] } {
+  /*
+   * Os dias das sessões de pé, de `from` em diante — e o dia do cartão é o
+   * primeiro deles. Até aqui o cartão era sempre o do `date_start`: um coro
+   * com sessões a 4 e a 12 ficava, no dia 5, sem hora e com «até 12 out»,
+   * como uma exposição. A lista arruma-o pelo mesmo dia (`groupByDay`), e o
+   * cartão diz as datas que restam em vez de um intervalo (C2-013, C1-029).
+   */
+  const dias = [
+    ...new Set(
+      (sessions ?? [])
+        .filter((sessao) => !sessao.is_cancelled)
+        .map((sessao) => sessao.session_date),
+    ),
+  ].sort();
+  if (event.is_ongoing || !event.date_start || !sessions) return { start_time: null, dias };
 
+  const dia = dias.find((d) => d >= from) ?? event.date_start;
   let earliest: string | null = null;
   for (const session of sessions) {
-    if (session.session_date !== event.date_start) continue;
-    if (session.is_cancelled || !session.start_time) continue;
-    if (earliest === null || session.start_time < earliest) earliest = session.start_time;
+    if (session.session_date !== dia) continue;
+    // Um 00:00 sem fim é «sem hora», e sem hora não se escreve nada — a regra
+    // de baixo. Ver `horaDeInicioConhecida`.
+    const inicio = horaDeInicioConhecida(session.start_time, session.end_time);
+    if (session.is_cancelled || !inicio) continue;
+    if (earliest === null || inicio < earliest) earliest = inicio;
   }
-  return earliest;
+  return { start_time: earliest, dias };
 }
 
 /**
@@ -520,12 +548,12 @@ export async function withCardTimes<T extends EventCard>(
     eventIds: string[],
     from: string,
   ) => Promise<Readonly<Record<string, readonly SessionTime[]>>>,
-): Promise<Array<T & { start_time: string | null }>> {
+): Promise<Array<T & { start_time: string | null; dias: string[] }>> {
   const sessions = await degradarForaDaCache('withCardTimes', readSessions, () => ({}))(
     events.map((event) => event.id),
     from,
   );
-  return events.map((event) => ({ ...event, start_time: cardTime(event, sessions[event.id]) }));
+  return events.map((event) => ({ ...event, ...cardTime(event, sessions[event.id], from) }));
 }
 
 /**
@@ -652,7 +680,16 @@ async function fetchEvent(regiao: string, slug: string): Promise<EventDetail | n
      * trava o duplicado arquivado na próxima desduplicação, porque a
      * `reconcile_source_events` escreve 'passado' sem olhar à canonicidade.
      */
-    .or('status.eq.published,and(status.eq.archived,archived_reason.eq.passado)')
+    /*
+     * E, desde a 0163, o cancelado e o adiado: quem guardou a ligação de um
+     * concerto cancelado recebia «Esta página não existe», que é a pior
+     * resposta possível no dia em que a ficha mais importa (C2-006). A ficha
+     * diz o estado por cima do título; as listagens continuam a pedir só o
+     * publicado, e por isso um cancelado não volta à agenda por esta porta.
+     */
+    .or(
+      'status.eq.published,status.in.(cancelled,postponed),and(status.eq.archived,archived_reason.eq.passado)',
+    )
     .eq('is_canonical', true)
     .maybeSingle();
 
@@ -1112,6 +1149,11 @@ async function fetchSeriesEvents(seriesId: string): Promise<SeriesEvent[]> {
     .from('events')
     .select(SERIES_EVENT_FIELDS)
     .eq('series_id', seriesId)
+    // O que a página do ciclo mostra — o que vem e o que já houve —, dito em
+    // código e não deixado à política: desde a 0163 a política deixa passar
+    // também o cancelado e o adiado, que abrem pela sua ligação e não entram
+    // em listas.
+    .in('status', ['published', 'archived'])
     .eq('is_canonical', true)
     .order('date_start', { ascending: true, nullsFirst: false })
     .order('title', { ascending: true });
@@ -1167,6 +1209,9 @@ async function fetchSeriesEventCounts(regiao: string): Promise<SeriesEventCounts
     .from('events')
     .select('series_id, status, series!inner()')
     .eq('series.region_id', regiao)
+    // A mesma razão da `fetchSeriesEvents`: a contagem conta o que a página
+    // do ciclo mostra, e um cancelado não está lá.
+    .in('status', ['published', 'archived'])
     .eq('is_canonical', true)
     .not('series_id', 'is', null);
 
@@ -1243,9 +1288,9 @@ async function fetchMunicipalityEventCounts(regiao: string): Promise<Municipalit
 }
 
 /**
- * **Propaga**, pela mesma razão da contagem por ciclo: o zero desta grelha não
- * é um número que falta, é a frase «Ainda sem programação — enviem a vossa»
- * debaixo dos onze concelhos ao mesmo tempo.
+ * **Propaga**, pela mesma razão da contagem por ciclo: o zero desta contagem
+ * não é um número que falta, é o concelho a passar para o grupo «Sem
+ * eventos» da fila da entrada — os onze ao mesmo tempo.
  */
 export const countEventsByMunicipality = unstable_cache(
   fetchMunicipalityEventCounts,

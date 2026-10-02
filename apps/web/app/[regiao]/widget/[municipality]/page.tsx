@@ -6,15 +6,17 @@ import { SITE_URL, hasDatabase } from '@/src/lib/env';
 import { exigirRegiao } from '@/src/lib/queries/regioes';
 import { urlDoSitio } from '@/src/lib/regiao';
 import { eventUrl } from '@/src/lib/feeds/build';
-import { formatCategory, formatEventDates } from '@/src/lib/format';
+import { formatCategory, formatDatasDoCartao } from '@/src/lib/format';
 import {
   listEvents,
+  withCardTimes,
   listMunicipalities,
   listSeries,
   listVenueNames,
 } from '@/src/lib/queries/events';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import type { EventCard } from '@/src/lib/queries/types';
+import { listFeedSessions } from '@/src/lib/feeds/data';
 import { paletaDoWidget } from '@/src/lib/widget/cores';
 import { lerTipoDeLetra } from '@/src/lib/widget/letra';
 import { lerOpcoes, type WidgetOptions } from '@/src/lib/widget/opcoes';
@@ -84,14 +86,16 @@ const THEME_TOKENS = `
     --color-on-accent: #ffffff;
     --color-border: #dde4e7;
     --color-highlight: #14676b;
-    --color-cat-musica: #14676b;
-    --color-cat-teatro: #9c3a1a;
-    --color-cat-danca: #8a2f62;
-    --color-cat-cinema: #24485c;
-    --color-cat-exposicoes: #a06c10;
-    --color-cat-literatura: #4a4470;
-    --color-cat-festas: #b04a12;
+    --color-cat-musica: #5b3a9e;
+    --color-cat-palco: #a3324a;
+    --color-cat-cinema: #22506b;
+    --color-cat-exposicoes: #8a5a0b;
+    --color-cat-palavra: #2f5f8f;
+    --color-cat-festa: #b0430f;
+    --color-cat-arlivre: #3a6b2a;
+    --color-cat-infantil: #9c2f78;
     --color-cat-outros: #5c6570;
+    --color-on-cat: #ffffff;
   }
 
   .coreto-widget[data-widget-theme='dark'] {
@@ -105,14 +109,16 @@ const THEME_TOKENS = `
     --color-on-accent: #101319;
     --color-border: #2b2d35;
     --color-highlight: #40c0c4;
-    --color-cat-musica: #58cdd1;
-    --color-cat-teatro: #e8906a;
-    --color-cat-danca: #d989b8;
-    --color-cat-cinema: #82b3cc;
-    --color-cat-exposicoes: #d9b05e;
-    --color-cat-literatura: #a9a2d8;
-    --color-cat-festas: #e59a63;
-    --color-cat-outros: #a4acb3;
+    --color-cat-musica: #9a80d0;
+    --color-cat-palco: #d26e83;
+    --color-cat-cinema: #4494c4;
+    --color-cat-exposicoes: #c37f10;
+    --color-cat-palavra: #5991c8;
+    --color-cat-festa: #ec601d;
+    --color-cat-arlivre: #569e3e;
+    --color-cat-infantil: #d167ae;
+    --color-cat-outros: #848e9a;
+    --color-on-cat: #101319;
   }
 
   /*
@@ -239,15 +245,27 @@ function Cabecalho({ titulo, href }: { titulo: string; href: string }) {
   );
 }
 
-/** A data, com o mesmo «até 27 set» que a agenda usa nas temporadas. */
-function Quando({ evento, hoje }: { evento: EventCard; hoje: string }) {
+/**
+ * A data e a hora, com a mesma linha que o cartão da agenda escreve.
+ *
+ * O widget é o que as câmaras colam no seu sítio, e dizia «3 out» do mesmo
+ * evento que a agenda anunciava como «3 out · 10h30» (C2-002): a caixa da
+ * câmara a dizer menos do que a agenda de onde vem.
+ */
+function Quando({
+  evento,
+  hoje,
+}: {
+  evento: EventCard & { start_time?: string | null; dias?: readonly string[] };
+  hoje: string;
+}) {
   return (
     <time
       dateTime={evento.date_start ?? undefined}
       className="text-xs font-medium text-highlight"
       style={{ color: 'var(--coreto-widget-texto, var(--color-highlight))' }}
     >
-      {formatEventDates(evento.date_start, evento.date_end, hoje)}
+      {formatDatasDoCartao(evento, hoje)}
     </time>
   );
 }
@@ -451,7 +469,9 @@ export default async function WidgetPage({ params, searchParams }: Props) {
       ? paginaDoCiclo(opcoes.series)
       : `${base}/agenda?municipality=${municipality.id}`;
 
-  const itens = resultado.events.map((evento) => ({
+  // A hora de cada cartão, pela mesma leitura da agenda (`withCardTimes`).
+  const eventos = await withCardTimes(resultado.events, hoje, listFeedSessions);
+  const itens = eventos.map((evento) => ({
     evento,
     onde: (evento.venue_id ? venueNames[evento.venue_id] : undefined) ?? evento.location_name,
     hoje,

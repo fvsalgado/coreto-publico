@@ -1,17 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import {
-  comporDestaques,
-  janelaDaSemana,
-  listMunicipalityNames,
-  todayInLisbon,
-  type EventFilter,
-} from '@coreto/core';
+import { comporDestaques, janelaDaSemana, todayInLisbon, type EventFilter } from '@coreto/core';
 import { CaixaDePesquisa } from '@/src/components/CaixaDePesquisa';
 import { Destaques } from '@/src/components/Destaques';
 import { EmptyState } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
-import { MunicipalityGrid } from '@/src/components/MunicipalityGrid';
+import { FilaDePilulas } from '@/src/components/FilaDePilulas';
 import { semAsDesligadas, type Ancora } from '@/src/lib/navegacao';
 import {
   countEventsByMunicipality,
@@ -164,9 +158,9 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
 
   const [week, municipalities, counts, venueNames, desligadas, atalhosComEventos, fixados] =
     await Promise.all([
-      // A mesma semana que o atalho «Esta semana» da agenda mostra — a definição
-      // vive em `@coreto/core` para as duas vistas serem os mesmos sete dias por
-      // construção, e não por coincidência.
+      // A mesma janela que o atalho «Próximos 7 dias» da agenda mostra — a
+      // definição vive em `@coreto/core` para as duas vistas serem os mesmos
+      // sete dias por construção, e não por coincidência.
       listEvents(regiao.id, {
         ...janelaDaSemana(today),
         page: 1,
@@ -230,34 +224,70 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
   const municipalityNames: Record<string, string> = Object.fromEntries(
     municipalities.map((municipality) => [municipality.id, municipality.name]),
   );
+  // Os concelhos pela ordem da região, partidos em dois: os que têm alguma
+  // coisa marcada e os que ainda não têm. Num build sem base não há nenhum, e
+  // a fila não se desenha.
+  const concelhosComEventos = municipalities.filter((concelho) => (counts[concelho.id] ?? 0) > 0);
+  const concelhosSemEventos = municipalities.filter((concelho) => !(counts[concelho.id] ?? 0));
 
   return (
     <>
       {/* A abertura é a programação, não um manifesto: quem chega vê já os
           cartazes da semana. O que o Coreto é está em /informacoes, que é o sítio
           de o dizer com vagar. */}
-      <header className="ct-enter flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-2 sm:pt-4">
-        <div>
-          <p className="ct-eyebrow">
-            {temContagem
-              ? `${comInicialMaiuscula(regiao.concelhosPorExtenso)} concelhos, um palco`
-              : 'Uma região, um palco'}
-          </p>
-          <h1 className="ct-display-sm mt-2">{`A agenda cultural ${regiao.doNome}`}</h1>
-        </div>
-        <ul className="ct-fila-fichas">
-          {atalhos.map((shortcut) => (
-            <li key={shortcut.href}>
-              <Link
-                href={shortcut.href}
-                className="inline-flex min-h-11 items-center rounded-full border border-border bg-surface px-4 text-sm font-medium whitespace-nowrap underline-offset-4 hover:border-accent hover:underline"
-              >
-                {shortcut.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
+      <header className="ct-enter pt-2 sm:pt-4">
+        <p className="ct-eyebrow">
+          {temContagem
+            ? `${comInicialMaiuscula(regiao.concelhosPorExtenso)} concelhos, um palco`
+            : 'Uma região, um palco'}
+        </p>
+        <h1 className="ct-display-sm mt-2">{`A agenda cultural ${regiao.doNome}`}</h1>
       </header>
+
+      {/*
+        Duas filas com nome, como as da agenda (C1-027): os atalhos, e a porta
+        dos concelhos logo a seguir (C2-018).
+
+        A porta dos concelhos estava a dez ecrãs do topo, depois da prateleira
+        e de quarenta cartões, quando «o que há na minha terra» é a segunda
+        pergunta mais natural — e os atalhos eram todos de tempo e de público.
+        Subiu inteira, e não foi copiada: a grelha de onze cartões que estava
+        em baixo, com a lista dos nomes num parágrafo por cima e a mesma lista
+        outra vez na faixa do rodapé, dizia três vezes a mesma coisa no fim da
+        página (C1-010).
+
+        Cada pílula de concelho leva à página do concelho, que é a resposta à
+        pergunta. Os que não têm nada marcado continuam todos na fila, à parte
+        e com a página deles — como na agenda (C2-007).
+      */}
+      <div className="ct-enter mt-4 space-y-2">
+        <FilaDePilulas
+          nome="Atalhos"
+          rotulo="Atalhos"
+          pilulas={atalhos.map((atalho) => ({
+            chave: atalho.href,
+            rotulo: atalho.label,
+            href: atalho.href,
+            activa: false,
+          }))}
+        />
+        <FilaDePilulas
+          nome="Concelhos"
+          rotulo="Onde"
+          pilulas={concelhosComEventos.map((concelho) => ({
+            chave: concelho.id,
+            rotulo: concelho.name,
+            href: `/concelho/${concelho.id}`,
+            activa: false,
+            quantos: counts[concelho.id] ?? 0,
+          }))}
+          semEventos={concelhosSemEventos.map((concelho) => ({
+            chave: concelho.id,
+            rotulo: concelho.name,
+            href: `/concelho/${concelho.id}`,
+          }))}
+        />
+      </div>
 
       {/* Quem chega a saber o que quer — «fado», o nome de uma sala, o seu
           concelho — escreve aqui, sem ir primeiro à agenda abrir a gaveta
@@ -273,13 +303,12 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
 
       <section aria-labelledby="esta-semana" className="ct-reveal mt-12">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          {/* «A semana dia a dia» e não «Esta semana no Médio Tejo»: numa
-              lista de cabeçalhos de leitor de ecrã, este e o «Em cartaz esta
-              semana» de cima eram quase indistinguíveis, e são duas vistas
-              diferentes da mesma semana — uma prateleira de cartazes e a
-              lista por dias. */}
+          {/* A janela tem um nome só, o do atalho que leva a ela (C2-040):
+              eram quatro — «Esta semana», «Em cartaz esta semana», «A semana
+              dia a dia», «os próximos sete dias». Os destaques, por cima,
+              chamam-se pelo que são, uma escolha; esta é a lista inteira. */}
           <h2 id="esta-semana" className="ct-heading">
-            A semana dia a dia
+            Os próximos 7 dias
           </h2>
           <Link
             href="/agenda"
@@ -302,25 +331,10 @@ export default async function Home({ params }: { params: Promise<{ regiao: strin
             />
           ) : (
             <EmptyState
-              title="Ainda não há nada marcado para os próximos sete dias."
+              title="Ainda não há nada marcado para os próximos 7 dias."
               action={{ href: '/agenda', label: 'Ver a agenda completa' }}
             />
           )}
-        </div>
-      </section>
-
-      <section aria-labelledby="concelhos" className="ct-reveal mt-14">
-        <p className="ct-eyebrow">O território</p>
-        <h2 id="concelhos" className="ct-heading mt-2.5">
-          {temContagem ? `Os ${regiao.concelhosPorExtenso} concelhos` : 'Os concelhos'}
-        </h2>
-        <p className="mt-2 max-w-2xl text-muted">
-          {listMunicipalityNames(municipalities)}. Todos na mesma montra, tenham dez eventos ou
-          nenhum.
-        </p>
-
-        <div className="mt-5">
-          <MunicipalityGrid municipalities={municipalities} counts={counts} />
         </div>
       </section>
     </>

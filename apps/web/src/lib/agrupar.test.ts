@@ -29,9 +29,10 @@ describe('groupByDay', () => {
       ],
       HOJE,
     );
-    expect(grupos.map((g) => g.key)).toEqual([ONGOING, '2026-08-28']);
-    expect(grupos[0]?.events).toHaveLength(2);
-    expect(grupos[1]?.events).toHaveLength(1);
+    // O dia primeiro, e o que está em cartaz logo a seguir (C1-001).
+    expect(grupos.map((g) => g.key)).toEqual(['2026-08-28', ONGOING]);
+    expect(grupos[0]?.events).toHaveLength(1);
+    expect(grupos[1]?.events).toHaveLength(2);
   });
 
   it('dentro do «A decorrer» põe à frente o que fecha primeiro', () => {
@@ -39,6 +40,7 @@ describe('groupByDay', () => {
       [evento('2026-05-16', '2027-01-03'), evento('2026-06-03', '2026-09-27')],
       HOJE,
     );
+    expect(grupos[0]?.key).toBe(ONGOING);
     expect(grupos[0]?.events.map((e) => e.date_end)).toEqual(['2026-09-27', '2027-01-03']);
   });
 
@@ -52,6 +54,7 @@ describe('groupByDay', () => {
       [evento('2026-05-16', null), evento('2026-06-03', '2026-09-27')],
       HOJE,
     );
+    expect(grupos[0]?.key).toBe(ONGOING);
     expect(grupos[0]?.events.map((e) => e.date_end)).toEqual(['2026-09-27', null]);
   });
 
@@ -81,13 +84,94 @@ describe('groupByDay', () => {
       hoje,
     );
     expect(grupos.map((g) => g.key)).toEqual([
-      ONGOING,
       '2026-09-07',
+      ONGOING,
       '2026-09-09',
       '2026-09-10',
       '2026-09-11',
       UNDATED,
     ]);
+  });
+
+  /*
+   * O domingo que se lia 21h, 11h, 16h (C2-001): dentro do dia, pela hora; sem
+   * hora no fim, e os de vários dias depois dos de um só.
+   */
+  it('dentro de cada dia ordena pela hora, e o que não a tem vai para o fim', () => {
+    const dia = '2026-10-04';
+    const com = (titulo: string, hora: string | null, fim: string = dia) => ({
+      titulo,
+      date_start: dia,
+      date_end: fim,
+      start_time: hora,
+    });
+    const grupos = groupByDay(
+      [
+        com('noite', '21:00:00'),
+        com('sem hora, vários dias', null, '2026-10-06'),
+        com('manhã', '11:00:00'),
+        com('sem hora, um dia', null),
+        com('tarde', '16:00:00'),
+      ],
+      '2026-10-01',
+    );
+    expect(grupos[0]?.events.map((e) => e.titulo)).toEqual([
+      'manhã',
+      'tarde',
+      'noite',
+      'sem hora, um dia',
+      'sem hora, vários dias',
+    ]);
+  });
+
+  /*
+   * O coro com sessões a 4 e a 12: no dia 5 passava a «a decorrer», como uma
+   * exposição aberta. Entra pelo dia da próxima sessão.
+   */
+  it('uma lista de sessões entra pelo dia da próxima, e não fica «a decorrer»', () => {
+    const coro = { date_start: '2026-10-04', date_end: '2026-10-12', dias: ['2026-10-12'] };
+    expect(groupByDay([coro], '2026-10-05').map((g) => g.key)).toEqual(['2026-10-12']);
+  });
+
+  it('um período que já abriu fica em cartaz, venham ou não as sessões', () => {
+    const exposicao = {
+      date_start: '2026-09-01',
+      date_end: '2026-12-01',
+      is_ongoing: true,
+      dias: ['2026-12-01'],
+    };
+    expect(groupByDay([exposicao], '2026-10-05').map((g) => g.key)).toEqual([ONGOING]);
+  });
+
+  /*
+   * Num recorte de sexta a domingo visto à quinta, a feira que abriu na quinta
+   * aparecia num grupo «Hoje» — e hoje nem estava no recorte (C2-046).
+   */
+  it('o que abriu antes da janela fica em cartaz, e nunca no grupo de hoje', () => {
+    const quinta = '2026-10-01';
+    const sexta = '2026-10-02';
+    const grupos = groupByDay(
+      [
+        { date_start: quinta, date_end: '2026-10-05', is_ongoing: true },
+        { date_start: '2026-10-03', date_end: '2026-10-03' },
+      ],
+      quinta,
+      sexta,
+    );
+    expect(grupos.map((g) => g.key)).toEqual(['2026-10-03', ONGOING]);
+  });
+
+  /*
+   * Uma ligação para um fim de semana que já passou punha o que lá aconteceu
+   * em «A decorrer» (C2-016). Num recorte passado, cada coisa fica no seu dia.
+   */
+  it('num recorte de dias que já passaram, o que aconteceu fica no seu dia', () => {
+    const grupos = groupByDay(
+      [{ date_start: '2026-09-18', date_end: '2026-09-18' }],
+      '2026-10-01',
+      '2026-09-18',
+    );
+    expect(grupos.map((g) => g.key)).toEqual(['2026-09-18']);
   });
 
   it('devolve lista vazia sem eventos', () => {

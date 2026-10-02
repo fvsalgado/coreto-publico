@@ -5,6 +5,7 @@ import { todayInLisbon } from '@coreto/core';
 import { BandstandMark } from '@/src/components/BandstandMark';
 import { EmptyState, avisoDeFontesPorLer, vazioDoConcelho } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
+import { listFeedSessions } from '@/src/lib/feeds/data';
 import { PageHeader } from '@/src/components/PageHeader';
 import { MunicipalityStructuredData } from '@/src/components/StructuredData';
 import { VenueCard } from '@/src/components/VenueCard';
@@ -19,6 +20,7 @@ import {
   fontesDoConcelhoOuNada,
   listCoretos,
   listEvents,
+  withCardTimes,
   listMunicipalities,
   listVenues,
 } from '@/src/lib/queries/events';
@@ -99,7 +101,13 @@ export default async function MunicipalityPage({ params }: Props) {
     fontesDoConcelhoOuNada(regiao.id),
   ]);
   // De que eventos o acesso a cadeiras de rodas é o do espaço (C2-011).
-  const acessoDoEspaco = await eventosComAcessoDoEspaco(result.events);
+  // E a hora de cada cartão, pela mesma leitura da agenda e da entrada: o
+  // mesmo evento dizia «3 out · 10h30» na agenda e «3 out» aqui, e quem abre
+  // a página do concelho ou do espaço tinha de abrir cada ficha (C2-002).
+  const [acessoDoEspaco, eventos] = await Promise.all([
+    eventosComAcessoDoEspaco(result.events),
+    withCardTimes(result.events, today, listFeedSessions),
+  ]);
 
   const localCoretos = coretos.filter((coreto) => coreto.municipality_id === municipality.id);
 
@@ -202,7 +210,7 @@ export default async function MunicipalityPage({ params }: Props) {
         <div className="mt-4">
           {result.events.length > 0 ? (
             <EventList
-              events={result.events}
+              events={eventos}
               today={today}
               venueNames={venueNames}
               acessoDoEspaco={acessoDoEspaco}
@@ -296,9 +304,7 @@ export default async function MunicipalityPage({ params }: Props) {
                         .join(' · ')}
                     </p>
                     {!coreto.is_confirmed ? (
-                      <p className="mt-auto pt-2 text-xs font-semibold tracking-wide text-muted uppercase">
-                        Por confirmar
-                      </p>
+                      <p className="mt-auto pt-2 text-sm font-semibold text-muted">Por confirmar</p>
                     ) : null}
                   </div>
                 </li>

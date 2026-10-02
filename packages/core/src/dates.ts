@@ -521,9 +521,15 @@ export function janelaDoFimDeSemana(hoje: string): JanelaDeDatas {
   return { from: sexta > hoje ? sexta : hoje, to: domingo };
 }
 
-/** Sete dias a partir de hoje — a mesma semana que a página de entrada mostra. */
+/**
+ * Os próximos 7 dias, hoje incluído — a mesma janela que a entrada mostra.
+ *
+ * Hoje e mais seis, e não hoje e mais sete (C2-040): eram oito dias, e numa
+ * quinta-feira «esta semana» ia até à quinta seguinte. Chamava-se «Esta
+ * semana», que em português acaba no domingo; passou a chamar-se pelo que é.
+ */
 export function janelaDaSemana(hoje: string): JanelaDeDatas {
-  return { from: hoje, to: addDays(hoje, DIAS_DA_SEMANA) };
+  return { from: hoje, to: addDays(hoje, DIAS_DA_SEMANA - 1) };
 }
 
 /** Lê um dia da semana escrito por extenso ou abreviado. */
@@ -619,6 +625,37 @@ export function saneEndTime(start: string | null, end: string | null): string | 
   if (!start || !end) return end;
   if (end >= start) return end;
   return end < '06:00' ? end : null;
+}
+
+/**
+ * A hora de início que se pode afirmar — ou `null`, que é «sem hora».
+ *
+ * **Uma meia-noite sozinha não é uma hora: é o zero com que um gestor de
+ * conteúdos preenche o campo que ninguém preencheu.** O portal das juntas
+ * escreve «00:00h» na listagem de qualquer evento sem hora, a API de Ourém e a
+ * de Abrantes servem `00:00:00`, o `pubDate` de um RSS é sempre meia-noite. Lido
+ * à letra, punha um almoço de idosos à meia-noite na ficha, no cartão e no
+ * calendário de quem o subscreveu — com o alerta a tocar às zero horas. Medido a
+ * 1 de outubro de 2026: as três sessões às 00:00 da região eram as três isto.
+ *
+ * Por isso a regra é uma só, e vale para todo o caminho — a recolha, que deixa
+ * de gravar o zero, e o sítio, que não o lê como hora nas linhas que já o têm:
+ * **00:00 sem hora de fim é «sem hora».** Com fim, é meia-noite a sério — uma
+ * noite de fados das 00:00 às 02:00 continua a ser uma noite de fados à
+ * meia-noite.
+ *
+ * Perde-se, e fica dito, a meia-noite verdadeira que alguém escreva sem fim: sai
+ * «hora por confirmar». É a troca certa — esse caso é raro e acaba numa dúvida
+ * honesta; o outro é frequente e acabava numa afirmação falsa.
+ */
+export function horaDeInicioConhecida(
+  inicio: string | null | undefined,
+  fim: string | null | undefined,
+): string | null {
+  if (!inicio) return null;
+  const meiaNoite = /^00:00(?::00)?$/.test(inicio);
+  if (meiaNoite && (!fim || /^00:00(?::00)?$/.test(fim))) return null;
+  return inicio;
 }
 
 /** Dias entre duas datas ISO. Negativo se a segunda for anterior. */

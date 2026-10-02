@@ -17,6 +17,17 @@ interface Props {
   municipalityName: string | null;
   latitude: number | null;
   longitude: number | null;
+  /**
+   * O planeador de transportes públicos que a região declarou (0164), ou nada.
+   * Sem ele não há ligação nenhuma: uma região sem planeador não ganha a de
+   * outra.
+   */
+  planeador?: string | null;
+  /**
+   * O único sítio que a fonte deu é uma terra — a vila, o concelho, a
+   * freguesia —, e não um sítio onde se chegue (`localSoATerra`).
+   */
+  soATerra?: boolean;
 }
 
 /**
@@ -36,6 +47,8 @@ export function HowToArriveSection({
   municipalityName,
   latitude,
   longitude,
+  planeador = null,
+  soATerra = false,
 }: Props) {
   const paragraphs = text
     ? text
@@ -49,6 +62,9 @@ export function HowToArriveSection({
     .filter((part, index, all) => all.indexOf(part) === index);
 
   const hasCoordinates = latitude !== null && longitude !== null;
+  // O nome a escrever no planeador: o do sítio, mesmo quando a página não o
+  // imprime na morada (a ficha do espaço, onde é o título).
+  const destino = searchName ?? placeName;
 
   // As duas ligações de propósito: o Google Maps é o que quase toda a gente
   // tem no bolso, o OpenStreetMap é o que não pede conta nem rasto.
@@ -96,6 +112,10 @@ export function HowToArriveSection({
         </address>
       ) : null}
 
+      {/* Uma terra dada como sítio diz-se o que é (C2-015): o botão de baixo
+          abria a vila inteira como se fosse o sítio do evento. */}
+      {soATerra ? <p>Local exato não indicado pela fonte.</p> : null}
+
       {googleMapsHref ? (
         <p className="flex flex-wrap gap-x-2 gap-y-1">
           {/*
@@ -116,7 +136,7 @@ export function HowToArriveSection({
             data-stat-kind="directions_click"
             className="-ml-2 inline-flex min-h-11 items-center rounded px-2 text-ink underline underline-offset-4"
           >
-            Abrir no Google Maps
+            {soATerra && placeName ? `Ver ${placeName} no mapa` : 'Abrir no Google Maps'}
           </a>
           {openStreetMapHref ? (
             <a
@@ -129,6 +149,34 @@ export function HowToArriveSection({
             </a>
           ) : null}
         </p>
+      ) : null}
+
+      {/*
+        Os transportes públicos, quando a região tem onde os perguntar (C2-015,
+        C2-047). No interior, quem não conduz precisa de saber se há autocarro,
+        e o campo «como chegar» existe desde o primeiro dia a pensar nisto.
+
+        O planeador abre sem o destino: aceita no endereço o nome exato de uma
+        paragem ou estação, e não uma coordenada nem o nome de um espaço. Diz-se
+        a quem carrega o que escrever lá, em vez de prometer um percurso que a
+        ligação não monta.
+      */}
+      {planeador ? (
+        <div>
+          <a
+            href={planeador}
+            rel="noopener"
+            data-stat-kind="directions_click"
+            className="-ml-2 inline-flex min-h-11 items-center rounded px-2 font-medium text-ink underline underline-offset-4"
+          >
+            Ir de transportes públicos ↗
+          </a>
+          <p className="text-sm">
+            Abre o planeador de transportes da região. O destino escreve-se lá
+            {destino ? <> — {destino}</> : null}
+            {municipalityName && municipalityName !== destino ? `, ${municipalityName}` : ''}.
+          </p>
+        </div>
       ) : null}
     </div>
   );

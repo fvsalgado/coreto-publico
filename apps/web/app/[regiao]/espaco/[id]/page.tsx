@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { todayInLisbon } from '@coreto/core';
 import { EmptyState, quaisAgendasPorLer } from '@/src/components/EmptyState';
 import { EventList } from '@/src/components/EventList';
+import { listFeedSessions } from '@/src/lib/feeds/data';
 import { HowToArriveSection } from '@/src/components/HowToArriveSection';
 import { PageHeader } from '@/src/components/PageHeader';
 import { Sinais, Sinal } from '@/src/components/Sinais';
@@ -17,11 +18,12 @@ import {
   getVenueDetail,
   listCoretos,
   listEvents,
+  withCardTimes,
   listMunicipalities,
   listPublicSources,
   listVenues,
 } from '@/src/lib/queries/events';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { exigirRegiao, planeadorDaRegiao } from '@/src/lib/queries/regioes';
 import { migalhasDoEspaco } from '@/src/lib/migalhas';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import { urlDoSitio } from '@/src/lib/regiao';
@@ -102,7 +104,13 @@ export default async function VenuePage({ params }: Props) {
     listPublicSources(regiao.id),
   ]);
   // De que eventos o acesso a cadeiras de rodas é o deste espaço (C2-011).
-  const acessoDoEspaco = await eventosComAcessoDoEspaco(result.events);
+  // E a hora de cada cartão, pela mesma leitura da agenda e da entrada: o
+  // mesmo evento dizia «3 out · 10h30» na agenda e «3 out» aqui, e quem abre
+  // a página do concelho ou do espaço tinha de abrir cada ficha (C2-002).
+  const [acessoDoEspaco, eventos] = await Promise.all([
+    eventosComAcessoDoEspaco(result.events),
+    withCardTimes(result.events, today, listFeedSessions),
+  ]);
 
   const [haCoretos, haFontes] = await Promise.all([
     seccaoLigada(regiao.id, 'coretos'),
@@ -254,7 +262,7 @@ export default async function VenuePage({ params }: Props) {
         <div className="mt-4">
           {result.events.length > 0 ? (
             <EventList
-              events={result.events}
+              events={eventos}
               today={today}
               acessoDoEspaco={acessoDoEspaco}
               showMunicipality={false}
@@ -473,6 +481,7 @@ export default async function VenuePage({ params }: Props) {
           municipalityName={municipality?.name ?? null}
           latitude={venue.latitude}
           longitude={venue.longitude}
+          planeador={await planeadorDaRegiao(regiao.id)}
         />
       </section>
 

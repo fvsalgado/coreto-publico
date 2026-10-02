@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverDay, formatEventDates, formatRelativeDay } from './format';
+import { coverDay, formatDatasDoCartao, formatEventDates, formatRelativeDay } from './format';
 
 const HOJE = '2026-08-28';
 
@@ -95,11 +95,83 @@ describe('formatRelativeDay', () => {
     expect(formatRelativeDay('2026-09-02', hoje)).toBe('Amanhã');
   });
 
-  it('dá o dia da semana com a data, dentro da semana', () => {
-    expect(formatRelativeDay('2026-09-05', hoje)).toBe('Sábado, 5 set');
+  /*
+   * Um formato só, a qualquer distância (C2-041): saía «Sábado, 5 set» até aos
+   * seis dias e «domingo, 20 de setembro» depois, na mesma coluna.
+   */
+  it('dá o dia da semana com a data por extenso, com a mesma caixa a 3 e a 10 dias', () => {
+    expect(formatRelativeDay('2026-09-04', hoje)).toBe('Sexta-feira, 4 de setembro');
+    expect(formatRelativeDay('2026-09-11', hoje)).toBe('Sexta-feira, 11 de setembro');
+    expect(formatRelativeDay('2026-09-20', hoje)).toBe('Domingo, 20 de setembro');
   });
 
-  it('passada a semana, a data por extenso', () => {
-    expect(formatRelativeDay('2026-09-20', hoje)).toBe('domingo, 20 de setembro');
+  it('escreve o ano quando não é este', () => {
+    expect(formatRelativeDay('2027-01-02', hoje)).toBe('Sábado, 2 de janeiro de 2027');
+  });
+});
+
+describe('formatDatasDoCartao', () => {
+  const hoje = '2026-10-01';
+  const coro = { date_start: '2026-10-04', date_end: '2026-10-12' };
+
+  it('duas sessões soltas não são um intervalo (C2-013, C1-029)', () => {
+    expect(formatDatasDoCartao({ ...coro, dias: ['2026-10-04', '2026-10-12'] }, hoje)).toBe(
+      '4 e 12 out',
+    );
+    expect(
+      formatDatasDoCartao(
+        { ...coro, dias: ['2026-10-04', '2026-10-12'], start_time: '16:00:00' },
+        hoje,
+      ),
+    ).toBe('4 out · 16h · também a 12 out');
+  });
+
+  it('depois da primeira sessão, diz só as que restam', () => {
+    expect(
+      formatDatasDoCartao({ ...coro, dias: ['2026-10-12'], start_time: '21:00' }, '2026-10-05'),
+    ).toBe('12 out · 21h');
+  });
+
+  it('dias seguidos continuam a ser um intervalo, e muitos dias contam-se', () => {
+    expect(
+      formatDatasDoCartao(
+        {
+          date_start: '2026-10-02',
+          date_end: '2026-10-04',
+          dias: ['2026-10-02', '2026-10-03', '2026-10-04'],
+        },
+        hoje,
+      ),
+    ).toBe('2–4 out');
+    expect(
+      formatDatasDoCartao(
+        {
+          date_start: '2026-10-03',
+          date_end: '2026-10-24',
+          dias: ['2026-10-03', '2026-10-10', '2026-10-17', '2026-10-24'],
+        },
+        hoje,
+      ),
+    ).toBe('3 out e mais 3 datas');
+    expect(
+      formatDatasDoCartao(
+        { date_start: '2026-09-28', date_end: '2026-10-04', dias: ['2026-10-01', '2026-10-04'] },
+        hoje,
+      ),
+    ).toBe('1 e 4 out');
+  });
+
+  it('um período continua a dizer até quando', () => {
+    expect(
+      formatDatasDoCartao(
+        {
+          date_start: '2026-09-01',
+          date_end: '2026-10-22',
+          is_ongoing: true,
+          dias: ['2026-10-22'],
+        },
+        hoje,
+      ),
+    ).toBe('até 22 out');
   });
 });

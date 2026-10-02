@@ -123,8 +123,9 @@ e não passa o critério 1.4.11.
 
 Os tokens de cor disponíveis são `paper`, `surface`, `ink`, `muted`, `accent`,
 `accent-soft`, `accent-deep`, `on-accent`, `on-deep-muted`, `brand`,
-`on-brand`, `highlight`, `border`, `field` e `focus`, mais os oito `cat-*` dos
-pontos de categoria. Usa-os em vez de valores literais.
+`on-brand`, `highlight`, `border`, `field` e `focus`, mais os nove `cat-*` das
+famílias de categoria e o `on-cat`, que é a tinta por cima delas na capa
+tipográfica. Usa-os em vez de valores literais.
 
 Três deles andam aos pares e não se trocam: sobre `accent-deep` (o grafite do
 rodapé, da barra de baixo e do visor) escreve-se a branco ou a

@@ -12,6 +12,8 @@ import { listSitemapEvents } from '@/src/lib/feeds/data';
 import { AnalyticsEventTracker } from '@/src/components/AnalyticsEventTracker';
 import { AnalyticsShareButton } from '@/src/components/AnalyticsShareButton';
 import { BotaoFavorito } from '@/src/components/BotaoFavorito';
+import { Capa } from '@/src/components/Capa';
+import { CartazDaFicha } from '@/src/components/CartazDaFicha';
 import {
   EventDetailAccessibility,
   temAcessibilidade,
@@ -23,13 +25,7 @@ import { Sinais, Sinal, SinalLink } from '@/src/components/Sinais';
 import { EventStructuredData } from '@/src/components/StructuredData';
 import { SITE_URL } from '@/src/lib/env';
 import { eventCalendarPath } from '@/src/lib/feeds/build';
-import {
-  formatAudience,
-  formatDateRange,
-  formatDuration,
-  formatEventDates,
-  formatLongDate,
-} from '@/src/lib/format';
+import { formatAudience, formatDateRange, formatDuration, formatLongDate } from '@/src/lib/format';
 import {
   eventosComAcessoDoEspaco,
   getEvent,
@@ -38,9 +34,20 @@ import {
   listMunicipalities,
   listSeries,
 } from '@/src/lib/queries/events';
-import { sinalDePreco, type Descritor } from '@/src/lib/sinais';
+import { type Descritor } from '@/src/lib/sinais';
+import {
+  diaPorExtenso,
+  estadoDaFicha,
+  localSoATerra,
+  novaDataDoAdiado,
+  partilhaDoEvento,
+  pedidoDeCorrecao,
+  precoDaFicha,
+  quandoCurto,
+  quandoDaFicha,
+} from '@/src/lib/ficha';
 import { migalhasDoEvento } from '@/src/lib/migalhas';
-import { exigirRegiao } from '@/src/lib/queries/regioes';
+import { exigirRegiao, planeadorDaRegiao } from '@/src/lib/queries/regioes';
 import { seccaoLigada } from '@/src/lib/queries/seccoes';
 import type { EventDetail } from '@/src/lib/queries/types';
 import { urlDoSitio } from '@/src/lib/regiao';
@@ -135,7 +142,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const event = await getEvent(regiao.id, slug);
   if (!event) return { title: 'Evento não encontrado', robots: { index: false, follow: true } };
 
-  const municipalities = await listMunicipalities(regiao.id);
+  const [municipalities, venue] = await Promise.all([
+    listMunicipalities(regiao.id),
+    event.venue_id ? getVenue(regiao.id, event.venue_id) : Promise.resolve(null),
+  ]);
   const municipality = municipalities.find((item) => item.id === event.municipality_id);
   const where = event.location_name ?? municipality?.name ?? regiao.nome;
 
@@ -146,22 +156,52 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const path = `/evento/${event.slug}`;
 
+  /*
+   * A partilha diz quando e onde (C3-014). Um evento com cartaz ia para o
+   * WhatsApp com o título e a sinopse, e num grupo da terra é «domingo, 21h,
+   * Cine-Teatro Paraíso» que decide o clique. A imagem continua a ser o
+   * cartaz; o texto ao lado é que passa a responder. O estado vai no título
+   * quando o muda — uma ligação partilhada de um concerto cancelado tem de o
+   * dizer antes de alguém a abrir.
+   */
+  const hoje = todayInLisbon();
+  const estado = estadoDaFicha(event, hoje);
+  const nomeDoSitio = venue?.name ?? event.location_name ?? null;
+  const partilha = partilhaDoEvento({
+    titulo: event.title,
+    quando:
+      estado === 'cancelado'
+        ? 'cancelado'
+        : estado === 'adiado'
+          ? 'adiado'
+          : quandoCurto(event, hoje),
+    onde: [
+      nomeDoSitio,
+      municipality && municipality.name !== nomeDoSitio ? municipality.name : null,
+    ]
+      .filter((parte): parte is string => Boolean(parte))
+      .join(', '),
+    preco: event.is_free ? 'Entrada livre' : priceLabel(event),
+    resumo: description,
+  });
+
   return {
     title: event.title,
     description,
     alternates: {
       canonical: path,
-      // O arquivo não anuncia calendário: a rota do `.ics` recusa um evento que
-      // já aconteceu (0132), e anunciar aqui um endereço que responde 404 era
-      // mandar um leitor de metadados a uma porta fechada.
-      ...(event.status === 'published'
+      // O que já não se apanha não anuncia calendário: a rota do `.ics` recusa
+      // o que já aconteceu, o cancelado e o adiado (`estadoDaFicha`), e
+      // anunciar aqui um endereço que responde 404 era mandar um leitor de
+      // metadados a uma porta fechada.
+      ...(estado === 'por-acontecer'
         ? { types: { 'text/calendar': eventCalendarPath(event.slug) } }
         : {}),
     },
     openGraph: {
       type: 'article',
-      title: event.title,
-      description,
+      title: partilha.titulo,
+      description: partilha.descricao,
       url: path,
       locale: 'pt_PT',
       /*
@@ -201,13 +241,15 @@ export default async function EventPage({ params }: Props) {
   if (!event) notFound();
 
   const today = todayInLisbon();
-  const [municipalities, categories, series, venue, acessoDoEspaco] = await Promise.all([
+  const [municipalities, categories, series, venue, acessoDoEspaco, planeador] = await Promise.all([
     listMunicipalities(regiao.id),
     listCategories(),
     listSeries(regiao.id),
     event.venue_id ? getVenue(regiao.id, event.venue_id) : Promise.resolve(null),
     // Se o acesso a cadeiras de rodas que a ficha mostra é o do espaço (C2-011).
     eventosComAcessoDoEspaco([event]),
+    // O planeador de transportes que a região declarou, ou nada (0164).
+    planeadorDaRegiao(regiao.id),
   ]);
 
   const municipality = municipalities.find((item) => item.id === event.municipality_id) ?? null;
@@ -260,12 +302,10 @@ export default async function EventPage({ params }: Props) {
       ? { width: event.image_width, height: event.image_height }
       : null;
 
-  // Preço, duração e público em sinais. `priceLabel` já resolve a entrada
-  // livre e as várias formas de preço da fonte; `sinalDePreco` só decide se
-  // isso é um destaque ou uma marca a par das outras.
+  // Duração e público em sinais. O preço saiu daqui para o bloco do primeiro
+  // ecrã, onde a pergunta «quanto custa» se faz — e onde a falta dele também
+  // se diz (C2-014).
   const detalhes: Descritor[] = [];
-  const preco = sinalDePreco({ is_free: event.is_free, price_display: price });
-  if (preco) detalhes.push(preco);
   if (duration) {
     detalhes.push({ icone: 'relogio', rotulo: `Duração: ${duration}`, curto: duration });
   }
@@ -282,15 +322,62 @@ export default async function EventPage({ params }: Props) {
   const originLabel = ORIGIN_LABELS[event.origin] ?? 'Origem por identificar';
   const calendarHref = eventCalendarPath(event.slug);
   /*
-   * Do **estado**, e não da data.
+   * Do **estado primeiro, e da data quando o estado não decidiu**.
    *
-   * A base aceita um arquivado com data futura — há um hoje, o trail de Fátima
-   * de outubro — e derivar isto da data fazia a ficha mentir nos dois sentidos:
-   * um arquivo a oferecer calendário, ou um evento por acontecer com uma faixa
-   * a dizer que já foi. O que decide é o que a recolha escreveu.
+   * Esta linha dizia «do estado, e não da data»: a base aceita um arquivado
+   * com data futura — há um, o trail de Fátima de outubro —, e derivar da data
+   * fazia a ficha mentir nos dois sentidos. Continua a não derivar quando há
+   * estado: o arquivado é registo, o cancelado e o adiado são o que uma pessoa
+   * decidiu (0163). O que mudou é o publicado cujo último dia já passou, que a
+   * recolha ainda não arquivou: abria com a data em destaque e «Adicionar ao
+   * calendário» doze dias depois (C2-005, C1-014). As regras estão em
+   * `estadoDaFicha`, com testes.
    */
-  const jaAconteceu = event.status === 'archived';
+  const estado = estadoDaFicha(event, today);
+  const jaAconteceu = estado !== 'por-acontecer';
+  const novaData = novaDataDoAdiado(event);
   const origem = urlDoSitio(regiao, SITE_URL);
+
+  // As três respostas do primeiro ecrã, com os dados que a página já tinha.
+  const quando = quandoDaFicha(event, today);
+  const precoDaLinha = precoDaFicha({
+    is_free: event.is_free,
+    preco: price,
+    temPaginaOficial: Boolean(event.source_url),
+  });
+  const soATerra =
+    !venue && localSoATerra(event.location_name, [municipality?.name ?? null, event.parish]);
+  const ondeTexto = venue?.name ?? event.location_name ?? null;
+  // A ligação de quem quer o que vem a seguir — num evento que já não se pode
+  // apanhar, é a ação que sobra, e a ficha deixa de ser um beco.
+  const maisPerto = municipality
+    ? {
+        href: `/agenda?municipality=${municipality.id}`,
+        rotulo: `Ver o que vem aí em ${municipality.name}`,
+      }
+    : { href: '/agenda', rotulo: 'Ver o que vem aí' };
+  // «Corrigir» leva o evento consigo (C2-031): sem email da região, cai para a
+  // página de quem programa, que também explica como escrever.
+  const corrigirHref = regiao.email
+    ? pedidoDeCorrecao({
+        email: regiao.email,
+        titulo: event.title,
+        quando: quandoCurto(event, today),
+        endereco: `${origem}/evento/${event.slug}`,
+      })
+    : '/submeter';
+  /*
+   * Uma ação principal, e só uma (C1-012, C1-011). Num grupo de iguais o que é
+   * diferente lê-se como o principal, e era o «Partilhar» que o parecia — por
+   * ter outra moldura. A principal é a que leva ao passo seguinte: os bilhetes,
+   * quando há bilheteira; a página oficial, quando não há; e, num evento que já
+   * não se apanha, o que vem aí no mesmo concelho.
+   */
+  const ACAO =
+    'inline-flex min-h-11 items-center rounded border border-field bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline';
+  const PRINCIPAL =
+    'inline-flex min-h-11 items-center rounded border border-accent bg-accent px-5 text-sm font-medium text-on-accent underline-offset-4 hover:underline';
+  const comBilhetes = estado === 'por-acontecer' && Boolean(event.ticketing_url);
 
   return (
     <article>
@@ -306,272 +393,300 @@ export default async function EventPage({ params }: Props) {
         regiao={regiao}
       />
 
-      {/* Esta página não usa o `PageHeader` — tem cabeçalho próprio, com as
-          datas e o concelho —, mas as migalhas são as mesmas, e saem da mesma
-          lista que os dados estruturados publicam. */}
-      <header className="mb-6">
-        <Migalhas trilha={migalhasDoEvento(event, municipality)} />
-        {category ? (
-          <p className="ct-eyebrow mb-2.5">{ressalva ? ressalva.rotulo : category.name}</p>
-        ) : null}
-        <h1 className="ct-display-sm max-w-3xl">{event.title}</h1>
-        {event.subtitle ? <p className="mt-2 text-lg text-muted">{event.subtitle}</p> : null}
+      {/*
+        O primeiro ecrã responde às perguntas que decidem se se vai — quando,
+        onde, quanto custa, e se ainda se vai a tempo — antes do cartaz e da
+        sinopse. A hora estava a dois ecrãs do título e o preço a três, depois
+        da descrição inteira (C1-011, C2-003, C3-016); quem lia o cartaz
+        sabia, quem não lia rolava.
 
-        <p className="mt-3 text-muted">
-          <time dateTime={event.date_start ?? undefined} className="font-medium text-highlight">
-            {/* «até 27 set» e não «3 jun – 27 set»: numa exposição que já
-                abriu, o que resta decidir é se ainda dá tempo de ir. O
-                intervalo inteiro continua escrito mais abaixo, em «Em cartaz». */}
-            {formatEventDates(event.date_start, event.date_end, today)}
-          </time>
-          {municipality ? (
-            <>
-              {' · '}
-              <Link href={`/concelho/${municipality.id}`} className="underline underline-offset-4">
-                {municipality.name}
-              </Link>
-            </>
+        Na secretária, duas colunas: o cartaz à esquerda e a informação à
+        direita, presa ao ecrã enquanto o cartaz passa — era um cartaz à
+        largura toda com os botões abaixo da dobra. No telemóvel, a informação
+        primeiro e o cartaz a seguir: é a mesma ordem para quem ouve a página,
+        que é a do código.
+
+        As migalhas são as mesmas que os dados estruturados publicam.
+      */}
+      <div className="mb-10 flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-10">
+        <div className="lg:sticky lg:top-6">
+          <header>
+            <Migalhas trilha={migalhasDoEvento(event, municipality)} />
+            {/*
+              A categoria, e a dúvida sobre ela ao lado e apagada (C1-015).
+              «Provavelmente exposições» no sítio do rótulo lia-se como erro;
+              a categoria é a que se publica, e o «por confirmar» diz que é um
+              palpite — a explicação inteira está em «Detalhes».
+            */}
+            {category ? (
+              <p className="ct-eyebrow mb-2.5">
+                {category.name}
+                {ressalva ? (
+                  <span className="ct-eyebrow-nota"> · categoria por confirmar</span>
+                ) : null}
+              </p>
+            ) : null}
+            <h1 className="ct-display-sm max-w-3xl">{event.title}</h1>
+            {event.subtitle ? <p className="mt-2 text-lg text-muted">{event.subtitle}</p> : null}
+
+            {cycle ? (
+              <p className="mt-2 text-sm text-muted">
+                Faz parte de{' '}
+                {haCiclos ? (
+                  <Link
+                    href={`/ciclo/${cycle.id}`}
+                    className="font-medium text-ink underline underline-offset-4"
+                  >
+                    {cycle.name}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-ink">{cycle.name}</span>
+                )}
+                {cycle.is_regional ? `, programação em rede ${regiao.doNome}` : ''}.
+              </p>
+            ) : null}
+          </header>
+
+          {/*
+            O estado diz-se logo por baixo do título, porque é isso que muda o
+            sentido do que vem a seguir — pô-lo no fim era deixar alguém ler a
+            data e fechar a página a pensar que ainda vai a tempo. Um cancelado
+            e um adiado respondiam «Esta página não existe» (C2-006); um
+            evento de há doze dias parecia por acontecer (C2-005).
+          */}
+          {estado === 'cancelado' ? (
+            <p className="mt-4 rounded-lg border-2 border-ink bg-surface px-4 py-3">
+              <strong className="font-semibold">Cancelado.</strong> Este evento foi cancelado; a
+              data em baixo era a que estava marcada.
+            </p>
+          ) : estado === 'adiado' ? (
+            <p className="mt-4 rounded-lg border-2 border-ink bg-surface px-4 py-3">
+              <strong className="font-semibold">
+                {novaData
+                  ? `Adiado para ${diaPorExtenso(novaData, today).toLowerCase()}.`
+                  : 'Adiado.'}
+              </strong>{' '}
+              {novaData
+                ? 'A data que estava marcada foi cancelada; a nova é a que está em baixo.'
+                : event.source_url
+                  ? 'Ainda não temos a nova data — a data em baixo era a que estava marcada. Confirme na página oficial.'
+                  : 'Ainda não temos a nova data — a data em baixo era a que estava marcada.'}
+            </p>
+          ) : estado === 'ja-aconteceu' ? (
+            <p className="mt-4 rounded-lg border border-field bg-surface px-4 py-3">
+              <strong className="font-semibold">Já aconteceu.</strong> Esta página fica como registo
+              do que houve, e não como convite.
+            </p>
           ) : null}
-        </p>
 
-        {/*
-          O registo diz que é um registo, e diz porquê a data acima não é um
-          convite. Fica logo abaixo do título e da data porque é isso que muda
-          o sentido das duas linhas de cima — pô-lo no fim da página era deixar
-          alguém ler a data e fechar a página a pensar que ainda vai a tempo.
-        */}
-        {jaAconteceu ? (
-          <p className="mt-3 rounded border border-border bg-surface px-3 py-2 text-sm">
-            <strong className="font-medium">Já aconteceu.</strong> Esta página é o registo do que
-            houve, e não um convite: a data acima é a que a fonte deu. O que está para vir está na{' '}
-            <Link href="/agenda" className="underline underline-offset-4">
-              agenda
-            </Link>
-            .
-          </p>
-        ) : null}
-
-        {cycle ? (
-          <p className="mt-2 text-sm text-muted">
-            Faz parte de{' '}
-            {haCiclos ? (
-              <Link
-                href={`/ciclo/${cycle.id}`}
-                className="font-medium text-ink underline underline-offset-4"
-              >
-                {cycle.name}
-              </Link>
-            ) : (
-              <span className="font-medium text-ink">{cycle.name}</span>
+          <dl className="mt-5 grid gap-3 rounded-lg border border-border bg-surface p-4 sm:p-5">
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+              <dt className="text-sm text-muted">Quando</dt>
+              <dd className={jaAconteceu && !novaData ? 'text-muted' : 'font-semibold'}>
+                {estado === 'cancelado' || (estado === 'adiado' && !novaData)
+                  ? 'Estava marcado para '
+                  : null}
+                <time dateTime={quando.dateTime ?? undefined}>
+                  {estado === 'cancelado' || (estado === 'adiado' && !novaData)
+                    ? `${quando.texto.charAt(0).toLowerCase()}${quando.texto.slice(1)}`
+                    : quando.texto}
+                </time>
+                {quando.horaPorConfirmar && !jaAconteceu ? (
+                  <span className="font-normal text-muted"> · hora por confirmar</span>
+                ) : null}
+                {quando.outras && !jaAconteceu ? (
+                  <a
+                    href="#quando"
+                    className="mt-0.5 flex min-h-11 items-center text-sm font-normal underline underline-offset-4"
+                  >
+                    {quando.outras}
+                  </a>
+                ) : null}
+              </dd>
+            </div>
+            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+              <dt className="text-sm text-muted">Onde</dt>
+              <dd>
+                {venue ? (
+                  /*
+                   * Sem pré-carregamento, e é por privacidade. No primeiro
+                   * ecrã a ligação está à vista logo ao abrir, e o Next
+                   * pré-carregava a página do espaço — cujo pedido traz a
+                   * indicação de pré-carregar a fotografia do espaço, que vem
+                   * do Wikimedia Commons. A ficha passava a pedir uma imagem a
+                   * terceiros que não mostra, e a receber cookies deles
+                   * (medido pelo `check:desempenho` com dados). Ao tocar, a
+                   * página do espaço abre como sempre.
+                   */
+                  <Link
+                    href={`/espaco/${venue.id}`}
+                    prefetch={false}
+                    className="inline-flex min-h-11 items-center font-semibold underline underline-offset-4"
+                  >
+                    {venue.name}
+                  </Link>
+                ) : (
+                  <span className="font-semibold">{ondeTexto ?? 'Local por confirmar'}</span>
+                )}
+                {/*
+                  Uma terra dada como sítio diz-se o que é (C2-015): «Onde:
+                  Constância» numa aula «nas instalações da Junta» mandava
+                  alguém para a vila inteira.
+                */}
+                {soATerra ? (
+                  <span className="block text-sm text-muted">
+                    Local exato não indicado pela fonte
+                  </span>
+                ) : municipality && municipality.name !== ondeTexto ? (
+                  <span className="block text-sm text-muted">{municipality.name}</span>
+                ) : null}
+              </dd>
+            </div>
+            {estado === 'cancelado' || estado === 'ja-aconteceu' ? null : (
+              <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-3">
+                <dt className="text-sm text-muted">Preço</dt>
+                <dd
+                  className={
+                    precoDaLinha.tom === 'nao-indicado'
+                      ? 'text-muted'
+                      : precoDaLinha.tom === 'livre'
+                        ? 'font-semibold text-accent'
+                        : 'font-semibold'
+                  }
+                >
+                  {precoDaLinha.texto}
+                </dd>
+              </div>
             )}
-            {cycle.is_regional ? `, programação em rede ${regiao.doNome}` : ''}.
-          </p>
-        ) : null}
-      </header>
+          </dl>
 
-      {event.image_url ? (
-        <figure className="mb-8">
-          {/* O cartaz como numa vitrine: inteiro, sem corte, e o fundo é o
-              próprio cartaz desfocado — qualquer rácio fica com ar de intenção.
-
-              **Este comentário dizia «não se declara a altura da imagem porque
-              ninguém a sabe». Já se sabe.** A recolha lê o cabeçalho de cada
-              cartaz e guarda as medidas (migração 0126); declaradas no `<img>`,
-              o navegador calcula a caixa exacta antes de a imagem existir e o
-              salto desaparece em vez de encolher.
-
-              O `min-h` fica **só para quem não as tem** — um cartaz que chegou
-              por submissão, um formato que não se lê, uma noite em que o
-              servidor da câmara respondeu 503. Aí volta a ser o que sempre foi:
-              reserva-se a vitrine, e o que sobra de salto é a diferença entre o
-              reservado e o cartaz, não o cartaz inteiro. Mantê-lo quando as
-              medidas existem era reservar duas vezes — a moldura ficava com a
-              altura mínima mesmo para um cartaz baixo, com uma tira de fundo
-              desfocado por baixo dele.
-
-              **E a promessa dos dois parágrafos de cima — «o salto
-              desaparece» — foi falsa desde o dia em que foi escrita**
-              (947dd9e, 3 de setembro de 2026). As medidas iam declaradas e não
-              reservavam nada: o `<img>` era `w-auto` dentro desta grelha
-              `place-items-center`, a largura era `fit-content`, e um `<img>`
-              sem imagem ainda não ocupa largura nenhuma. Medido em produção
-              com o cartaz retido, a 1280 px: caixa reservada **0×0** e a
-              moldura com 992×50 — só o `p-6`. Uma proporção não tem a que se
-              aplicar quando a largura é zero, e o que saltava era a altura
-              inteira do cartaz. Como o `min-h` tinha sido tirado por haver
-              medidas, as fichas **com** medidas passaram a saltar mais do que
-              as sem: o commit que quis corrigir a métrica piorou-a. Quatro
-              fichas de produção, 0,15 a 0,20 na secretária e 0,15 a 0,37 no
-              telemóvel. Tirar a reserva de baixo só se podia fazer depois de a
-              de cima funcionar mesmo — e não funcionava. A correção está no
-              `w-full` e no `maxWidth` do cartaz, aqui em baixo. */}
-          <div
-            className={`relative isolate grid place-items-center overflow-hidden rounded-lg border border-border bg-accent-soft p-4 sm:p-6 ${
-              medidasDoCartaz ? '' : 'min-h-72 sm:min-h-[26rem]'
-            }`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={event.image_url}
-              alt=""
-              aria-hidden="true"
-              className="absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-2xl saturate-150 dark:opacity-25 dark:saturate-100"
-            />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={event.image_url}
-              alt={event.image_alt ?? `Imagem de divulgação de ${event.title}`}
-              /*
-               * Este cartaz é o elemento maior acima da dobra — é ele que o
-               * navegador mede como LCP, e o LCP é fator de ordenação. Sem
-               * prioridade declarada entra na fila com o resto e o browser só
-               * o descobre depois de resolver o CSS. `high` diz-lhe que
-               * comece já.
-               *
-               * O irmão desfocado por trás não leva nada: é a mesma origem, o
-               * navegador desduplica o pedido, e declarar prioridade nos dois
-               * era pedir a mesma coisa duas vezes com pressa a dobrar.
-               */
-              fetchPriority="high"
-              decoding="async"
-              /*
-               * As medidas, quando se sabem.
-               *
-               * Não são o tamanho a que o cartaz é desenhado — o CSS aqui ao
-               * lado manda nisso. São a **proporção**: é dela que o navegador
-               * tira a altura da caixa a partir da largura disponível, antes
-               * de ter um único byte da imagem. Declarar uma e não a outra não
-               * serve de nada; ou vão as duas ou não vai nenhuma.
-               */
-              {...(medidasDoCartaz ?? {})}
-              /*
-               * O tecto de largura, que é o que faz a proporção valer alguma
-               * coisa.
-               *
-               * Com `w-full` a largura deixa de ser zero e passa a ser a da
-               * moldura, que o navegador já sabe antes de pedir a imagem: com
-               * a proporção declarada, reserva a altura certa à primeira. A
-               * mesma medição de cima, com o cartaz retido, passa de 0×0 a
-               * 701×544 — a caixa exacta que o cartaz vai ocupar. Nas quatro
-               * fichas, 0,0000 de salto nas duas larguras.
-               *
-               * O tecto tem dois termos e os dois fazem falta. A largura em
-               * píxeis não amplia um cartaz pequeno para além do seu tamanho,
-               * que é o que `w-auto` fazia de graça. O termo em `rem` é o
-               * mesmo `max-h-[34rem]` da classe, traduzido para largura pela
-               * proporção: sem ele, um cartaz largo era esticado — a altura
-               * batia no `max-h`, a largura ficava na da moldura, e um
-               * 1000×776 saía desenhado a 942×544. Medido, não deduzido: é a
-               * diferença entre a correção como estava escrita no plano e a
-               * que aqui está.
-               *
-               * Se algum dia o `max-h` da classe mudar, este 34 muda com ele.
-               * Não se lê de lá porque o Tailwind precisa da classe escrita
-               * por extenso para a gerar.
-               */
-              style={
-                medidasDoCartaz
-                  ? {
-                      maxWidth: `min(${medidasDoCartaz.width}px, ${(
-                        (34 * medidasDoCartaz.width) /
-                        medidasDoCartaz.height
-                      ).toFixed(2)}rem)`,
-                    }
-                  : undefined
-              }
-              className={`relative z-10 max-h-[34rem] rounded shadow-lg ${
-                medidasDoCartaz ? 'w-full' : 'w-auto max-w-full'
-              }`}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {comBilhetes ? (
+              <a
+                href={event.ticketing_url as string}
+                rel="noopener nofollow"
+                data-stat-kind="ticket_click"
+                className={PRINCIPAL}
+              >
+                Bilhetes e reservas
+              </a>
+            ) : null}
+            {jaAconteceu && estado !== 'adiado' ? (
+              <Link href={maisPerto.href} className={PRINCIPAL}>
+                {maisPerto.rotulo}
+              </Link>
+            ) : null}
+            {event.source_url ? (
+              // O caminho para a fonte à vista, não só na letra pequena do
+              // rodapé: um agregador ganha confiança quando facilita a
+              // contraprova. Contado desde a 0141 — é o que dá a quem
+              // organiza a prova de que a agenda lhe manda gente.
+              <a
+                href={event.source_url}
+                rel="noopener nofollow"
+                data-stat-kind="source_click"
+                className={comBilhetes || (jaAconteceu && estado !== 'adiado') ? ACAO : PRINCIPAL}
+              >
+                Página oficial ↗
+              </a>
+            ) : null}
+            {jaAconteceu ? null : (
+              <a href={calendarHref} data-stat-kind="ical_download" className={ACAO}>
+                Adicionar ao calendário
+              </a>
+            )}
+            {estado === 'cancelado' || estado === 'ja-aconteceu' ? null : (
+              <BotaoFavorito
+                variante="ficha"
+                evento={{
+                  slug: event.slug,
+                  title: event.title,
+                  date_start: event.date_start,
+                  date_end: event.date_end,
+                  start_time: null,
+                  location: event.location_name,
+                }}
+              />
+            )}
+            <AnalyticsShareButton
+              eventId={event.id}
+              title={event.title}
+              url={`${origem}/evento/${event.slug}`}
             />
           </div>
-          {/*
-              O crédito, e a ligação para a página de onde o cartaz veio.
- 
-              **Deixou de ser um enfeite no dia em que passámos a guardar uma
-              cópia.** Apontar para uma imagem é ligar; guardar uma cópia é
-              reproduzir, e uma reprodução de obra gráfica alheia sem dizer de
-              quem é e sem caminho de volta à origem é a coisa que a decisão de
-              alojar não pode produzir. É a segunda das três cautelas da
-              migração 0162, e é a única sem uma coluna nem um botão a
-              garanti-la — vive aqui e no momento em que a cópia se faz.
- 
-              A ligação é ao `image_origem`, que é o endereço do próprio
-              ficheiro no servidor de quem o publicou, e não ao `source_url`,
-              que é a página do evento: quem vem por aqui quer ver o cartaz
-              como ele lá está.
- 
-              Sem cópia nossa não há crédito escrito e não se desenha nada — o
-              cartaz é servido de casa de quem o publicou, e ligar para o sítio
-              de onde o browser já o foi buscar não acrescenta nada a ninguém. */}
-          {event.image_credit ? (
-            <figcaption className="mt-2 text-sm text-muted">
-              Cartaz:{' '}
-              {event.image_origem ? (
-                <a
-                  href={event.image_origem}
-                  rel="noopener nofollow"
-                  className="underline underline-offset-4"
-                >
-                  {event.image_credit}
-                </a>
-              ) : (
-                event.image_credit
-              )}
-            </figcaption>
-          ) : null}
-        </figure>
-      ) : null}
+        </div>
 
-      <div className="flex flex-wrap gap-3">
-        {event.ticketing_url ? (
-          <a
-            href={event.ticketing_url}
-            rel="noopener nofollow"
-            data-stat-kind="ticket_click"
-            className="inline-flex min-h-11 items-center rounded bg-accent px-5 text-sm font-medium text-on-accent"
-          >
-            Bilhetes e reservas
-          </a>
-        ) : null}
-        {event.source_url ? (
-          // O caminho para a fonte à vista, não só na letra pequena do rodapé:
-          // um agregador ganha confiança quando facilita a contraprova.
-          <a
-            href={event.source_url}
-            rel="noopener nofollow"
-            // Contado desde a 0141. Era o único botão desta fila sem marca, e é
-            // o que dá a quem organiza a prova de que a agenda lhe manda gente.
-            data-stat-kind="source_click"
-            className="inline-flex min-h-11 items-center rounded border border-border bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline"
-          >
-            Página oficial ↗
-          </a>
-        ) : null}
-        {jaAconteceu ? null : (
-          <a
-            href={calendarHref}
-            data-stat-kind="ical_download"
-            className="inline-flex min-h-11 items-center rounded border border-border bg-surface px-4 text-sm font-medium underline-offset-4 hover:underline"
-          >
-            Adicionar ao calendário
-          </a>
+        {event.image_url ? (
+          <CartazDaFicha
+            src={event.image_url}
+            alt={event.image_alt ?? `Imagem de divulgação de ${event.title}`}
+            medidas={medidasDoCartaz}
+            // Só o que a capa desenha — e sem o cartaz, que é o que falhou: o
+            // resto do evento viajava para o navegador sem nada que o lesse.
+            capa={{
+              title: event.title,
+              image_url: null,
+              image_miniatura: null,
+              image_alt: null,
+              category_slug: event.category_slug,
+              date_start: event.date_start,
+              date_end: event.date_end,
+            }}
+            today={today}
+            credito={
+              <>
+                {/*
+                    O crédito, e a ligação para a página de onde o cartaz veio.
+ 
+                    **Deixou de ser um enfeite no dia em que passámos a guardar uma
+                    cópia.** Apontar para uma imagem é ligar; guardar uma cópia é
+                    reproduzir, e uma reprodução de obra gráfica alheia sem dizer de
+                    quem é e sem caminho de volta à origem é a coisa que a decisão de
+                    alojar não pode produzir. É a segunda das três cautelas da
+                    migração 0162, e é a única sem uma coluna nem um botão a
+                    garanti-la — vive aqui e no momento em que a cópia se faz.
+ 
+                    A ligação é ao `image_origem`, que é o endereço do próprio
+                    ficheiro no servidor de quem o publicou, e não ao `source_url`,
+                    que é a página do evento: quem vem por aqui quer ver o cartaz
+                    como ele lá está.
+ 
+                    Sem cópia nossa não há crédito escrito e não se desenha nada — o
+                    cartaz é servido de casa de quem o publicou, e ligar para o sítio
+                    de onde o browser já o foi buscar não acrescenta nada a ninguém. */}
+                {event.image_credit ? (
+                  <figcaption className="mt-2 text-sm text-muted">
+                    Cartaz:{' '}
+                    {event.image_origem ? (
+                      <a
+                        href={event.image_origem}
+                        rel="noopener nofollow"
+                        className="underline underline-offset-4"
+                      >
+                        {event.image_credit}
+                      </a>
+                    ) : (
+                      event.image_credit
+                    )}
+                  </figcaption>
+                ) : null}
+              </>
+            }
+          />
+        ) : (
+          /*
+           * Sem cartaz, a capa tipográfica — a mesma das listas (C1-013).
+           *
+           * A ficha era só texto: a capa que dá ritmo à agenda ficava na lista e
+           * não chegava à página onde a pessoa decide. Doze dos oitenta e cinco
+           * eventos da região não têm cartaz, e na demonstração são todos. É
+           * decorativa como lá — o título está escrito ao lado — e a escala
+           * grande sai sozinha, porque é a caixa que a decide (`@container`).
+           */
+          <div className="lg:order-first">
+            <Capa event={event} today={today} className="mx-auto w-full max-w-80" />
+          </div>
         )}
-        <BotaoFavorito
-          variante="ficha"
-          evento={{
-            slug: event.slug,
-            title: event.title,
-            date_start: event.date_start,
-            date_end: event.date_end,
-            start_time: null,
-            location: event.location_name,
-          }}
-        />
-        <AnalyticsShareButton
-          eventId={event.id}
-          title={event.title}
-          url={`${origem}/evento/${event.slug}`}
-        />
       </div>
 
       {description.length > 0 ? (
@@ -613,40 +728,29 @@ export default async function EventPage({ params }: Props) {
             Em cartaz: {formatDateRange(event.date_start, event.date_end)}.
           </p>
         ) : event.sessions.length > 0 ? (
-          <>
-            <p className="mt-2 text-sm text-muted">
-              {event.sessions.length === 1 ? 'Uma sessão.' : `${event.sessions.length} sessões.`}
-            </p>
-            <EventDetailSessions
-              sessions={event.sessions}
-              today={today}
-              isOngoing={event.is_ongoing}
-            />
-          </>
+          /*
+           * Sem a frase de contagem que aqui estava — «Uma sessão.», «2
+           * sessões.» (C2-039). A recolha lê as sessões que a fonte escreveu,
+           * e a fonte pode ter escrito uma quando o cartaz, por cima, anuncia
+           * duas: contá-las era afirmar um número que esta casa não sabe. A
+           * lista diz o que se leu, e é tudo o que se pode dizer.
+           */
+          <EventDetailSessions
+            sessions={event.sessions}
+            today={today}
+            isOngoing={event.is_ongoing}
+          />
         ) : (
           <p className="mt-2 text-muted">Sem horário publicado.</p>
         )}
       </section>
 
-      <section aria-labelledby="onde" className="mt-10">
-        <h2 id="onde" className="ct-heading">
-          Onde
-        </h2>
-        <p className="mt-3">
-          {venue ? (
-            <Link href={`/espaco/${venue.id}`} className="font-medium underline underline-offset-4">
-              {venue.name}
-            </Link>
-          ) : (
-            <span className="font-medium">{event.location_name ?? 'Local por confirmar'}</span>
-          )}
-        </p>
-        {event.parish ? <p className="text-muted">{event.parish}</p> : null}
-      </section>
-
+      {/* «Onde» era uma secção à parte, com o nome do espaço e a freguesia: o
+          nome subiu para o bloco do primeiro ecrã, e a morada e o caminho são
+          desta. */}
       <section aria-labelledby="como-chegar" className="mt-10">
         <h2 id="como-chegar" className="ct-heading">
-          Como chegar
+          Onde e como chegar
         </h2>
         <HowToArriveSection
           text={event.how_to_arrive ?? venue?.how_to_arrive ?? null}
@@ -656,6 +760,8 @@ export default async function EventPage({ params }: Props) {
           municipalityName={municipality?.name ?? null}
           latitude={event.latitude ?? venue?.latitude ?? null}
           longitude={event.longitude ?? venue?.longitude ?? null}
+          planeador={planeador}
+          soATerra={soATerra}
         />
       </section>
 
@@ -683,11 +789,17 @@ export default async function EventPage({ params }: Props) {
         do título. Fica o que é mesmo do evento, em sinais: preço, duração,
         para quem, e as etiquetas.
       */}
-      <section aria-labelledby="detalhes" className="mt-10">
-        <h2 id="detalhes" className="ct-heading">
-          Detalhes
-        </h2>
-        {detalhes.length > 0 ? (
+      {/*
+        «Detalhes» só se desenha quando tem o que dizer (C2-014). Sem preço —
+        que subiu para o primeiro ecrã —, sem duração, sem público e sem
+        categoria ficava um título seguido de nada, e um título sem conteúdo
+        parece uma página partida.
+      */}
+      {detalhes.length > 0 || category || event.tags.length > 0 ? (
+        <section aria-labelledby="detalhes" className="mt-10">
+          <h2 id="detalhes" className="ct-heading">
+            Detalhes
+          </h2>
           <div className="mt-3">
             <Sinais>
               {detalhes.map((sinal) => (
@@ -702,20 +814,20 @@ export default async function EventPage({ params }: Props) {
               ) : null}
             </Sinais>
           </div>
-        ) : null}
 
-        {ressalva ? <p className="mt-3 max-w-2xl text-sm text-muted">{ressalva.porque}</p> : null}
+          {ressalva ? <p className="mt-3 max-w-2xl text-sm text-muted">{ressalva.porque}</p> : null}
 
-        {event.tags.length > 0 ? (
-          <ul className="mt-4 flex flex-wrap gap-2 text-xs">
-            {event.tags.map((tag) => (
-              <li key={tag} className="rounded border border-border px-2 py-0.5 text-muted">
-                {tag}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+          {event.tags.length > 0 ? (
+            <ul className="mt-4 flex flex-wrap gap-2 text-xs">
+              {event.tags.map((tag) => (
+                <li key={tag} className="rounded border border-border px-2 py-0.5 text-muted">
+                  {tag}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <footer className="mt-12 border-t border-border pt-4 text-sm text-muted">
         <h2 className="font-semibold text-ink">De onde vem esta informação</h2>
@@ -724,30 +836,38 @@ export default async function EventPage({ params }: Props) {
           onde veio, quando foi vista, o caminho para a fonte e a porta para
           quem quiser corrigir. Três parágrafos a dizê-lo não diziam mais.
         */}
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span>{originLabel}</span>
+        <p className="mt-1">
+          {originLabel}
           {updatedAt ? (
             <>
-              <span aria-hidden="true">·</span>
+              {' · '}
               <time dateTime={updatedAt}>{formatLongDate(updatedAt)}</time>
             </>
           ) : null}
+          .
+        </p>
+        {/*
+          As duas ligações saíram da frase e ganharam o tamanho de um dedo
+          (C3-007): «Corrigir» tinha 46×21 píxeis e é a porta da promessa
+          «nunca inventar» — por onde quem viu um erro o diz. E leva o evento
+          consigo (C2-031), em vez de abrir a página de enviar eventos novos.
+        */}
+        <p className="mt-1 flex flex-wrap gap-x-4">
           {event.source_url ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <a
-                href={event.source_url}
-                rel="noopener nofollow"
-                className="underline underline-offset-4"
-              >
-                Ver na fonte
-              </a>
-            </>
+            <a
+              href={event.source_url}
+              rel="noopener nofollow"
+              className="inline-flex min-h-11 items-center underline underline-offset-4"
+            >
+              Ver na fonte
+            </a>
           ) : null}
-          <span aria-hidden="true">·</span>
-          <Link href="/submeter" className="underline underline-offset-4">
-            Corrigir
-          </Link>
+          <a
+            href={corrigirHref}
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
+            Corrigir esta informação
+          </a>
         </p>
       </footer>
     </article>

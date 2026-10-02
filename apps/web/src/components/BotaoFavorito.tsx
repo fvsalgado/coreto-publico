@@ -5,12 +5,16 @@ import { alternar, estaGuardado, subscrever, type ParaGuardar } from '@/src/lib/
 
 interface Props {
   evento: ParaGuardar;
-  /** No cartão é uma pílula a par das outras; na ficha é um botão do tamanho dos vizinhos. */
-  variante?: 'cartao' | 'ficha';
+  /**
+   * No cartão é só o coração, no canto — 44×44 e sem palavra à vista, porque o
+   * nome acessível já a diz (C1-002, C3-006); na ficha é um botão do tamanho
+   * dos vizinhos, com a palavra.
+   */
+  variante?: 'icone' | 'ficha';
 }
 
 const NO_CARTAO =
-  'inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium leading-none';
+  'inline-flex size-11 items-center justify-center rounded-full border border-transparent';
 const NA_FICHA = 'inline-flex min-h-11 items-center gap-2 rounded border px-4 text-sm font-medium';
 
 /**
@@ -31,17 +35,26 @@ const NA_FICHA = 'inline-flex min-h-11 items-center gap-2 rounded border px-4 te
  * nenhum. Quem navega sem JavaScript continua com a ficha, o `.ics` e os
  * feeds, que são as vias que esta casa promete funcionarem sem ele.
  */
-export function BotaoFavorito({ evento, variante = 'cartao' }: Props) {
+export function BotaoFavorito({ evento, variante = 'icone' }: Props) {
   const guardado = useSyncExternalStore(
     subscrever,
     () => estaGuardado(evento.slug),
     () => false,
   );
 
-  const base = variante === 'cartao' ? NO_CARTAO : NA_FICHA;
-  const cor = guardado
-    ? 'border-accent bg-accent-soft text-accent'
-    : 'border-border bg-surface hover:border-accent/40';
+  const base = variante === 'icone' ? NO_CARTAO : NA_FICHA;
+  // Na ficha, a moldura é a dos botões ao lado — a de um controlo, que tem de
+  // se ver a 3:1 (1.4.11). Era a decorativa, e num grupo de iguais o diferente
+  // lê-se como o principal (C1-012). No cartão não há moldura: o coração é o
+  // controlo, e o desenho dele é o que se vê — a 3:1, no tom apagado.
+  const cor =
+    variante === 'icone'
+      ? guardado
+        ? 'text-accent hover:bg-accent-soft'
+        : 'text-muted hover:bg-accent-soft hover:text-ink'
+      : guardado
+        ? 'border-accent bg-accent-soft text-accent'
+        : 'border-field bg-surface hover:border-accent';
 
   return (
     <button
@@ -59,11 +72,11 @@ export function BotaoFavorito({ evento, variante = 'cartao' }: Props) {
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={variante === 'cartao' ? 'size-3.5' : 'size-4'}
+        className={variante === 'icone' ? 'size-[1.375rem]' : 'size-4'}
       >
         <path d="M12 20.3 4.3 12.6a4.6 4.6 0 0 1 6.5-6.5l1.2 1.2 1.2-1.2a4.6 4.6 0 0 1 6.5 6.5z" />
       </svg>
-      {guardado ? 'Guardado' : 'Guardar'}
+      {variante === 'icone' ? null : guardado ? 'Guardado' : 'Guardar'}
     </button>
   );
 }

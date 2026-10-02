@@ -25,14 +25,21 @@ vi.mock('@/src/lib/feeds/load', () => ({ loadEventContext }));
 
 const { GET } = await import('./route');
 
-function evento(status: string): Partial<EventDetail> {
+/*
+ * Uma data longe no futuro, e não um dia do calendário de hoje: desde que a
+ * porta passou a fechar-se também a um publicado cujo último dia já passou, um
+ * teste com a data de abril de 2026 escrita à mão começava a falhar sozinho no
+ * dia 19.
+ */
+function evento(status: string, date_start = '2099-04-18'): Partial<EventDetail> {
   return {
     id: 'e1',
     slug: 'concerto-no-coreto',
     status,
     title: 'Concerto no coreto',
-    date_start: '2026-04-18',
+    date_start,
     date_end: null,
+    is_ongoing: false,
     sessions: [],
   };
 }
@@ -81,6 +88,33 @@ describe('o calendário de um evento', () => {
 
     expect(resposta.status).toBe(200);
     expect(loadEventContext).toHaveBeenCalled();
+  });
+
+  /*
+   * O publicado que já passou e a recolha ainda não arquivou: a ficha deixou
+   * de lhe oferecer o calendário (C2-005), e a porta fecha-se pelo mesmo
+   * critério.
+   */
+  it('nem para um publicado cujo dia já passou', async () => {
+    getEvent.mockResolvedValue(evento('published', '2020-04-18'));
+
+    const resposta = await pedido();
+
+    expect(resposta.status).toBe(404);
+    expect(await resposta.text()).toContain('já aconteceu');
+  });
+
+  it('nem para um cancelado nem para um adiado, que a ficha mostra desde a 0163', async () => {
+    getEvent.mockResolvedValue(evento('cancelled'));
+    const cancelado = await pedido();
+    expect(cancelado.status).toBe(404);
+    expect(await cancelado.text()).toContain('cancelado');
+
+    getEvent.mockResolvedValue(evento('postponed'));
+    const adiado = await pedido();
+    expect(adiado.status).toBe(404);
+    expect(await adiado.text()).toContain('adiado');
+    expect(loadEventContext).not.toHaveBeenCalled();
   });
 
   it('e um evento que não existe continua a ser um 404 seu', async () => {

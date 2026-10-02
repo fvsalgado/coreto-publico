@@ -1,8 +1,8 @@
 import Link from 'next/link';
-import { AcoesDoCartao } from '@/src/components/AcoesDoCartao';
+import { BotaoFavorito } from '@/src/components/BotaoFavorito';
 import { Capa } from '@/src/components/Capa';
 import { Sinais, Sinal } from '@/src/components/Sinais';
-import { formatCategory, formatEventDates, formatTime } from '@/src/lib/format';
+import { formatCategory, formatDatasDoCartao, formatTime } from '@/src/lib/format';
 import type { EventCard as EventCardData } from '@/src/lib/queries/types';
 import { sinaisDeAcessibilidade, sinalDePreco } from '@/src/lib/sinais';
 
@@ -13,9 +13,17 @@ interface Props {
    * É opcional porque não é coluna do cartão: quem não a resolveu passa o
    * evento tal como saiu de `listEvents` e o cartão fica como estava.
    */
-  event: EventCardData & { start_time?: string | null };
+  event: EventCardData & { start_time?: string | null; dias?: readonly string[] };
   /** O dia de hoje em Lisboa, para saber o que já está a decorrer. */
   today: string;
+  /** O primeiro dia da janela da lista — os dias de sessão antes dele já não contam. */
+  inicio?: string;
+  /**
+   * O nível do título: um abaixo do cabeçalho do dia. Na entrada os dias são
+   * `h3` e os eventos tinham de ser `h4`; eram `h3` também, e quem navega por
+   * cabeçalhos ouvia uma lista plana de dias e eventos misturados (C3-019).
+   */
+  nivel?: 3 | 4;
   municipalityName?: string;
   venueName?: string;
   /** O cartão traz o concelho quando a lista atravessa concelhos. */
@@ -32,9 +40,15 @@ interface Props {
  *
  * Um `article` com o link do título esticado sobre o cartão inteiro: quem usa
  * rato clica em qualquer ponto, e quem navega por ligações ouve a lista de
- * títulos. As duas acções de baixo — guardar no calendário, partilhar — ficam
- * por cima dessa ligação e levam o título no nome acessível, para a lista de
- * ligações não virar «Calendário, Partilhar, Calendário, Partilhar».
+ * títulos.
+ *
+ * **Um gesto só, no canto: guardar** (C1-002, C3-006). Cada cartão acabava numa
+ * fila de três pílulas — «Guardar · Calendário · Partilhar» —, do peso do
+ * título e com 36 píxeis de altura: na entrada eram 105 botões abaixo da regra
+ * dos 44, e a lista lia-se como uma fila de botões repetida. O calendário e a
+ * partilha ficam na ficha, onde já estavam, e o cartão fica com o coração —
+ * 44×44, por cima da ligação esticada, com o título no nome acessível. Cada
+ * cartão encolhe a altura de uma linha, e cabe mais um evento por ecrã.
  *
  * `data-cartao-de-evento` é o gancho do `check-a11y.mjs`: a auditoria mede a
  * que altura do primeiro ecrã começa o primeiro cartão da agenda, e um
@@ -43,11 +57,14 @@ interface Props {
 export function EventCard({
   event,
   today,
+  inicio = today,
+  nivel = 3,
   municipalityName,
   venueName,
   showMunicipality = true,
   acessoDoEspaco = false,
 }: Props) {
+  const Titulo = nivel === 4 ? 'h4' : 'h3';
   const where = venueName ?? event.location_name;
   const category = formatCategory(event.category_slug);
   // «Mação · Mação» não diz mais do que «Mação»: o concelho só entra quando
@@ -71,10 +88,11 @@ export function EventCard({
    */
   const startTime = event.start_time ?? null;
   const hora = formatTime(startTime);
-  const quando =
-    hora && startTime && event.date_start
-      ? `${event.date_start}T${startTime.slice(0, 5)}`
-      : (event.date_start ?? undefined);
+  // A hora é a do dia em que o cartão cai — o da próxima sessão (ver
+  // `withCardTimes`) —, e o instante declarado à máquina é desse dia.
+  const dia =
+    (!event.is_ongoing ? event.dias?.find((d) => d >= inicio) : undefined) ?? event.date_start;
+  const quando = hora && startTime && dia ? `${dia}T${startTime.slice(0, 5)}` : (dia ?? undefined);
 
   // Numa lista, o preço e a acessibilidade são o que decide se se abre o
   // evento — e «Acesso a cadeiras de rodas» ocupava metade da largura do cartão
@@ -103,28 +121,26 @@ export function EventCard({
 
   return (
     /*
-     * Duas filas empilhadas, e não uma só.
+     * Uma fila só: a capa e o texto lado a lado, e o coração no canto.
      *
-     * A capa e o texto vão lado a lado, como sempre; as acções passaram a
-     * viver **por baixo das duas**, com a largura toda. Encostadas ao texto
-     * ficavam com os duzentos e sessenta pixéis que sobram da capa num
-     * telemóvel, e três pílulas não cabem em duzentos e sessenta: partiam-se
-     * em duas linhas e faziam o cartão crescer quarenta pixéis — o suficiente
-     * para o primeiro cartão deixar de caber no primeiro ecrã, que é a medida
-     * que o `check-a11y.mjs` passou a segurar.
+     * As ações viveram por baixo das duas, com a largura toda, porque três
+     * pílulas não cabiam nos duzentos e sessenta píxeis ao lado da capa. Com
+     * uma ação só, ela vai para o canto de cima — e o texto deixa-lhe a
+     * margem, para o título não passar por baixo dela. `h-full` porque, a
+     * partir da secretária, os cartões vão aos pares e a linha alinha pelo
+     * mais alto.
      */
     <article
       data-cartao-de-evento=""
-      className="ct-lift relative flex flex-col rounded-lg border border-border bg-surface p-3 sm:p-4"
+      className="ct-lift relative flex h-full flex-col rounded-lg border border-border bg-surface p-3 sm:p-4"
     >
       <div className="flex gap-4">
         <Capa event={event} today={today} className="w-21 shrink-0 self-start sm:w-27" />
 
-        <div className="min-w-0 flex-1 py-0.5">
+        <div className="min-w-0 flex-1 py-0.5 pr-9">
           <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm text-muted">
             <time dateTime={quando} className="font-medium text-highlight">
-              {formatEventDates(event.date_start, event.date_end, today)}
-              {hora ? ` · ${hora}` : ''}
+              {formatDatasDoCartao(event, today, inicio)}
             </time>
             {category ? (
               <span className="flex items-center gap-1.5">
@@ -134,14 +150,14 @@ export function EventCard({
             ) : null}
           </p>
 
-          <h3 className="font-display mt-1 text-lg leading-snug font-semibold sm:text-xl">
+          <Titulo className="font-display mt-1 text-lg leading-snug font-semibold sm:text-xl">
             <Link
               href={`/evento/${event.slug}`}
               className="underline-offset-4 hover:underline after:absolute after:inset-0 after:content-['']"
             >
               {event.title}
             </Link>
-          </h3>
+          </Titulo>
 
           {where || showMunicipalityLine ? (
             <p className="mt-1 text-sm text-muted">
@@ -170,22 +186,24 @@ export function EventCard({
         </div>
       </div>
 
-      <AcoesDoCartao
-        eventId={event.id}
-        slug={event.slug}
-        title={event.title}
-        paraGuardar={{
-          date_start: event.date_start,
-          date_end: event.date_end,
-          start_time: startTime,
-          // O que o cartão mostra, e não o identificador do espaço: é o que
-          // faz a lista de guardados ler-se sem pedir nada ao servidor.
-          location:
-            [where, showMunicipalityLine ? municipalityName : null]
-              .filter((parte): parte is string => Boolean(parte))
-              .join(' · ') || null,
-        }}
-      />
+      <div className="absolute top-1 right-1 z-10 sm:top-2 sm:right-2">
+        <BotaoFavorito
+          variante="icone"
+          evento={{
+            slug: event.slug,
+            title: event.title,
+            date_start: event.date_start,
+            date_end: event.date_end,
+            start_time: startTime,
+            // O que o cartão mostra, e não o identificador do espaço: é o que
+            // faz a lista de guardados ler-se sem pedir nada ao servidor.
+            location:
+              [where, showMunicipalityLine ? municipalityName : null]
+                .filter((parte): parte is string => Boolean(parte))
+                .join(' · ') || null,
+          }}
+        />
+      </div>
     </article>
   );
 }

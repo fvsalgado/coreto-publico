@@ -78,12 +78,45 @@ describe('withCardTimes', () => {
     expect(await hora(EVENTO, horas)).toBe('15:00:00');
   });
 
-  it('ignora as sessões de outros dias', async () => {
-    // O cartão está no grupo do dia da estreia; a hora da sessão de sábado não
-    // é a hora deste cartão.
+  it('dá a hora do dia da próxima sessão, que é o dia em que o cartão cai', async () => {
+    // O cartão era sempre o do dia da estreia, e um evento cuja sessão de pé
+    // é no sábado ficava sem hora. A lista passou a arrumá-lo pelo dia da
+    // próxima sessão (`groupByDay`), e a hora é a desse dia.
     expect(
       await hora(EVENTO, [sessao({ session_date: '2026-09-12', start_time: '21:00:00' })]),
-    ).toBeNull();
+    ).toBe('21:00:00');
+  });
+
+  it('e não mistura as horas de dias diferentes', async () => {
+    const duas = [
+      sessao({ session_date: '2026-09-12', start_time: '21:00:00' }),
+      sessao({ session_date: '2026-09-07', start_time: '17:30:00' }),
+    ];
+    expect(await hora(EVENTO, duas)).toBe('17:30:00');
+  });
+
+  it('dá os dias das sessões de pé, por ordem, sem os cancelados', async () => {
+    // São os dias que o cartão escreve em vez de um intervalo (C2-013).
+    const [cartao] = await withCardTimes(
+      [EVENTO],
+      HOJE,
+      leitura({
+        e1: [
+          sessao({ session_date: '2026-09-12' }),
+          sessao({ session_date: '2026-09-09', is_cancelled: true }),
+          sessao(),
+          sessao({ start_time: '21:00:00' }),
+        ],
+      }),
+    );
+    expect(cartao?.dias).toEqual(['2026-09-07', '2026-09-12']);
+  });
+
+  it('não lê como hora o 00:00 sem fim, que é o campo vazio de quem publicou', async () => {
+    expect(await hora(EVENTO, [sessao({ start_time: '00:00:00' })])).toBeNull();
+    expect(await hora(EVENTO, [sessao({ start_time: '00:00:00', end_time: '02:00:00' })])).toBe(
+      '00:00:00',
+    );
   });
 
   it('não inventa hora para um evento em cartaz', async () => {
@@ -143,7 +176,7 @@ describe('withCardTimes', () => {
     const lista = await withCardTimes([EVENTO], HOJE, () =>
       Promise.reject(new Error('a base caiu')),
     );
-    expect(lista).toEqual([{ ...EVENTO, start_time: null }]);
+    expect(lista).toEqual([{ ...EVENTO, start_time: null, dias: [] }]);
     expect(registo).toHaveBeenCalled();
     registo.mockRestore();
   });
@@ -152,7 +185,7 @@ describe('withCardTimes', () => {
     const segundo: EventCard = { ...EVENTO, id: 'e2', date_start: '2026-09-08' };
     const lista = await withCardTimes([EVENTO, segundo], HOJE, leitura({ e1: [sessao()] }));
     expect(lista.map((evento) => evento.id)).toEqual(['e1', 'e2']);
-    expect(lista[0]).toEqual({ ...EVENTO, start_time: '17:30:00' });
-    expect(lista[1]).toEqual({ ...segundo, start_time: null });
+    expect(lista[0]).toEqual({ ...EVENTO, start_time: '17:30:00', dias: ['2026-09-07'] });
+    expect(lista[1]).toEqual({ ...segundo, start_time: null, dias: [] });
   });
 });

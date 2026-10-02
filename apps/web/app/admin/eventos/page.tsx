@@ -35,6 +35,7 @@ const ESTADOS = [
   { value: 'published', label: 'Publicados' },
   { value: 'hidden', label: 'Escondidos' },
   { value: 'cancelled', label: 'Cancelados' },
+  { value: 'postponed', label: 'Adiados' },
   { value: 'archived', label: 'Arquivados' },
 ];
 
@@ -226,6 +227,11 @@ export default async function Eventos({ searchParams }: Props) {
               { estado: 'published', rotulo: 'Publicar' },
               { estado: 'draft', rotulo: 'Voltar a rascunho' },
               { estado: 'hidden', rotulo: 'Esconder' },
+              // Cancelar e adiar não escondem: a ficha continua a abrir e diz
+              // o estado por cima do título (0163). Esconder é para o que
+              // está errado; isto é para o que mudou.
+              { estado: 'cancelled', rotulo: 'Cancelar' },
+              { estado: 'postponed', rotulo: 'Adiar' },
               { estado: 'archived', rotulo: 'Arquivar' },
             ].map((acao) => (
               <button

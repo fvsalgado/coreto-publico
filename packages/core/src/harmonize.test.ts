@@ -409,6 +409,41 @@ describe('o harmonizador e a hora que a prosa afirma', () => {
     expect(sessions.map((s) => s.start_time)).toEqual(['18:30', null]);
   });
 
+  /*
+   * O caso medido: o portal das juntas escreve «00:00h» na listagem de todo o
+   * evento sem hora, e o almoço dos idosos de uma freguesia saía à meia-noite
+   * na ficha, no cartão e no calendário.
+   */
+  it('a meia-noite sem fim é o campo vazio de quem publica, e fica sem hora', () => {
+    const { sessions } = harmonizeEvent(
+      raw({ dates: [{ date: '2026-10-04', startTime: '00:00', endTime: null }] }),
+      context,
+    );
+    expect(sessions[0]!.start_time).toBe(null);
+    expect(sessions[0]!.end_time).toBe(null);
+  });
+
+  it('e, sem hora, a prosa pode dizer a que horas é', () => {
+    const { sessions } = harmonizeEvent(
+      raw({
+        dates: [{ date: '2026-10-04', startTime: '00:00', endTime: '00:00' }],
+        description: 'Almoço convívio às 12h30, no salão da junta.',
+      }),
+      context,
+    );
+    expect(sessions[0]!.start_time).toBe('12:30');
+    expect(sessions[0]!.end_time).toBe(null);
+  });
+
+  it('a meia-noite com hora de fim é meia-noite a sério', () => {
+    const { sessions } = harmonizeEvent(
+      raw({ dates: [{ date: '2026-10-04', startTime: '00:00', endTime: '02:00' }] }),
+      context,
+    );
+    expect(sessions[0]!.start_time).toBe('00:00');
+    expect(sessions[0]!.end_time).toBe('02:00');
+  });
+
   it('um fim antes do início só fica se atravessar a meia-noite', () => {
     const { sessions } = harmonizeEvent(
       raw({

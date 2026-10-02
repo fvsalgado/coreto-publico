@@ -1,4 +1,4 @@
-import { addDays, isoWithLisbonOffset, type VenueKind } from '@coreto/core';
+import { addDays, horaDeInicioConhecida, isoWithLisbonOffset, type VenueKind } from '@coreto/core';
 import { migalhasDoConcelho, migalhasDoEspaco, migalhasDoEvento, type Migalha } from './migalhas';
 import { descricaoInstitucional, tituloDoSitio, type Regiao } from './regiao';
 import type { EventDetail, Venue } from './queries/types';
@@ -126,8 +126,14 @@ function quandoComecaEAcaba(evento: EventDetail): { inicio: string; fim?: string
   const primeira = evento.sessions[0];
   const ultima = evento.sessions[evento.sessions.length - 1];
 
+  // O 00:00 sem fim é o campo vazio de quem publicou, e não uma hora: dito a
+  // uma máquina como `T00:00:00`, punha o evento à meia-noite nos resultados
+  // de pesquisa. Sem hora conhecida, a data — que é o que se sabe.
   const inicio = primeira
-    ? isoWithLisbonOffset(primeira.session_date, primeira.start_time)
+    ? isoWithLisbonOffset(
+        primeira.session_date,
+        horaDeInicioConhecida(primeira.start_time, primeira.end_time),
+      )
     : evento.date_start;
   if (!inicio) return null;
 
@@ -357,12 +363,16 @@ export function construirEvento({
     image: evento.image_url ?? undefined,
     startDate: quando.inicio,
     endDate: quando.fim,
-    // O estado da linha é sempre «publicado» — o que cancela um evento aqui é
-    // não sobrar nenhuma sessão de pé.
+    // O que cancela um evento é uma pessoa dizê-lo (0163) ou não sobrar
+    // nenhuma sessão de pé; o adiado diz-se adiado, que é o que o schema.org
+    // tem para «ainda sem nova data».
     eventStatus:
-      evento.sessions.length > 0 && evento.sessions.every((sessao) => sessao.is_cancelled)
+      evento.status === 'cancelled' ||
+      (evento.sessions.length > 0 && evento.sessions.every((sessao) => sessao.is_cancelled))
         ? 'https://schema.org/EventCancelled'
-        : 'https://schema.org/EventScheduled',
+        : evento.status === 'postponed'
+          ? 'https://schema.org/EventPostponed'
+          : 'https://schema.org/EventScheduled',
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     isAccessibleForFree: entradaLivre(evento),
     location: lugar,

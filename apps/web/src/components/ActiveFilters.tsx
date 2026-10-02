@@ -30,13 +30,15 @@ export function ActiveFilters({ filters, clearHref }: Props) {
 
   return (
     <div className="mt-4">
-      <h2 className="sr-only">Filtros a aplicar</h2>
+      {/* «Ativos» e não «a aplicar» (C2-020): estes já estão a valer, e «a
+          aplicar» lia-se como uma lista de filtros à espera de um botão. */}
+      <h2 className="sr-only">Filtros ativos</h2>
       <ul className="flex flex-wrap items-center gap-2">
         {filters.map((filter) => (
           <li key={filter.label}>
             <Link
               href={filter.href}
-              className="group inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent-soft py-1 pr-2 pl-3 text-sm text-accent underline-offset-4 hover:underline"
+              className="group inline-flex min-h-11 items-center gap-1.5 rounded-full border border-accent/40 bg-accent-soft pr-2 pl-3 text-sm text-accent underline-offset-4 hover:underline"
             >
               {filter.label}
               <span
@@ -51,7 +53,10 @@ export function ActiveFilters({ filters, clearHref }: Props) {
         ))}
         {filters.length > 1 ? (
           <li>
-            <Link href={clearHref} className="px-1 text-sm underline underline-offset-4">
+            <Link
+              href={clearHref}
+              className="inline-flex min-h-11 items-center px-1 text-sm underline underline-offset-4"
+            >
               Limpar tudo
             </Link>
           </li>

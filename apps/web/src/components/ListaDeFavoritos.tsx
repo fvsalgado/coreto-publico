@@ -98,7 +98,7 @@ export function ListaDeFavoritos({ origem, nomeDoSitio, hoje }: Props) {
           className={ACAO}
         >
           <Icone nome="calendario" />
-          {aExportar ? 'A preparar…' : 'Guardar tudo no calendário'}
+          {aExportar ? 'A preparar…' : 'Adicionar todos ao calendário'}
         </button>
         <button
           type="button"

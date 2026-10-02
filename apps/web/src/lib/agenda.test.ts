@@ -384,13 +384,38 @@ describe('atalhosDeData', () => {
   });
 });
 
+describe('a ficha de um dia só', () => {
+  const NOMES = { municipalities: {}, categories: {}, venues: {}, series: {} };
+
+  it('é uma ficha, e tira o dia inteiro (C2-020)', () => {
+    const fichas = fichasDosFiltros(
+      filtro({ from: '2026-09-12', to: '2026-09-12' }),
+      QUARTA,
+      NOMES,
+    );
+    expect(fichas).toEqual([{ label: 'Sábado, 12 de setembro', href: '/agenda' }]);
+  });
+
+  it('um intervalo continua a ser duas pontas, cada uma com a sua ficha', () => {
+    const fichas = fichasDosFiltros(
+      filtro({ from: '2026-09-12', to: '2026-09-20' }),
+      QUARTA,
+      NOMES,
+    );
+    expect(fichas.map((ficha) => ficha.label)).toEqual([
+      'De 12 de setembro de 2026',
+      'Até 20 de setembro de 2026',
+    ]);
+  });
+});
+
 describe('janelaActiva', () => {
   it('reconhece cada uma das três janelas', () => {
     expect(janelaActiva(filtro({ from: QUARTA, to: QUARTA }), QUARTA)).toBe('hoje');
     expect(janelaActiva(filtro({ from: '2026-09-11', to: '2026-09-13' }), QUARTA)).toBe(
       'fim-de-semana',
     );
-    expect(janelaActiva(filtro({ from: QUARTA, to: '2026-09-16' }), QUARTA)).toBe('semana');
+    expect(janelaActiva(filtro({ from: QUARTA, to: '2026-09-15' }), QUARTA)).toBe('semana');
   });
 
   it('um dia a mais já não é a janela', () => {
@@ -406,6 +431,20 @@ describe('descreverDatas', () => {
   it('diz o nome do recorte quando ele tem nome', () => {
     expect(descreverDatas(QUARTA, QUARTA, QUARTA)).toBe('hoje');
     expect(descreverDatas('2026-09-11', '2026-09-13', QUARTA)).toBe('este fim de semana');
+    // Dentro de uma frase, e não o rótulo em minúsculas (C2-040).
+    expect(descreverDatas(QUARTA, '2026-09-15', QUARTA)).toBe('nos próximos 7 dias');
+  });
+
+  it('um dia só leva o artigo que o dia leva, e amanhã é amanhã (C2-020)', () => {
+    expect(descreverDatas('2026-09-12', '2026-09-12', QUARTA)).toBe('no sábado, 12 de setembro');
+    expect(descreverDatas('2026-09-13', '2026-09-13', QUARTA)).toBe('no domingo, 13 de setembro');
+    expect(descreverDatas('2026-09-11', '2026-09-11', QUARTA)).toBe(
+      'na sexta-feira, 11 de setembro',
+    );
+    expect(descreverDatas('2026-09-10', '2026-09-10', QUARTA)).toBe('amanhã');
+    expect(descreverDatas('2027-01-02', '2027-01-02', QUARTA)).toBe(
+      'no sábado, 2 de janeiro de 2027',
+    );
   });
 
   it('sem recorte com nome, continua a dizer as datas', () => {

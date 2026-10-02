@@ -227,11 +227,6 @@ const PENDENTES = [
       'a declaração exigida pelo DL 83/2018 descreve «a gaveta de navegação»; é jargão interno num documento lido por quem fiscaliza',
   },
   {
-    chave: 'glossario:apps/web/app/[regiao]/page.tsx:montra',
-    desde: '2026-09-07',
-    porque: '«Todos na mesma montra» na entrada de uma região: montra é a página do produto',
-  },
-  {
     chave: 'glossario:apps/web/src/components/PaginaDaMontra.tsx:disjuntor',
     desde: '2026-09-07',
     porque:

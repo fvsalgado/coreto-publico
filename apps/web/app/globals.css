@@ -96,22 +96,35 @@
   --color-focus: #14676b;
 
   /*
-   * Pontos de categoria: decorativos (o nome está sempre escrito ao lado).
+   * As cores das categorias: nove famílias, e cada uma com nome (C1-007).
    *
-   * Não se pintam todos de turquesa: são oito e o que se lhes pede é serem
-   * distinguíveis uns dos outros. Da paleta da CIM vêm os dois que eram a cor
-   * da casa antiga — a música, que passa ao turquesa, e os «outros», que
-   * passam ao cinzento-grafite. Os outros seis são o vocabulário das
-   * categorias, não a marca, e ficam como estavam.
+   * Eram oito cores para catorze categorias, emparelhadas ao acaso — a música
+   * tinha a cor do desporto, o cinema a do património, as exposições a da
+   * família —, e o turquesa da marca era a cor da música: na entrada, o ponto
+   * turquesa rotulava sobretudo «Desporto e natureza». Um código de cor que se
+   * repete sem razão e não se explica ensina o código errado.
+   *
+   * Passam a ser famílias — o palco (teatro e dança), a palavra (literatura e
+   * formação), a festa (festas, feiras, comunidade), as exposições e o
+   * património, o ar livre, a música, o cinema, a família e os outros —, e a
+   * legenda é o próprio filtro: cada pílula de categoria leva o ponto da sua
+   * cor. Nenhuma é o turquesa da marca.
+   *
+   * São também o fundo da capa tipográfica, com `on-cat` por cima: branco
+   * aqui, a 5,7:1 ou mais em todas; no escuro, as mesmas famílias clareadas no
+   * mesmo tom (5:1 sobre a superfície) e tinta escura por cima. O teste
+   * `cores.test.ts` mede os três pares.
    */
-  --color-cat-musica: #14676b;
-  --color-cat-teatro: #9c3a1a;
-  --color-cat-danca: #8a2f62;
-  --color-cat-cinema: #24485c;
-  --color-cat-exposicoes: #a06c10;
-  --color-cat-literatura: #4a4470;
-  --color-cat-festas: #b04a12;
+  --color-cat-musica: #5b3a9e;
+  --color-cat-palco: #a3324a;
+  --color-cat-cinema: #22506b;
+  --color-cat-exposicoes: #8a5a0b;
+  --color-cat-palavra: #2f5f8f;
+  --color-cat-festa: #b0430f;
+  --color-cat-arlivre: #3a6b2a;
+  --color-cat-infantil: #9c2f78;
   --color-cat-outros: #5c6570;
+  --color-on-cat: #ffffff;
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -163,14 +176,16 @@
   --color-field: #7b848d;
   --color-focus: #40c0c4;
 
-  --color-cat-musica: #58cdd1;
-  --color-cat-teatro: #e8906a;
-  --color-cat-danca: #d989b8;
-  --color-cat-cinema: #82b3cc;
-  --color-cat-exposicoes: #d9b05e;
-  --color-cat-literatura: #a9a2d8;
-  --color-cat-festas: #e59a63;
-  --color-cat-outros: #a4acb3;
+  --color-cat-musica: #9a80d0;
+  --color-cat-palco: #d26e83;
+  --color-cat-cinema: #4494c4;
+  --color-cat-exposicoes: #c37f10;
+  --color-cat-palavra: #5991c8;
+  --color-cat-festa: #ec601d;
+  --color-cat-arlivre: #569e3e;
+  --color-cat-infantil: #d167ae;
+  --color-cat-outros: #848e9a;
+  --color-on-cat: #101319;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -192,14 +207,16 @@
     --color-field: #7b848d;
     --color-focus: #40c0c4;
 
-    --color-cat-musica: #58cdd1;
-    --color-cat-teatro: #e8906a;
-    --color-cat-danca: #d989b8;
-    --color-cat-cinema: #82b3cc;
-    --color-cat-exposicoes: #d9b05e;
-    --color-cat-literatura: #a9a2d8;
-    --color-cat-festas: #e59a63;
-    --color-cat-outros: #a4acb3;
+    --color-cat-musica: #9a80d0;
+    --color-cat-palco: #d26e83;
+    --color-cat-cinema: #4494c4;
+    --color-cat-exposicoes: #c37f10;
+    --color-cat-palavra: #5991c8;
+    --color-cat-festa: #ec601d;
+    --color-cat-arlivre: #569e3e;
+    --color-cat-infantil: #d167ae;
+    --color-cat-outros: #848e9a;
+    --color-on-cat: #101319;
   }
 }
 
@@ -619,6 +636,14 @@
     scroll-snap-align: start;
   }
 
+  /* Com o nome da fila à esquerda (`FilaDePilulas`), a fila só sangra para a
+     direita: à esquerda passava por baixo do nome. */
+  .ct-fila-com-nome .ct-fila-fichas {
+    margin-inline-start: 0;
+    padding-inline-start: 0;
+    scroll-padding-inline-start: 0;
+  }
+
   @media (min-width: 40rem) {
     .ct-fila-fichas {
       flex-wrap: wrap;
@@ -641,15 +666,44 @@
     }
   }
 
-  /* Sobrancelha editorial: caixa alta, muito espaçada, no turquesa da CIM. */
+  /* Na secretária, as filas com nome embrulham em duas e três linhas (as
+     catorze categorias), e o primeiro cartão tem de caber no primeiro ecrã.
+     Entre as linhas da mesma fila, menos ar do que entre filas: é isso que as
+     faz ler-se como três grupos e não como uma parede. */
+  @media (min-width: 64rem) {
+    .ct-fila-com-nome .ct-fila-fichas {
+      row-gap: 0.375rem;
+    }
+  }
+
+  /*
+   * Sobrancelha editorial: em caixa de frase, no turquesa da marca.
+   *
+   * Era caixa alta a 11 píxeis com 0,18 em de espaçamento, e as regras da
+   * casa excluem rótulos em maiúsculas: a esse tamanho e com esse ar lia-se
+   * letra a letra, e o `text-transform` passava as maiúsculas ao leitor de
+   * ecrã (C1-004). Distingue-se pelo peso e pela cor, e não pelas capitais.
+   * O texto já estava escrito em caixa de frase em todas as páginas; só o
+   * CSS o levantava.
+   *
+   * Catorze píxeis, que são 10,5 pontos: o requisito 2.2 da lista «Conteúdo»
+   * do Selo põe o chão do texto secundário nos 10, e a 11 píxeis a sobrancelha
+   * ficava à decisão de quem avaliasse (`docs/SELO.md`). Deixou de ficar.
+   */
   .ct-eyebrow {
-    font-size: 0.6875rem;
+    font-size: 0.875rem;
     font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
     color: var(--color-highlight);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* A dúvida ao lado da sobrancelha: apagada, e sem o peso do rótulo. */
+  .ct-eyebrow-nota {
+    font-weight: 400;
+    letter-spacing: normal;
+    color: var(--color-muted);
   }
 
   /*
@@ -663,11 +717,10 @@
    * própria CIM usa sobre o grafite (6,9:1).
    */
   .ct-sobrancelha-clara {
-    font-size: 0.6875rem;
+    font-size: 0.875rem;
     font-weight: 600;
-    line-height: 1;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
     color: var(--color-on-deep-muted);
   }
 
@@ -866,31 +919,6 @@
     }
   }
 
-  /* -------- Banda de concelhos ------------------------------------------ */
-
-  /* O conteúdo é duplicado no markup e desloca-se exatamente -50%: o ponto
-     de recomeço coincide com o de partida, sem salto visível. */
-  .ct-marquee {
-    animation: ct-marquee var(--ct-marquee-duration, 48s) linear infinite;
-    will-change: transform;
-  }
-  /* Hover e foco pausam por cortesia; `.ct-paused` é o mecanismo a sério,
-     o que o botão liga (SC 2.2.2). */
-  .ct-marquee-host:hover .ct-marquee,
-  .ct-marquee-host:focus-within .ct-marquee,
-  .ct-marquee.ct-paused {
-    animation-play-state: paused;
-  }
-
-  @keyframes ct-marquee {
-    from {
-      transform: translate3d(0, 0, 0);
-    }
-    to {
-      transform: translate3d(-50%, 0, 0);
-    }
-  }
-
   /* -------- Rail horizontal --------------------------------------------- */
 
   .ct-rail {
@@ -924,6 +952,23 @@
     width: 3rem;
     pointer-events: none;
     background: linear-gradient(to right, transparent, var(--color-paper));
+  }
+
+  /* Na secretária, a prateleira dos destaques é uma vitrine em grelha
+     (`Destaques`, C1-030): não desliza, e o desvanecer tapava a última
+     coluna. A grelha é escrita aqui e não com `lg:grid` no elemento porque o
+     `.ct-rail` está na camada dos utilitários e vem depois dos que o Tailwind
+     gera: com a mesma especificidade, o `display: flex` dele ganhava ao
+     `lg:grid`. As colunas e os espaços, que o `.ct-rail` não toca, ficam no
+     elemento. */
+  @media (min-width: 64rem) {
+    .ct-vitrine > .ct-rail {
+      display: grid;
+      overflow: visible;
+    }
+    .ct-vitrine::after {
+      display: none;
+    }
   }
 
   /* -------- Cartões ------------------------------------------------------ */

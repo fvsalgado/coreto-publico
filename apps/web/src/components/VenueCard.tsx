@@ -126,14 +126,10 @@ export function VenueCard({ venue, count, porConfirmar = false }: Props) {
               </span>
             ) : null}
             {venue.is_association ? (
-              <span className="text-xs font-semibold tracking-wide text-muted uppercase">
-                Coletividade
-              </span>
+              <span className="text-sm font-semibold text-muted">Coletividade</span>
             ) : null}
             {porConfirmar ? (
-              <span className="text-xs font-semibold tracking-wide text-muted uppercase">
-                Por confirmar
-              </span>
+              <span className="text-sm font-semibold text-muted">Por confirmar</span>
             ) : null}
             {/* O acesso que o espaço declara, com o mesmo sinal dos cartões de
                 evento (C2-012). Só o «sim», como lá: a falta de declaração não

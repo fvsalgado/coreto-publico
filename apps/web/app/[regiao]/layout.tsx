@@ -212,7 +212,10 @@ export default async function RegiaoLayout({ children, params }: Props) {
               aria-label={`Promovido por ${promotor.nome} (abre noutro separador)`}
               className="flex min-h-11 flex-col items-start justify-center gap-0.5 rounded"
             >
-              <span className="text-[0.5625rem] leading-none font-medium">Promovido por</span>
+              {/* Onze píxeis, e não nove (C1-006, C3-018): era o primeiro
+                  texto do cabeçalho de todas as páginas, e a nove não se lia
+                  num telemóvel. Cabe na mesma linha de 44 px do logótipo. */}
+              <span className="text-[0.6875rem] leading-none font-medium">Promovido por</span>
               {promotor.logotipo ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img

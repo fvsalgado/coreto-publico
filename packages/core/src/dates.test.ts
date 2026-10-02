@@ -7,6 +7,7 @@ import {
   parseEventDates,
   saneEndTime,
   expandRecurrence,
+  horaDeInicioConhecida,
   isValidIsoDate,
   isoWeekday,
   janelaDaSemana,
@@ -394,6 +395,24 @@ describe('saneEndTime', () => {
   });
 });
 
+describe('horaDeInicioConhecida', () => {
+  it('a meia-noite sem fim é «sem hora», venha com ou sem segundos', () => {
+    expect(horaDeInicioConhecida('00:00', null)).toBe(null);
+    expect(horaDeInicioConhecida('00:00:00', undefined)).toBe(null);
+    expect(horaDeInicioConhecida('00:00:00', '00:00:00')).toBe(null);
+  });
+
+  it('com hora de fim é meia-noite, e fica', () => {
+    expect(horaDeInicioConhecida('00:00:00', '02:00:00')).toBe('00:00:00');
+  });
+
+  it('as outras horas passam como vieram, e a ausência continua ausência', () => {
+    expect(horaDeInicioConhecida('00:30', null)).toBe('00:30');
+    expect(horaDeInicioConhecida('21:30:00', null)).toBe('21:30:00');
+    expect(horaDeInicioConhecida(null, '23:00')).toBe(null);
+  });
+});
+
 describe('collapseContinuousRun', () => {
   function daily(start: string, count: number): string[] {
     return Array.from({ length: count }, (_, i) => addDays(start, i));
@@ -486,14 +505,16 @@ describe('janelas de data da agenda', () => {
     expect(janelaDoFimDeSemana(DOMINGO)).toEqual({ from: DOMINGO, to: DOMINGO });
   });
 
-  it('a semana são sete dias a contar de hoje', () => {
-    expect(janelaDaSemana(SEGUNDA)).toEqual({ from: SEGUNDA, to: '2026-09-14' });
+  it('os próximos 7 dias são hoje e mais seis — e não oito dias', () => {
+    expect(janelaDaSemana(SEGUNDA)).toEqual({ from: SEGUNDA, to: '2026-09-13' });
+    // Numa quinta, acaba na quarta seguinte, e não na quinta (C2-040).
+    expect(janelaDaSemana('2026-10-01')).toEqual({ from: '2026-10-01', to: '2026-10-07' });
   });
 
   it('atravessa a virada do ano sem se enganar', () => {
     // 2026-12-28 é uma segunda-feira.
     expect(janelaDoFimDeSemana('2026-12-28')).toEqual({ from: '2027-01-01', to: '2027-01-03' });
-    expect(janelaDaSemana('2026-12-28')).toEqual({ from: '2026-12-28', to: '2027-01-04' });
+    expect(janelaDaSemana('2026-12-28')).toEqual({ from: '2026-12-28', to: '2027-01-03' });
   });
 
   it('não se mexe nas mudanças da hora legal', () => {

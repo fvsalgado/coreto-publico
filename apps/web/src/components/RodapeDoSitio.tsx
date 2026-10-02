@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { slugify, todayInLisbon } from '@coreto/core';
-import { ConcelhosMarquee } from '@/src/components/ConcelhosMarquee';
+import { ConcelhosDoRodape } from '@/src/components/ConcelhosDoRodape';
 import {
   colunasDoRodape,
   type Ancora,
@@ -50,8 +50,8 @@ export async function RodapeDoSitio({
   // ligações são quatro células, duas são três.
   const celulas = colunas.length + 1;
 
-  // A banda dos concelhos vem da base, como tudo o que é da região. Sem base,
-  // vem vazia e a banda não se desenha — o rodapé aguenta.
+  // Os concelhos vêm da base, como tudo o que é da região. Sem base, vêm
+  // vazios e a lista não se desenha — o rodapé aguenta.
   const concelhos = await listMunicipalities(regiao.id);
 
   /*
@@ -73,9 +73,7 @@ export async function RodapeDoSitio({
 
   return (
     <footer className="mt-14 pb-[calc(3.5rem+env(safe-area-inset-bottom))] sm:mt-16 sm:pb-0">
-      {concelhos.length > 0 && (
-        <ConcelhosMarquee items={concelhos.map(({ id, name }) => ({ id, name }))} />
-      )}
+      <ConcelhosDoRodape items={concelhos.map(({ id, name }) => ({ id, name }))} />
 
       <div className="ct-lambrequim ct-lambrequim-flip" aria-hidden="true" />
       <div className="ct-bloco-escuro ct-grain bg-accent-deep text-white">

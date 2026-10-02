@@ -706,5 +706,6 @@ export const CAMPOS_DA_REGIAO = {
   data_controller_email: 'anulavel',
   data_controller_dpo: 'anulavel',
   data_controller_dpo_contact: 'anulavel',
+  transit_planner_url: 'anulavel',
   sort_order: 'inteiro',
 } as const;

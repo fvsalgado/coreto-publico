@@ -1,4 +1,5 @@
 import {
+  addDays,
   eventFilterSchema,
   janelaDaSemana,
   janelaDeHoje,
@@ -7,7 +8,7 @@ import {
   type JanelaDeDatas,
 } from '@coreto/core';
 import { PATH } from './caminhos';
-import { formatLongDate, formatShortDate, formatWeekdayDate } from './format';
+import { formatLongDate, formatRelativeDay, formatShortDate, formatWeekdayDate } from './format';
 
 /**
  * A parte da agenda que não fala com a base nem com o React.
@@ -394,16 +395,35 @@ export function alargamentos(filter: EventFilter, names: NomesDosFiltros): Alarg
 /**
  * Os três recortes de tempo que a agenda oferece num clique.
  *
- * A ordem é a da distância: hoje, o fim de semana, a semana. É também a ordem
- * pela qual as perguntas se fazem.
+ * A ordem é a da distância: hoje, o fim de semana, os próximos 7 dias. É
+ * também a ordem pela qual as perguntas se fazem.
+ *
+ * O terceiro chamava-se «Esta semana», e não era: eram oito dias a partir de
+ * hoje, e numa quinta-feira iam até à quinta seguinte (C2-040). A janela
+ * passou a sete dias, e o nome passou a ser o que ela é — o mesmo nome em
+ * todos os sítios onde ela aparece.
+ *
+ * `frase` é o recorte dentro de uma frase — «A mostrar: Música, nos próximos
+ * 7 dias» —, que nem sempre é o rótulo em minúsculas.
  */
 export const ATALHOS = [
-  { id: 'hoje', rotulo: 'Hoje', janela: janelaDeHoje },
-  { id: 'fim-de-semana', rotulo: 'Este fim de semana', janela: janelaDoFimDeSemana },
-  { id: 'semana', rotulo: 'Esta semana', janela: janelaDaSemana },
+  { id: 'hoje', rotulo: 'Hoje', frase: 'hoje', janela: janelaDeHoje },
+  {
+    id: 'fim-de-semana',
+    rotulo: 'Este fim de semana',
+    frase: 'este fim de semana',
+    janela: janelaDoFimDeSemana,
+  },
+  {
+    id: 'semana',
+    rotulo: 'Próximos 7 dias',
+    frase: 'nos próximos 7 dias',
+    janela: janelaDaSemana,
+  },
 ] as const satisfies readonly {
   id: string;
   rotulo: string;
+  frase: string;
   janela: (hoje: string) => JanelaDeDatas;
 }[];
 
@@ -452,16 +472,30 @@ export function atalhosDeData(filter: EventFilter, hoje: string): AtalhoDeData[]
   }));
 }
 
-/** As datas escolhidas, por extenso — «a sábado, 5 de setembro», «de 5 a 12 set». */
+/**
+ * Um dia por extenso, com o artigo que o português lhe dá — «no sábado,
+ * 3 de outubro», «na sexta-feira, 9 de outubro» (C2-020). Era «a sábado»,
+ * que não se diz. O sábado e o domingo são masculinos; os outros cinco são
+ * «-feira», e femininos. O ano só quando não é este.
+ */
+function noDia(dia: string, hoje?: string): string {
+  const texto = formatWeekdayDate(dia);
+  const artigo = /^(sábado|domingo)/.test(texto) ? 'no' : 'na';
+  const ano = hoje && dia.slice(0, 4) !== hoje.slice(0, 4) ? ` de ${dia.slice(0, 4)}` : '';
+  return `${artigo} ${texto}${ano}`;
+}
+
+/** As datas escolhidas, por extenso — «no sábado, 5 de setembro», «de 5 a 12 set». */
 export function descreverDatas(from?: string, to?: string, hoje?: string): string | null {
   if (from && to) {
-    // Um recorte com nome diz o nome. «Agenda: a sexta-feira, 11 de setembro»
-    // é a mesma vista que «Agenda: hoje», e a segunda é a que se lê.
+    // Um recorte com nome diz o nome. «Agenda: na sexta-feira, 11 de
+    // setembro» é a mesma vista que «Agenda: hoje», e a segunda é a que se lê.
     if (hoje) {
       const atalho = janelaActiva({ from, to } as EventFilter, hoje);
-      if (atalho) return ATALHOS.find((item) => item.id === atalho)?.rotulo.toLowerCase() ?? null;
+      if (atalho) return ATALHOS.find((item) => item.id === atalho)?.frase ?? null;
+      if (from === to && from === addDays(hoje, 1)) return 'amanhã';
     }
-    if (from === to) return `a ${formatWeekdayDate(from)}`;
+    if (from === to) return noDia(from, hoje);
     return `de ${formatShortDate(from)} a ${formatShortDate(to)}`;
   }
   if (from) return `a partir de ${formatWeekdayDate(from)}`;
@@ -548,6 +582,14 @@ export function fichasDosFiltros(
   if (atalho) {
     fichas.push({
       label: ATALHOS.find((item) => item.id === atalho)?.rotulo ?? 'Datas',
+      href: buildHref(filter, 1, ['from', 'to'], base),
+    });
+  } else if (filter.from && filter.from === filter.to) {
+    // Um dia só é um dia, e uma ficha (C2-020): eram duas — «De 3 de outubro
+    // de 2026» e «Até 3 de outubro de 2026» —, e tirar uma deixava meio
+    // filtro, de 3 de outubro para sempre.
+    fichas.push({
+      label: formatRelativeDay(filter.from, hoje),
       href: buildHref(filter, 1, ['from', 'to'], base),
     });
   } else {

@@ -250,6 +250,44 @@ describe('cleanEventDescription', () => {
     expect(limpo).toBe('Um passeio pela vila.');
   });
 
+  /*
+   * O banco de regressão do C2-022: frases reais, colhidas das fichas
+   * publicadas a 1 de outubro de 2026.
+   */
+  it('não corta o título quando ele é o sujeito da primeira frase', () => {
+    const limpo = cleanEventDescription(
+      'Almoço dos Idosos',
+      'Almoço dos Idosos, oferecido todos os anos pela Junta Freguesia.\n\nComo a nossa freguesia é muito dispersa…',
+    );
+    expect(limpo?.startsWith('Almoço dos Idosos, oferecido todos os anos')).toBe(true);
+    expect(cleanEventDescription('Feira', 'Feira de outono no largo, com doces.')).toBe(
+      'Feira de outono no largo, com doces.',
+    );
+  });
+
+  it('continua a cortar o título que é cabeçalho, numa linha ou com pontuação', () => {
+    expect(cleanEventDescription('Concerto', 'Concerto\nUma noite de fado.')).toBe(
+      'Uma noite de fado.',
+    );
+    expect(cleanEventDescription('Concerto', 'Concerto — Uma noite de fado.')).toBe(
+      'Uma noite de fado.',
+    );
+  });
+
+  it('tira o rótulo que ficou sozinho no fim, sem o que rotulava', () => {
+    const limpo = cleanEventDescription(
+      'TU-TUUU',
+      'Mais do que um espetáculo, é um apelo ao brincar.\nApoio: Câmara Municipal de Palmela\nOrganização',
+    );
+    expect(limpo).toBe(
+      'Mais do que um espetáculo, é um apelo ao brincar.\nApoio: Câmara Municipal de Palmela',
+    );
+    // Com conteúdo à frente é informação, e fica.
+    expect(cleanEventDescription('X', 'Texto.\nOrganização: Junta de Freguesia')).toBe(
+      'Texto.\nOrganização: Junta de Freguesia',
+    );
+  });
+
   it('não toca no que não reconhece, e devolve null quando não sobra nada', () => {
     expect(cleanEventDescription('Concerto', 'Uma noite de fado com data marcada.')).toBe(
       'Uma noite de fado com data marcada.',

@@ -1,4 +1,4 @@
-import { formatTime, formatWeekdayDate } from '@/src/lib/format';
+import { formatTime, formatWeekdayDate, horaDeInicioConhecida } from '@/src/lib/format';
 import type { EventSession } from '@/src/lib/queries/types';
 
 interface Props {
@@ -28,11 +28,15 @@ export function EventDetailSessions({ sessions, today, isOngoing = false }: Prop
   return (
     <ol className="mt-3 space-y-2">
       {sessions.map((session) => {
-        const time = formatTime(session.start_time);
-        const endTime = formatTime(session.end_time);
+        // O 00:00 sem fim é o campo vazio de quem publicou, e diz-se «hora por
+        // confirmar» como qualquer outra hora que falta. O fim só vale com o
+        // início: sozinho, não diz a que horas se chega.
+        const inicio = horaDeInicioConhecida(session.start_time, session.end_time);
+        const time = formatTime(inicio);
+        const endTime = inicio ? formatTime(session.end_time) : null;
         const isPast = session.session_date < today;
-        const dateTime = session.start_time
-          ? `${session.session_date}T${session.start_time.slice(0, 5)}`
+        const dateTime = inicio
+          ? `${session.session_date}T${inicio.slice(0, 5)}`
           : session.session_date;
 
         return (

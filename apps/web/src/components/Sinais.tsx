@@ -214,6 +214,8 @@ const TONS: Record<Tom, string> = {
 
 const BASE =
   'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs leading-none';
+const LIGACAO =
+  'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3.5 text-sm leading-none';
 
 interface SinalProps {
   icone?: NomeDeIcone;
@@ -278,7 +280,9 @@ export function SinalLink({
   tom = 'normal',
   statKind,
 }: SinalLinkProps) {
-  const className = `${BASE} ${TONS[tom]} underline-offset-4 hover:underline`;
+  // Uma ligação é um alvo de toque, e um alvo tem 44 píxeis (C3-007): a
+  // categoria da ficha tinha 83×24. O sinal que só se lê fica pequeno.
+  const className = `${LIGACAO} ${TONS[tom]} underline-offset-4 hover:underline`;
   const conteudo = (
     <>
       {icone ? <Icone nome={icone} /> : null}

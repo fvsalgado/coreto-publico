@@ -416,6 +416,32 @@ export default async function FichaDaRegiao({ params, searchParams }: Props) {
           </div>
         </fieldset>
 
+        {/*
+          A ligação «Ir de transportes públicos» das fichas de evento e de
+          espaço só aparece quando a região tem planeador declarado (0164). Em
+          branco numa região sem planeador: a ligação não aparece, e é o certo —
+          nenhuma ganha o de outra.
+
+          O campo só se desenha quando a coluna existe. A linha vem por
+          `select('*')`, e numa base que ainda não tem a 0164 o campo, enviado,
+          fazia a `update_region` antiga recusar a edição inteira — por uma
+          coluna que ninguém tinha tocado.
+        */}
+        {'transit_planner_url' in regiao ? (
+          <fieldset>
+            <legend className="text-lg font-semibold">Transportes públicos</legend>
+            <div className="mt-3 space-y-4">
+              <Campo
+                nome="transit_planner_url"
+                rotulo="Planeador de transportes públicos"
+                valor={regiao.transit_planner_url ?? null}
+                tipo="url"
+                ajuda="O endereço do planeador de viagens da região, por exemplo o da Paragem.pt dela, completo e com https://. Em branco, as fichas não oferecem a ligação."
+              />
+            </div>
+          </fieldset>
+        ) : null}
+
         <fieldset>
           <legend className="text-lg font-semibold">Estado e ordem</legend>
           <div className="mt-3 space-y-4">
