@@ -841,6 +841,14 @@ declare
   v_movidos  integer;
   n          integer;
 begin
+  -- A montra semeada envelhece: as datas da 0168 são fixas, e numa base nova
+  -- os eventos dela vão passando ao passado — a 4/10/2026 eram dois, e esta
+  -- prova contava três movidos em vez de um, num CI que nada tinha mudado.
+  -- Renova-se primeiro, para a prova partir de uma montra toda no futuro, que
+  -- é o estado em que a produção está: lá a renovação corre todas as noites
+  -- (`scrape.yml`).
+  perform public.renovar_montra();
+
   -- Um evento da montra com mais de uma sessão, que é onde o espaçamento se
   -- prova. O que começa mais cedo, para a escolha ser sempre a mesma.
   select e.id, e.date_end - e.date_start into v_evento, v_vao
